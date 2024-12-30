@@ -1,4 +1,5 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian'
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, MarkdownRenderer } from 'obsidian'
+import { parse_bitex } from 'src/parse'
 
 interface BibtexScholarSettings {
 	mySetting: string
@@ -10,12 +11,29 @@ const DEFAULT_SETTINGS: BibtexScholarSettings = {
 
 export default class BibtexScholar extends Plugin {
 	settings: BibtexScholarSettings
+	allbibtex = []
 
 	async onload() {
 		await this.load_settings()
 
 		// settings tab
 		this.addSettingTab(new BibtexScholarSettingTab(this.app, this))
+
+		this.registerMarkdownCodeBlockProcessor('bibtex', (source, el, ctx) => {
+			const fields = parse_bitex(source)
+
+			el.createEl('hr')
+			const table = el.createEl('table')
+      		const body = table.createEl('tbody')
+			
+			for (const key in fields) {
+				const tr = body.createEl('tr')
+				const td1 = tr.createEl('td')
+				td1.innerText = key
+				const td2 = tr.createEl('td')
+				MarkdownRenderer.render(this.app, fields[key], td2, '', this)
+			}
+		})
 	}
 
 	onunload() {
