@@ -1,3 +1,4 @@
+/* react-flow */
 /*
 
 This CSS file will be included with your plugin, and
@@ -6,3 +7,1837 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+/* this gets exported as style.css and can be used for the default theming */
+/* these are the necessary styles for React/Svelte Flow, they get used by base.css and style.css */
+.react-flow {
+    direction: ltr;
+  
+    --xy-edge-stroke-default: #b1b1b7;
+    --xy-edge-stroke-width-default: 1;
+    --xy-edge-stroke-selected-default: #555;
+  
+    --xy-connectionline-stroke-default: #b1b1b7;
+    --xy-connectionline-stroke-width-default: 1;
+  
+    --xy-attribution-background-color-default: rgba(255, 255, 255, 0.5);
+  
+    --xy-minimap-background-color-default: #fff;
+    --xy-minimap-mask-background-color-default: rgb(240, 240, 240, 0.6);
+    --xy-minimap-mask-stroke-color-default: transparent;
+    --xy-minimap-mask-stroke-width-default: 1;
+    --xy-minimap-node-background-color-default: #e2e2e2;
+    --xy-minimap-node-stroke-color-default: transparent;
+    --xy-minimap-node-stroke-width-default: 2;
+  
+    --xy-background-color-default: transparent;
+    --xy-background-pattern-dots-color-default: #91919a;
+    --xy-background-pattern-lines-color-default: #eee;
+    --xy-background-pattern-cross-color-default: #e2e2e2;
+    background-color: var(--xy-background-color, var(--xy-background-color-default));
+    --xy-node-color-default: inherit;
+    --xy-node-border-default: 1px solid #1a192b;
+    --xy-node-background-color-default: #fff;
+    --xy-node-group-background-color-default: rgba(240, 240, 240, 0.25);
+    --xy-node-boxshadow-hover-default: 0 1px 4px 1px rgba(0, 0, 0, 0.08);
+    --xy-node-boxshadow-selected-default: 0 0 0 0.5px #1a192b;
+    --xy-node-border-radius-default: 3px;
+  
+    --xy-handle-background-color-default: #1a192b;
+    --xy-handle-border-color-default: #fff;
+  
+    --xy-selection-background-color-default: rgba(0, 89, 220, 0.08);
+    --xy-selection-border-default: 1px dotted rgba(0, 89, 220, 0.8);
+  
+    --xy-controls-button-background-color-default: #fefefe;
+    --xy-controls-button-background-color-hover-default: #f4f4f4;
+    --xy-controls-button-color-default: inherit;
+    --xy-controls-button-color-hover-default: inherit;
+    --xy-controls-button-border-color-default: #eee;
+    --xy-controls-box-shadow-default: 0 0 2px 1px rgba(0, 0, 0, 0.08);
+  
+    --xy-edge-label-background-color-default: #ffffff;
+    --xy-edge-label-color-default: inherit;
+    --xy-resize-background-color-default: #3367d9;
+  }
+  .react-flow.dark {
+    --xy-edge-stroke-default: #3e3e3e;
+    --xy-edge-stroke-width-default: 1;
+    --xy-edge-stroke-selected-default: #727272;
+  
+    --xy-connectionline-stroke-default: #b1b1b7;
+    --xy-connectionline-stroke-width-default: 1;
+  
+    --xy-attribution-background-color-default: rgba(150, 150, 150, 0.25);
+  
+    --xy-minimap-background-color-default: #141414;
+    --xy-minimap-mask-background-color-default: rgb(60, 60, 60, 0.6);
+    --xy-minimap-mask-stroke-color-default: transparent;
+    --xy-minimap-mask-stroke-width-default: 1;
+    --xy-minimap-node-background-color-default: #2b2b2b;
+    --xy-minimap-node-stroke-color-default: transparent;
+    --xy-minimap-node-stroke-width-default: 2;
+  
+    --xy-background-color-default: #141414;
+    --xy-background-pattern-dots-color-default: #777;
+    --xy-background-pattern-lines-color-default: #777;
+    --xy-background-pattern-cross-color-default: #777;
+    --xy-node-color-default: #f8f8f8;
+    --xy-node-border-default: 1px solid #3c3c3c;
+    --xy-node-background-color-default: #1e1e1e;
+    --xy-node-group-background-color-default: rgba(240, 240, 240, 0.25);
+    --xy-node-boxshadow-hover-default: 0 1px 4px 1px rgba(255, 255, 255, 0.08);
+    --xy-node-boxshadow-selected-default: 0 0 0 0.5px #999;
+  
+    --xy-handle-background-color-default: #bebebe;
+    --xy-handle-border-color-default: #1e1e1e;
+  
+    --xy-selection-background-color-default: rgba(200, 200, 220, 0.08);
+    --xy-selection-border-default: 1px dotted rgba(200, 200, 220, 0.8);
+  
+    --xy-controls-button-background-color-default: #2b2b2b;
+    --xy-controls-button-background-color-hover-default: #3e3e3e;
+    --xy-controls-button-color-default: #f8f8f8;
+    --xy-controls-button-color-hover-default: #fff;
+    --xy-controls-button-border-color-default: #5b5b5b;
+    --xy-controls-box-shadow-default: 0 0 2px 1px rgba(0, 0, 0, 0.08);
+  
+    --xy-edge-label-background-color-default: #141414;
+    --xy-edge-label-color-default: #f8f8f8;
+  }
+  .react-flow__background {
+    background-color: var(--xy-background-color, var(--xy-background-color-props, var(--xy-background-color-default)));
+    pointer-events: none;
+    z-index: -1;
+  }
+  .react-flow__container {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+  }
+  .react-flow__pane {
+    z-index: 1;
+  }
+  .react-flow__pane.draggable {
+      cursor: grab;
+    }
+  .react-flow__pane.dragging {
+      cursor: grabbing;
+    }
+  .react-flow__pane.selection {
+      cursor: pointer;
+    }
+  .react-flow__viewport {
+    transform-origin: 0 0;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .react-flow__renderer {
+    z-index: 4;
+  }
+  .react-flow__selection {
+    z-index: 6;
+  }
+  .react-flow__nodesselection-rect:focus,
+  .react-flow__nodesselection-rect:focus-visible {
+    outline: none;
+  }
+  .react-flow__edge-path {
+    stroke: var(--xy-edge-stroke, var(--xy-edge-stroke-default));
+    stroke-width: var(--xy-edge-stroke-width, var(--xy-edge-stroke-width-default));
+    fill: none;
+  }
+  .react-flow__connection-path {
+    stroke: var(--xy-connectionline-stroke, var(--xy-connectionline-stroke-default));
+    stroke-width: var(--xy-connectionline-stroke-width, var(--xy-connectionline-stroke-width-default));
+    fill: none;
+  }
+  .react-flow .react-flow__edges {
+    position: absolute;
+  }
+  .react-flow .react-flow__edges svg {
+      overflow: visible;
+      position: absolute;
+      pointer-events: none;
+    }
+  .react-flow__edge {
+    pointer-events: visibleStroke;
+  }
+  .react-flow__edge.selectable {
+      cursor: pointer;
+    }
+  .react-flow__edge.animated path {
+      stroke-dasharray: 5;
+      animation: dashdraw 0.5s linear infinite;
+    }
+  .react-flow__edge.animated path.react-flow__edge-interaction {
+      stroke-dasharray: none;
+      animation: none;
+    }
+  .react-flow__edge.inactive {
+      pointer-events: none;
+    }
+  .react-flow__edge.selected,
+    .react-flow__edge:focus,
+    .react-flow__edge:focus-visible {
+      outline: none;
+    }
+  .react-flow__edge.selected .react-flow__edge-path,
+    .react-flow__edge.selectable:focus .react-flow__edge-path,
+    .react-flow__edge.selectable:focus-visible .react-flow__edge-path {
+      stroke: var(--xy-edge-stroke-selected, var(--xy-edge-stroke-selected-default));
+    }
+  .react-flow__edge-textwrapper {
+      pointer-events: all;
+    }
+  .react-flow__edge .react-flow__edge-text {
+      pointer-events: none;
+      -webkit-user-select: none;
+         -moz-user-select: none;
+              user-select: none;
+    }
+  .react-flow__connection {
+    pointer-events: none;
+  }
+  .react-flow__connection .animated {
+      stroke-dasharray: 5;
+      animation: dashdraw 0.5s linear infinite;
+    }
+  svg.react-flow__connectionline {
+    z-index: 1001;
+    overflow: visible;
+    position: absolute;
+  }
+  .react-flow__nodes {
+    pointer-events: none;
+    transform-origin: 0 0;
+  }
+  .react-flow__node {
+    position: absolute;
+    -webkit-user-select: none;
+       -moz-user-select: none;
+            user-select: none;
+    pointer-events: all;
+    transform-origin: 0 0;
+    box-sizing: border-box;
+    cursor: default;
+  }
+
+  .react-flow__node.selectable {
+      cursor: pointer;
+    }
+  .react-flow__node.draggable {
+      cursor: grab;
+      pointer-events: all;
+    }
+  .react-flow__node.draggable.dragging {
+        cursor: grabbing;
+      }
+  .react-flow__nodesselection {
+    z-index: 3;
+    transform-origin: left top;
+    pointer-events: none;
+  }
+  .react-flow__nodesselection-rect {
+      position: absolute;
+      pointer-events: all;
+      cursor: grab;
+    }
+  .react-flow__handle {
+    position: absolute;
+    pointer-events: none;
+    min-width: 5px;
+    min-height: 5px;
+    width: 6px;
+    height: 6px;
+    background-color: var(--xy-handle-background-color, var(--xy-handle-background-color-default));
+    border: 1px solid var(--xy-handle-border-color, var(--xy-handle-border-color-default));
+    border-radius: 100%;
+  }
+  .react-flow__handle.connectingfrom {
+      pointer-events: all;
+    }
+  .react-flow__handle.connectionindicator {
+      pointer-events: all;
+      cursor: crosshair;
+    }
+  .react-flow__handle-bottom {
+      top: auto;
+      left: 50%;
+      bottom: 0;
+      transform: translate(-50%, 50%);
+    }
+  .react-flow__handle-top {
+      top: 0;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+  .react-flow__handle-left {
+      top: 50%;
+      left: 0;
+      transform: translate(-50%, -50%);
+    }
+  .react-flow__handle-right {
+      top: 50%;
+      right: 0;
+      transform: translate(50%, -50%);
+    }
+  .react-flow__edgeupdater {
+    cursor: move;
+    pointer-events: all;
+  }
+  .react-flow__panel {
+    position: absolute;
+    z-index: 5;
+    margin: 15px;
+  }
+  .react-flow__panel.top {
+      top: 0;
+    }
+  .react-flow__panel.bottom {
+      bottom: 0;
+    }
+  .react-flow__panel.left {
+      left: 0;
+    }
+  .react-flow__panel.right {
+      right: 0;
+    }
+  .react-flow__panel.center {
+      left: 50%;
+      transform: translateX(-50%);
+    }
+  .react-flow__attribution {
+    font-size: 10px;
+    background: var(--xy-attribution-background-color, var(--xy-attribution-background-color-default));
+    padding: 2px 3px;
+    margin: 0;
+  }
+  .react-flow__attribution a {
+      text-decoration: none;
+      color: #999;
+    }
+  @keyframes dashdraw {
+    from {
+      stroke-dashoffset: 10;
+    }
+  }
+  .react-flow__edgelabel-renderer {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    -webkit-user-select: none;
+       -moz-user-select: none;
+            user-select: none;
+    left: 0;
+    top: 0;
+  }
+  .react-flow__viewport-portal {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    left: 0;
+    top: 0;
+    -webkit-user-select: none;
+       -moz-user-select: none;
+            user-select: none;
+  }
+  .react-flow__minimap {
+    background: var(
+      --xy-minimap-background-color-props,
+      var(--xy-minimap-background-color, var(--xy-minimap-background-color-default))
+    );
+  }
+  .react-flow__minimap-svg {
+      display: block;
+    }
+  .react-flow__minimap-mask {
+      fill: var(
+        --xy-minimap-mask-background-color-props,
+        var(--xy-minimap-mask-background-color, var(--xy-minimap-mask-background-color-default))
+      );
+      stroke: var(
+        --xy-minimap-mask-stroke-color-props,
+        var(--xy-minimap-mask-stroke-color, var(--xy-minimap-mask-stroke-color-default))
+      );
+      stroke-width: var(
+        --xy-minimap-mask-stroke-width-props,
+        var(--xy-minimap-mask-stroke-width, var(--xy-minimap-mask-stroke-width-default))
+      );
+    }
+  .react-flow__minimap-node {
+      fill: var(
+        --xy-minimap-node-background-color-props,
+        var(--xy-minimap-node-background-color, var(--xy-minimap-node-background-color-default))
+      );
+      stroke: var(
+        --xy-minimap-node-stroke-color-props,
+        var(--xy-minimap-node-stroke-color, var(--xy-minimap-node-stroke-color-default))
+      );
+      stroke-width: var(
+        --xy-minimap-node-stroke-width-props,
+        var(--xy-minimap-node-stroke-width, var(--xy-minimap-node-stroke-width-default))
+      );
+    }
+  .react-flow__background-pattern.dots {
+      fill: var(
+        --xy-background-pattern-color-props,
+        var(--xy-background-pattern-color, var(--xy-background-pattern-dots-color-default))
+      );
+    }
+  .react-flow__background-pattern.lines {
+      stroke: var(
+        --xy-background-pattern-color-props,
+        var(--xy-background-pattern-color, var(--xy-background-pattern-lines-color-default))
+      );
+    }
+  .react-flow__background-pattern.cross {
+      stroke: var(
+        --xy-background-pattern-color-props,
+        var(--xy-background-pattern-color, var(--xy-background-pattern-cross-color-default))
+      );
+    }
+  .react-flow__controls {
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--xy-controls-box-shadow, var(--xy-controls-box-shadow-default));
+  }
+  .react-flow__controls.horizontal {
+      flex-direction: row;
+    }
+  .react-flow__controls-button {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 26px;
+      width: 26px;
+      padding: 4px;
+      border: none;
+      background: var(--xy-controls-button-background-color, var(--xy-controls-button-background-color-default));
+      border-bottom: 1px solid
+        var(
+          --xy-controls-button-border-color-props,
+          var(--xy-controls-button-border-color, var(--xy-controls-button-border-color-default))
+        );
+      color: var(
+        --xy-controls-button-color-props,
+        var(--xy-controls-button-color, var(--xy-controls-button-color-default))
+      );
+      cursor: pointer;
+      -webkit-user-select: none;
+         -moz-user-select: none;
+              user-select: none;
+    }
+  .react-flow__controls-button svg {
+        width: 100%;
+        max-width: 12px;
+        max-height: 12px;
+        fill: currentColor;
+      }
+  .react-flow__edge.updating .react-flow__edge-path {
+        stroke: #777;
+      }
+  .react-flow__edge-text {
+      font-size: 10px;
+    }
+  .react-flow__node.selectable:focus,
+    .react-flow__node.selectable:focus-visible {
+      outline: none;
+    }
+  .react-flow__node-input,
+  .react-flow__node-default,
+  .react-flow__node-output,
+  .react-flow__node-group {
+    padding: 10px;
+    border-radius: var(--xy-node-border-radius, var(--xy-node-border-radius-default));
+    width: 150px;
+    font-size: 12px;
+    color: var(--xy-node-color, var(--xy-node-color-default));
+    text-align: center;
+    border: var(--xy-node-border, var(--xy-node-border-default));
+    background-color: var(--xy-node-background-color, var(--xy-node-background-color-default));
+  }
+  .react-flow__node-input.selectable:hover, .react-flow__node-default.selectable:hover, .react-flow__node-output.selectable:hover, .react-flow__node-group.selectable:hover {
+        box-shadow: var(--xy-node-boxshadow-hover, var(--xy-node-boxshadow-hover-default));
+      }
+  .react-flow__node-input.selectable.selected,
+      .react-flow__node-input.selectable:focus,
+      .react-flow__node-input.selectable:focus-visible,
+      .react-flow__node-default.selectable.selected,
+      .react-flow__node-default.selectable:focus,
+      .react-flow__node-default.selectable:focus-visible,
+      .react-flow__node-output.selectable.selected,
+      .react-flow__node-output.selectable:focus,
+      .react-flow__node-output.selectable:focus-visible,
+      .react-flow__node-group.selectable.selected,
+      .react-flow__node-group.selectable:focus,
+      .react-flow__node-group.selectable:focus-visible {
+        box-shadow: var(--xy-node-boxshadow-selected, var(--xy-node-boxshadow-selected-default));
+      }
+  .react-flow__node-group {
+    background-color: var(--xy-node-group-background-color, var(--xy-node-group-background-color-default));
+  }
+  .react-flow__nodesselection-rect,
+  .react-flow__selection {
+    background: var(--xy-selection-background-color, var(--xy-selection-background-color-default));
+    border: var(--xy-selection-border, var(--xy-selection-border-default));
+  }
+  .react-flow__nodesselection-rect:focus,
+    .react-flow__nodesselection-rect:focus-visible,
+    .react-flow__selection:focus,
+    .react-flow__selection:focus-visible {
+      outline: none;
+    }
+  .react-flow__controls-button:hover {
+        background: var(
+          --xy-controls-button-background-color-hover-props,
+          var(--xy-controls-button-background-color-hover, var(--xy-controls-button-background-color-hover-default))
+        );
+        color: var(
+          --xy-controls-button-color-hover-props,
+          var(--xy-controls-button-color-hover, var(--xy-controls-button-color-hover-default))
+        );
+      }
+  .react-flow__controls-button:disabled {
+        pointer-events: none;
+      }
+  .react-flow__controls-button:disabled svg {
+          fill-opacity: 0.4;
+        }
+  .react-flow__controls-button:last-child {
+      border-bottom: none;
+    }
+  .react-flow__resize-control {
+    position: absolute;
+  }
+  .react-flow__resize-control.left,
+  .react-flow__resize-control.right {
+    cursor: ew-resize;
+  }
+  .react-flow__resize-control.top,
+  .react-flow__resize-control.bottom {
+    cursor: ns-resize;
+  }
+  .react-flow__resize-control.top.left,
+  .react-flow__resize-control.bottom.right {
+    cursor: nwse-resize;
+  }
+  .react-flow__resize-control.bottom.left,
+  .react-flow__resize-control.top.right {
+    cursor: nesw-resize;
+  }
+  /* handle styles */
+  .react-flow__resize-control.handle {
+    width: 4px;
+    height: 4px;
+    border: 1px solid #fff;
+    border-radius: 1px;
+    background-color: var(--xy-resize-background-color, var(--xy-resize-background-color-default));
+    transform: translate(-50%, -50%);
+  }
+  .react-flow__resize-control.handle.left {
+    left: 0;
+    top: 50%;
+  }
+  .react-flow__resize-control.handle.right {
+    left: 100%;
+    top: 50%;
+  }
+  .react-flow__resize-control.handle.top {
+    left: 50%;
+    top: 0;
+  }
+  .react-flow__resize-control.handle.bottom {
+    left: 50%;
+    top: 100%;
+  }
+  .react-flow__resize-control.handle.top.left {
+    left: 0;
+  }
+  .react-flow__resize-control.handle.bottom.left {
+    left: 0;
+  }
+  .react-flow__resize-control.handle.top.right {
+    left: 100%;
+  }
+  .react-flow__resize-control.handle.bottom.right {
+    left: 100%;
+  }
+  /* line styles */
+  .react-flow__resize-control.line {
+    border-color: var(--xy-resize-background-color, var(--xy-resize-background-color-default));
+    border-width: 0;
+    border-style: solid;
+  }
+  .react-flow__resize-control.line.left,
+  .react-flow__resize-control.line.right {
+    width: 1px;
+    transform: translate(-50%, 0);
+    top: 0;
+    height: 100%;
+  }
+  .react-flow__resize-control.line.left {
+    left: 0;
+    border-left-width: 1px;
+  }
+  .react-flow__resize-control.line.right {
+    left: 100%;
+    border-right-width: 1px;
+  }
+  .react-flow__resize-control.line.top,
+  .react-flow__resize-control.line.bottom {
+    height: 1px;
+    transform: translate(0, -50%);
+    left: 0;
+    width: 100%;
+  }
+  .react-flow__resize-control.line.top {
+    top: 0;
+    border-top-width: 1px;
+  }
+  .react-flow__resize-control.line.bottom {
+    border-bottom-width: 1px;
+    top: 100%;
+  }
+  .react-flow__edge-textbg {
+    fill: var(--xy-edge-label-background-color, var(--xy-edge-label-background-color-default));
+  }
+  .react-flow__edge-text {
+    fill: var(--xy-edge-label-color, var(--xy-edge-label-color-default));
+  }
+
+/* katex */
+
+/* stylelint-disable font-family-no-missing-generic-family-keyword */
+@font-face {
+  font-family: "KaTeX_AMS";
+  src: url(fonts/KaTeX_AMS-Regular.woff2) format("woff2"), url(fonts/KaTeX_AMS-Regular.woff) format("woff"), url(fonts/KaTeX_AMS-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Caligraphic";
+  src: url(fonts/KaTeX_Caligraphic-Bold.woff2) format("woff2"), url(fonts/KaTeX_Caligraphic-Bold.woff) format("woff"), url(fonts/KaTeX_Caligraphic-Bold.ttf) format("truetype");
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Caligraphic";
+  src: url(fonts/KaTeX_Caligraphic-Regular.woff2) format("woff2"), url(fonts/KaTeX_Caligraphic-Regular.woff) format("woff"), url(fonts/KaTeX_Caligraphic-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Fraktur";
+  src: url(fonts/KaTeX_Fraktur-Bold.woff2) format("woff2"), url(fonts/KaTeX_Fraktur-Bold.woff) format("woff"), url(fonts/KaTeX_Fraktur-Bold.ttf) format("truetype");
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Fraktur";
+  src: url(fonts/KaTeX_Fraktur-Regular.woff2) format("woff2"), url(fonts/KaTeX_Fraktur-Regular.woff) format("woff"), url(fonts/KaTeX_Fraktur-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Main";
+  src: url(fonts/KaTeX_Main-Bold.woff2) format("woff2"), url(fonts/KaTeX_Main-Bold.woff) format("woff"), url(fonts/KaTeX_Main-Bold.ttf) format("truetype");
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Main";
+  src: url(fonts/KaTeX_Main-BoldItalic.woff2) format("woff2"), url(fonts/KaTeX_Main-BoldItalic.woff) format("woff"), url(fonts/KaTeX_Main-BoldItalic.ttf) format("truetype");
+  font-weight: bold;
+  font-style: italic;
+}
+@font-face {
+  font-family: "KaTeX_Main";
+  src: url(fonts/KaTeX_Main-Italic.woff2) format("woff2"), url(fonts/KaTeX_Main-Italic.woff) format("woff"), url(fonts/KaTeX_Main-Italic.ttf) format("truetype");
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: "KaTeX_Main";
+  src: url(fonts/KaTeX_Main-Regular.woff2) format("woff2"), url(fonts/KaTeX_Main-Regular.woff) format("woff"), url(fonts/KaTeX_Main-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Math";
+  src: url(fonts/KaTeX_Math-BoldItalic.woff2) format("woff2"), url(fonts/KaTeX_Math-BoldItalic.woff) format("woff"), url(fonts/KaTeX_Math-BoldItalic.ttf) format("truetype");
+  font-weight: bold;
+  font-style: italic;
+}
+@font-face {
+  font-family: "KaTeX_Math";
+  src: url(fonts/KaTeX_Math-Italic.woff2) format("woff2"), url(fonts/KaTeX_Math-Italic.woff) format("woff"), url(fonts/KaTeX_Math-Italic.ttf) format("truetype");
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: "KaTeX_SansSerif";
+  src: url(fonts/KaTeX_SansSerif-Bold.woff2) format("woff2"), url(fonts/KaTeX_SansSerif-Bold.woff) format("woff"), url(fonts/KaTeX_SansSerif-Bold.ttf) format("truetype");
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_SansSerif";
+  src: url(fonts/KaTeX_SansSerif-Italic.woff2) format("woff2"), url(fonts/KaTeX_SansSerif-Italic.woff) format("woff"), url(fonts/KaTeX_SansSerif-Italic.ttf) format("truetype");
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: "KaTeX_SansSerif";
+  src: url(fonts/KaTeX_SansSerif-Regular.woff2) format("woff2"), url(fonts/KaTeX_SansSerif-Regular.woff) format("woff"), url(fonts/KaTeX_SansSerif-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Script";
+  src: url(fonts/KaTeX_Script-Regular.woff2) format("woff2"), url(fonts/KaTeX_Script-Regular.woff) format("woff"), url(fonts/KaTeX_Script-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Size1";
+  src: url(fonts/KaTeX_Size1-Regular.woff2) format("woff2"), url(fonts/KaTeX_Size1-Regular.woff) format("woff"), url(fonts/KaTeX_Size1-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Size2";
+  src: url(fonts/KaTeX_Size2-Regular.woff2) format("woff2"), url(fonts/KaTeX_Size2-Regular.woff) format("woff"), url(fonts/KaTeX_Size2-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Size3";
+  src: url(fonts/KaTeX_Size3-Regular.woff2) format("woff2"), url(fonts/KaTeX_Size3-Regular.woff) format("woff"), url(fonts/KaTeX_Size3-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Size4";
+  src: url(fonts/KaTeX_Size4-Regular.woff2) format("woff2"), url(fonts/KaTeX_Size4-Regular.woff) format("woff"), url(fonts/KaTeX_Size4-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "KaTeX_Typewriter";
+  src: url(fonts/KaTeX_Typewriter-Regular.woff2) format("woff2"), url(fonts/KaTeX_Typewriter-Regular.woff) format("woff"), url(fonts/KaTeX_Typewriter-Regular.ttf) format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+.katex {
+  font: normal 1.21em KaTeX_Main, Times New Roman, serif;
+  line-height: 1.2;
+  text-indent: 0;
+  text-rendering: auto;
+}
+.katex * {
+  -ms-high-contrast-adjust: none !important;
+}
+.katex * {
+  border-color: currentColor;
+}
+.katex .katex-version::after {
+  content: "0.16.11";
+}
+.katex .katex-mathml {
+  /* Accessibility hack to only show to screen readers
+   Found at: http://a11yproject.com/posts/how-to-hide-content/ */
+  position: absolute;
+  clip: rect(1px, 1px, 1px, 1px);
+  padding: 0;
+  border: 0;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+}
+.katex .katex-html {
+  /* \newline is an empty block at top level, between .base elements */
+}
+.katex .katex-html > .newline {
+  display: block;
+}
+.katex .base {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+  width: -webkit-min-content;
+  width: -moz-min-content;
+  width: min-content;
+}
+.katex .strut {
+  display: inline-block;
+}
+.katex .textbf {
+  font-weight: bold;
+}
+.katex .textit {
+  font-style: italic;
+}
+.katex .textrm {
+  font-family: KaTeX_Main;
+}
+.katex .textsf {
+  font-family: KaTeX_SansSerif;
+}
+.katex .texttt {
+  font-family: KaTeX_Typewriter;
+}
+.katex .mathnormal {
+  font-family: KaTeX_Math;
+  font-style: italic;
+}
+.katex .mathit {
+  font-family: KaTeX_Main;
+  font-style: italic;
+}
+.katex .mathrm {
+  font-style: normal;
+}
+.katex .mathbf {
+  font-family: KaTeX_Main;
+  font-weight: bold;
+}
+.katex .boldsymbol {
+  font-family: KaTeX_Math;
+  font-weight: bold;
+  font-style: italic;
+}
+.katex .amsrm {
+  font-family: KaTeX_AMS;
+}
+.katex .mathbb,
+.katex .textbb {
+  font-family: KaTeX_AMS;
+}
+.katex .mathcal {
+  font-family: KaTeX_Caligraphic;
+}
+.katex .mathfrak,
+.katex .textfrak {
+  font-family: KaTeX_Fraktur;
+}
+.katex .mathboldfrak,
+.katex .textboldfrak {
+  font-family: KaTeX_Fraktur;
+  font-weight: bold;
+}
+.katex .mathtt {
+  font-family: KaTeX_Typewriter;
+}
+.katex .mathscr,
+.katex .textscr {
+  font-family: KaTeX_Script;
+}
+.katex .mathsf,
+.katex .textsf {
+  font-family: KaTeX_SansSerif;
+}
+.katex .mathboldsf,
+.katex .textboldsf {
+  font-family: KaTeX_SansSerif;
+  font-weight: bold;
+}
+.katex .mathitsf,
+.katex .textitsf {
+  font-family: KaTeX_SansSerif;
+  font-style: italic;
+}
+.katex .mainrm {
+  font-family: KaTeX_Main;
+  font-style: normal;
+}
+.katex .vlist-t {
+  display: inline-table;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.katex .vlist-r {
+  display: table-row;
+}
+.katex .vlist {
+  display: table-cell;
+  vertical-align: bottom;
+  position: relative;
+}
+.katex .vlist > span {
+  display: block;
+  height: 0;
+  position: relative;
+}
+.katex .vlist > span > span {
+  display: inline-block;
+}
+.katex .vlist > span > .pstrut {
+  overflow: hidden;
+  width: 0;
+}
+.katex .vlist-t2 {
+  margin-right: -2px;
+}
+.katex .vlist-s {
+  display: table-cell;
+  vertical-align: bottom;
+  font-size: 1px;
+  width: 2px;
+  min-width: 2px;
+}
+.katex .vbox {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: baseline;
+}
+.katex .hbox {
+  display: inline-flex;
+  flex-direction: row;
+  width: 100%;
+}
+.katex .thinbox {
+  display: inline-flex;
+  flex-direction: row;
+  width: 0;
+  max-width: 0;
+}
+.katex .msupsub {
+  text-align: left;
+}
+.katex .mfrac > span > span {
+  text-align: center;
+}
+.katex .mfrac .frac-line {
+  display: inline-block;
+  width: 100%;
+  border-bottom-style: solid;
+}
+.katex .mfrac .frac-line,
+.katex .overline .overline-line,
+.katex .underline .underline-line,
+.katex .hline,
+.katex .hdashline,
+.katex .rule {
+  min-height: 1px;
+}
+.katex .mspace {
+  display: inline-block;
+}
+.katex .llap,
+.katex .rlap,
+.katex .clap {
+  width: 0;
+  position: relative;
+}
+.katex .llap > .inner,
+.katex .rlap > .inner,
+.katex .clap > .inner {
+  position: absolute;
+}
+.katex .llap > .fix,
+.katex .rlap > .fix,
+.katex .clap > .fix {
+  display: inline-block;
+}
+.katex .llap > .inner {
+  right: 0;
+}
+.katex .rlap > .inner,
+.katex .clap > .inner {
+  left: 0;
+}
+.katex .clap > .inner > span {
+  margin-left: -50%;
+  margin-right: 50%;
+}
+.katex .rule {
+  display: inline-block;
+  border: solid 0;
+  position: relative;
+}
+.katex .overline .overline-line,
+.katex .underline .underline-line,
+.katex .hline {
+  display: inline-block;
+  width: 100%;
+  border-bottom-style: solid;
+}
+.katex .hdashline {
+  display: inline-block;
+  width: 100%;
+  border-bottom-style: dashed;
+}
+.katex .sqrt > .root {
+  /* These values are taken from the definition of `\r@@t`,
+   `\mkern 5mu` and `\mkern -10mu`. */
+  margin-left: 0.2777777778em;
+  margin-right: -0.5555555556em;
+}
+.katex .sizing.reset-size1.size1,
+.katex .fontsize-ensurer.reset-size1.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size1.size2,
+.katex .fontsize-ensurer.reset-size1.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 1.2em;
+}
+.katex .sizing.reset-size1.size3,
+.katex .fontsize-ensurer.reset-size1.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 1.4em;
+}
+.katex .sizing.reset-size1.size4,
+.katex .fontsize-ensurer.reset-size1.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 1.6em;
+}
+.katex .sizing.reset-size1.size5,
+.katex .fontsize-ensurer.reset-size1.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 1.8em;
+}
+.katex .sizing.reset-size1.size6,
+.katex .fontsize-ensurer.reset-size1.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 2em;
+}
+.katex .sizing.reset-size1.size7,
+.katex .fontsize-ensurer.reset-size1.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 2.4em;
+}
+.katex .sizing.reset-size1.size8,
+.katex .fontsize-ensurer.reset-size1.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 2.88em;
+}
+.katex .sizing.reset-size1.size9,
+.katex .fontsize-ensurer.reset-size1.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 3.456em;
+}
+.katex .sizing.reset-size1.size10,
+.katex .fontsize-ensurer.reset-size1.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 4.148em;
+}
+.katex .sizing.reset-size1.size11,
+.katex .fontsize-ensurer.reset-size1.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 4.976em;
+}
+.katex .sizing.reset-size2.size1,
+.katex .fontsize-ensurer.reset-size2.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.8333333333em;
+}
+.katex .sizing.reset-size2.size2,
+.katex .fontsize-ensurer.reset-size2.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size2.size3,
+.katex .fontsize-ensurer.reset-size2.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 1.1666666667em;
+}
+.katex .sizing.reset-size2.size4,
+.katex .fontsize-ensurer.reset-size2.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 1.3333333333em;
+}
+.katex .sizing.reset-size2.size5,
+.katex .fontsize-ensurer.reset-size2.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 1.5em;
+}
+.katex .sizing.reset-size2.size6,
+.katex .fontsize-ensurer.reset-size2.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 1.6666666667em;
+}
+.katex .sizing.reset-size2.size7,
+.katex .fontsize-ensurer.reset-size2.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 2em;
+}
+.katex .sizing.reset-size2.size8,
+.katex .fontsize-ensurer.reset-size2.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 2.4em;
+}
+.katex .sizing.reset-size2.size9,
+.katex .fontsize-ensurer.reset-size2.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 2.88em;
+}
+.katex .sizing.reset-size2.size10,
+.katex .fontsize-ensurer.reset-size2.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 3.4566666667em;
+}
+.katex .sizing.reset-size2.size11,
+.katex .fontsize-ensurer.reset-size2.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 4.1466666667em;
+}
+.katex .sizing.reset-size3.size1,
+.katex .fontsize-ensurer.reset-size3.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.7142857143em;
+}
+.katex .sizing.reset-size3.size2,
+.katex .fontsize-ensurer.reset-size3.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 0.8571428571em;
+}
+.katex .sizing.reset-size3.size3,
+.katex .fontsize-ensurer.reset-size3.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size3.size4,
+.katex .fontsize-ensurer.reset-size3.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 1.1428571429em;
+}
+.katex .sizing.reset-size3.size5,
+.katex .fontsize-ensurer.reset-size3.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 1.2857142857em;
+}
+.katex .sizing.reset-size3.size6,
+.katex .fontsize-ensurer.reset-size3.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 1.4285714286em;
+}
+.katex .sizing.reset-size3.size7,
+.katex .fontsize-ensurer.reset-size3.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 1.7142857143em;
+}
+.katex .sizing.reset-size3.size8,
+.katex .fontsize-ensurer.reset-size3.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 2.0571428571em;
+}
+.katex .sizing.reset-size3.size9,
+.katex .fontsize-ensurer.reset-size3.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 2.4685714286em;
+}
+.katex .sizing.reset-size3.size10,
+.katex .fontsize-ensurer.reset-size3.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 2.9628571429em;
+}
+.katex .sizing.reset-size3.size11,
+.katex .fontsize-ensurer.reset-size3.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 3.5542857143em;
+}
+.katex .sizing.reset-size4.size1,
+.katex .fontsize-ensurer.reset-size4.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.625em;
+}
+.katex .sizing.reset-size4.size2,
+.katex .fontsize-ensurer.reset-size4.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 0.75em;
+}
+.katex .sizing.reset-size4.size3,
+.katex .fontsize-ensurer.reset-size4.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 0.875em;
+}
+.katex .sizing.reset-size4.size4,
+.katex .fontsize-ensurer.reset-size4.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size4.size5,
+.katex .fontsize-ensurer.reset-size4.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 1.125em;
+}
+.katex .sizing.reset-size4.size6,
+.katex .fontsize-ensurer.reset-size4.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 1.25em;
+}
+.katex .sizing.reset-size4.size7,
+.katex .fontsize-ensurer.reset-size4.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 1.5em;
+}
+.katex .sizing.reset-size4.size8,
+.katex .fontsize-ensurer.reset-size4.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 1.8em;
+}
+.katex .sizing.reset-size4.size9,
+.katex .fontsize-ensurer.reset-size4.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 2.16em;
+}
+.katex .sizing.reset-size4.size10,
+.katex .fontsize-ensurer.reset-size4.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 2.5925em;
+}
+.katex .sizing.reset-size4.size11,
+.katex .fontsize-ensurer.reset-size4.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 3.11em;
+}
+.katex .sizing.reset-size5.size1,
+.katex .fontsize-ensurer.reset-size5.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.5555555556em;
+}
+.katex .sizing.reset-size5.size2,
+.katex .fontsize-ensurer.reset-size5.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 0.6666666667em;
+}
+.katex .sizing.reset-size5.size3,
+.katex .fontsize-ensurer.reset-size5.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 0.7777777778em;
+}
+.katex .sizing.reset-size5.size4,
+.katex .fontsize-ensurer.reset-size5.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 0.8888888889em;
+}
+.katex .sizing.reset-size5.size5,
+.katex .fontsize-ensurer.reset-size5.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size5.size6,
+.katex .fontsize-ensurer.reset-size5.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 1.1111111111em;
+}
+.katex .sizing.reset-size5.size7,
+.katex .fontsize-ensurer.reset-size5.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 1.3333333333em;
+}
+.katex .sizing.reset-size5.size8,
+.katex .fontsize-ensurer.reset-size5.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 1.6em;
+}
+.katex .sizing.reset-size5.size9,
+.katex .fontsize-ensurer.reset-size5.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 1.92em;
+}
+.katex .sizing.reset-size5.size10,
+.katex .fontsize-ensurer.reset-size5.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 2.3044444444em;
+}
+.katex .sizing.reset-size5.size11,
+.katex .fontsize-ensurer.reset-size5.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 2.7644444444em;
+}
+.katex .sizing.reset-size6.size1,
+.katex .fontsize-ensurer.reset-size6.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.5em;
+}
+.katex .sizing.reset-size6.size2,
+.katex .fontsize-ensurer.reset-size6.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 0.6em;
+}
+.katex .sizing.reset-size6.size3,
+.katex .fontsize-ensurer.reset-size6.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 0.7em;
+}
+.katex .sizing.reset-size6.size4,
+.katex .fontsize-ensurer.reset-size6.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 0.8em;
+}
+.katex .sizing.reset-size6.size5,
+.katex .fontsize-ensurer.reset-size6.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 0.9em;
+}
+.katex .sizing.reset-size6.size6,
+.katex .fontsize-ensurer.reset-size6.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size6.size7,
+.katex .fontsize-ensurer.reset-size6.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 1.2em;
+}
+.katex .sizing.reset-size6.size8,
+.katex .fontsize-ensurer.reset-size6.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 1.44em;
+}
+.katex .sizing.reset-size6.size9,
+.katex .fontsize-ensurer.reset-size6.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 1.728em;
+}
+.katex .sizing.reset-size6.size10,
+.katex .fontsize-ensurer.reset-size6.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 2.074em;
+}
+.katex .sizing.reset-size6.size11,
+.katex .fontsize-ensurer.reset-size6.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 2.488em;
+}
+.katex .sizing.reset-size7.size1,
+.katex .fontsize-ensurer.reset-size7.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.4166666667em;
+}
+.katex .sizing.reset-size7.size2,
+.katex .fontsize-ensurer.reset-size7.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 0.5em;
+}
+.katex .sizing.reset-size7.size3,
+.katex .fontsize-ensurer.reset-size7.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 0.5833333333em;
+}
+.katex .sizing.reset-size7.size4,
+.katex .fontsize-ensurer.reset-size7.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 0.6666666667em;
+}
+.katex .sizing.reset-size7.size5,
+.katex .fontsize-ensurer.reset-size7.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 0.75em;
+}
+.katex .sizing.reset-size7.size6,
+.katex .fontsize-ensurer.reset-size7.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 0.8333333333em;
+}
+.katex .sizing.reset-size7.size7,
+.katex .fontsize-ensurer.reset-size7.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size7.size8,
+.katex .fontsize-ensurer.reset-size7.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 1.2em;
+}
+.katex .sizing.reset-size7.size9,
+.katex .fontsize-ensurer.reset-size7.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 1.44em;
+}
+.katex .sizing.reset-size7.size10,
+.katex .fontsize-ensurer.reset-size7.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 1.7283333333em;
+}
+.katex .sizing.reset-size7.size11,
+.katex .fontsize-ensurer.reset-size7.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 2.0733333333em;
+}
+.katex .sizing.reset-size8.size1,
+.katex .fontsize-ensurer.reset-size8.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.3472222222em;
+}
+.katex .sizing.reset-size8.size2,
+.katex .fontsize-ensurer.reset-size8.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 0.4166666667em;
+}
+.katex .sizing.reset-size8.size3,
+.katex .fontsize-ensurer.reset-size8.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 0.4861111111em;
+}
+.katex .sizing.reset-size8.size4,
+.katex .fontsize-ensurer.reset-size8.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 0.5555555556em;
+}
+.katex .sizing.reset-size8.size5,
+.katex .fontsize-ensurer.reset-size8.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 0.625em;
+}
+.katex .sizing.reset-size8.size6,
+.katex .fontsize-ensurer.reset-size8.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 0.6944444444em;
+}
+.katex .sizing.reset-size8.size7,
+.katex .fontsize-ensurer.reset-size8.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 0.8333333333em;
+}
+.katex .sizing.reset-size8.size8,
+.katex .fontsize-ensurer.reset-size8.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size8.size9,
+.katex .fontsize-ensurer.reset-size8.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 1.2em;
+}
+.katex .sizing.reset-size8.size10,
+.katex .fontsize-ensurer.reset-size8.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 1.4402777778em;
+}
+.katex .sizing.reset-size8.size11,
+.katex .fontsize-ensurer.reset-size8.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 1.7277777778em;
+}
+.katex .sizing.reset-size9.size1,
+.katex .fontsize-ensurer.reset-size9.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.2893518519em;
+}
+.katex .sizing.reset-size9.size2,
+.katex .fontsize-ensurer.reset-size9.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 0.3472222222em;
+}
+.katex .sizing.reset-size9.size3,
+.katex .fontsize-ensurer.reset-size9.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 0.4050925926em;
+}
+.katex .sizing.reset-size9.size4,
+.katex .fontsize-ensurer.reset-size9.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 0.462962963em;
+}
+.katex .sizing.reset-size9.size5,
+.katex .fontsize-ensurer.reset-size9.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 0.5208333333em;
+}
+.katex .sizing.reset-size9.size6,
+.katex .fontsize-ensurer.reset-size9.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 0.5787037037em;
+}
+.katex .sizing.reset-size9.size7,
+.katex .fontsize-ensurer.reset-size9.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 0.6944444444em;
+}
+.katex .sizing.reset-size9.size8,
+.katex .fontsize-ensurer.reset-size9.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 0.8333333333em;
+}
+.katex .sizing.reset-size9.size9,
+.katex .fontsize-ensurer.reset-size9.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size9.size10,
+.katex .fontsize-ensurer.reset-size9.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 1.2002314815em;
+}
+.katex .sizing.reset-size9.size11,
+.katex .fontsize-ensurer.reset-size9.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 1.4398148148em;
+}
+.katex .sizing.reset-size10.size1,
+.katex .fontsize-ensurer.reset-size10.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.2410800386em;
+}
+.katex .sizing.reset-size10.size2,
+.katex .fontsize-ensurer.reset-size10.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 0.2892960463em;
+}
+.katex .sizing.reset-size10.size3,
+.katex .fontsize-ensurer.reset-size10.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 0.337512054em;
+}
+.katex .sizing.reset-size10.size4,
+.katex .fontsize-ensurer.reset-size10.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 0.3857280617em;
+}
+.katex .sizing.reset-size10.size5,
+.katex .fontsize-ensurer.reset-size10.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 0.4339440694em;
+}
+.katex .sizing.reset-size10.size6,
+.katex .fontsize-ensurer.reset-size10.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 0.4821600771em;
+}
+.katex .sizing.reset-size10.size7,
+.katex .fontsize-ensurer.reset-size10.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 0.5785920926em;
+}
+.katex .sizing.reset-size10.size8,
+.katex .fontsize-ensurer.reset-size10.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 0.6943105111em;
+}
+.katex .sizing.reset-size10.size9,
+.katex .fontsize-ensurer.reset-size10.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 0.8331726133em;
+}
+.katex .sizing.reset-size10.size10,
+.katex .fontsize-ensurer.reset-size10.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .sizing.reset-size10.size11,
+.katex .fontsize-ensurer.reset-size10.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 1.1996142719em;
+}
+.katex .sizing.reset-size11.size1,
+.katex .fontsize-ensurer.reset-size11.size1 {
+  /* stylelint-disable-next-line */
+  font-size: 0.2009646302em;
+}
+.katex .sizing.reset-size11.size2,
+.katex .fontsize-ensurer.reset-size11.size2 {
+  /* stylelint-disable-next-line */
+  font-size: 0.2411575563em;
+}
+.katex .sizing.reset-size11.size3,
+.katex .fontsize-ensurer.reset-size11.size3 {
+  /* stylelint-disable-next-line */
+  font-size: 0.2813504823em;
+}
+.katex .sizing.reset-size11.size4,
+.katex .fontsize-ensurer.reset-size11.size4 {
+  /* stylelint-disable-next-line */
+  font-size: 0.3215434084em;
+}
+.katex .sizing.reset-size11.size5,
+.katex .fontsize-ensurer.reset-size11.size5 {
+  /* stylelint-disable-next-line */
+  font-size: 0.3617363344em;
+}
+.katex .sizing.reset-size11.size6,
+.katex .fontsize-ensurer.reset-size11.size6 {
+  /* stylelint-disable-next-line */
+  font-size: 0.4019292605em;
+}
+.katex .sizing.reset-size11.size7,
+.katex .fontsize-ensurer.reset-size11.size7 {
+  /* stylelint-disable-next-line */
+  font-size: 0.4823151125em;
+}
+.katex .sizing.reset-size11.size8,
+.katex .fontsize-ensurer.reset-size11.size8 {
+  /* stylelint-disable-next-line */
+  font-size: 0.578778135em;
+}
+.katex .sizing.reset-size11.size9,
+.katex .fontsize-ensurer.reset-size11.size9 {
+  /* stylelint-disable-next-line */
+  font-size: 0.6945337621em;
+}
+.katex .sizing.reset-size11.size10,
+.katex .fontsize-ensurer.reset-size11.size10 {
+  /* stylelint-disable-next-line */
+  font-size: 0.8336012862em;
+}
+.katex .sizing.reset-size11.size11,
+.katex .fontsize-ensurer.reset-size11.size11 {
+  /* stylelint-disable-next-line */
+  font-size: 1em;
+}
+.katex .delimsizing.size1 {
+  font-family: KaTeX_Size1;
+}
+.katex .delimsizing.size2 {
+  font-family: KaTeX_Size2;
+}
+.katex .delimsizing.size3 {
+  font-family: KaTeX_Size3;
+}
+.katex .delimsizing.size4 {
+  font-family: KaTeX_Size4;
+}
+.katex .delimsizing.mult .delim-size1 > span {
+  font-family: KaTeX_Size1;
+}
+.katex .delimsizing.mult .delim-size4 > span {
+  font-family: KaTeX_Size4;
+}
+.katex .nulldelimiter {
+  display: inline-block;
+  width: 0.12em;
+}
+.katex .delimcenter {
+  position: relative;
+}
+.katex .op-symbol {
+  position: relative;
+}
+.katex .op-symbol.small-op {
+  font-family: KaTeX_Size1;
+}
+.katex .op-symbol.large-op {
+  font-family: KaTeX_Size2;
+}
+.katex .op-limits > .vlist-t {
+  text-align: center;
+}
+.katex .accent > .vlist-t {
+  text-align: center;
+}
+.katex .accent .accent-body {
+  position: relative;
+}
+.katex .accent .accent-body:not(.accent-full) {
+  width: 0;
+}
+.katex .overlay {
+  display: block;
+}
+.katex .mtable .vertical-separator {
+  display: inline-block;
+  min-width: 1px;
+}
+.katex .mtable .arraycolsep {
+  display: inline-block;
+}
+.katex .mtable .col-align-c > .vlist-t {
+  text-align: center;
+}
+.katex .mtable .col-align-l > .vlist-t {
+  text-align: left;
+}
+.katex .mtable .col-align-r > .vlist-t {
+  text-align: right;
+}
+.katex .svg-align {
+  text-align: left;
+}
+.katex svg {
+  display: block;
+  position: absolute;
+  width: 100%;
+  height: inherit;
+  fill: currentColor;
+  stroke: currentColor;
+  fill-rule: nonzero;
+  fill-opacity: 1;
+  stroke-width: 1;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 4;
+  stroke-dasharray: none;
+  stroke-dashoffset: 0;
+  stroke-opacity: 1;
+}
+.katex svg path {
+  stroke: none;
+}
+.katex img {
+  border-style: none;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+}
+.katex .stretchy {
+  width: 100%;
+  display: block;
+  position: relative;
+  overflow: hidden;
+}
+.katex .stretchy::before, .katex .stretchy::after {
+  content: "";
+}
+.katex .hide-tail {
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+.katex .halfarrow-left {
+  position: absolute;
+  left: 0;
+  width: 50.2%;
+  overflow: hidden;
+}
+.katex .halfarrow-right {
+  position: absolute;
+  right: 0;
+  width: 50.2%;
+  overflow: hidden;
+}
+.katex .brace-left {
+  position: absolute;
+  left: 0;
+  width: 25.1%;
+  overflow: hidden;
+}
+.katex .brace-center {
+  position: absolute;
+  left: 25%;
+  width: 50%;
+  overflow: hidden;
+}
+.katex .brace-right {
+  position: absolute;
+  right: 0;
+  width: 25.1%;
+  overflow: hidden;
+}
+.katex .x-arrow-pad {
+  padding: 0 0.5em;
+}
+.katex .cd-arrow-pad {
+  padding: 0 0.55556em 0 0.27778em;
+}
+.katex .x-arrow,
+.katex .mover,
+.katex .munder {
+  text-align: center;
+}
+.katex .boxpad {
+  padding: 0 0.3em;
+}
+.katex .fbox,
+.katex .fcolorbox {
+  box-sizing: border-box;
+  border: 0.04em solid;
+}
+.katex .cancel-pad {
+  padding: 0 0.2em;
+}
+.katex .cancel-lap {
+  margin-left: -0.2em;
+  margin-right: -0.2em;
+}
+.katex .sout {
+  border-bottom-style: solid;
+  border-bottom-width: 0.08em;
+}
+.katex .angl {
+  box-sizing: border-box;
+  border-top: 0.049em solid;
+  border-right: 0.049em solid;
+  margin-right: 0.03889em;
+}
+.katex .anglpad {
+  padding: 0 0.03889em;
+}
+.katex .eqn-num::before {
+  counter-increment: katexEqnNo;
+  content: "(" counter(katexEqnNo) ")";
+}
+.katex .mml-eqn-num::before {
+  counter-increment: mmlEqnNo;
+  content: "(" counter(mmlEqnNo) ")";
+}
+.katex .mtr-glue {
+  width: 50%;
+}
+.katex .cd-vert-arrow {
+  display: inline-block;
+  position: relative;
+}
+.katex .cd-label-left {
+  display: inline-block;
+  position: absolute;
+  right: calc(50% + 0.3em);
+  text-align: left;
+}
+.katex .cd-label-right {
+  display: inline-block;
+  position: absolute;
+  left: calc(50% + 0.3em);
+  text-align: right;
+}
+
+.katex-display {
+  display: block;
+  margin: 1em 0;
+  text-align: center;
+}
+.katex-display > .katex {
+  display: block;
+  text-align: center;
+  white-space: nowrap;
+}
+.katex-display > .katex > .katex-html {
+  display: block;
+  position: relative;
+}
+.katex-display > .katex > .katex-html > .tag {
+  position: absolute;
+  right: 0;
+}
+
+.katex-display.leqno > .katex > .katex-html > .tag {
+  left: 0;
+  right: auto;
+}
+
+.katex-display.fleqn > .katex {
+  text-align: left;
+  padding-left: 2em;
+}
+
+body {
+  counter-reset: katexEqnNo mmlEqnNo;
+}
+
+/* customized */
+.react-flow__node-note {
+  position: absolute;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+  pointer-events: all;
+  transform-origin: 0 0;
+  box-sizing: border-box;
+  cursor: default;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 5px;
+  padding: 2vw;
+  max-width: 20vw;
+  /* max-width: 10vw; */
+  max-height: 50vh;
+  /* max-height: 20vh; */
+  overflow: scroll;
+}
