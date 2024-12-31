@@ -1,24 +1,22 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, MarkdownRenderer } from 'obsidian'
-import { parse_bitex } from 'src/parse'
+import { parse_bitex, BibtexField } from 'src/parse'
 
-interface BibtexScholarSettings {
-	mySetting: string
+interface BibtexScholarCache {
+	bibtex_dict: Map<string, BibtexField> | {}
 }
 
-const DEFAULT_SETTINGS: BibtexScholarSettings = {
-	mySetting: 'default'
+const DEFAULT_SETTINGS: BibtexScholarCache = {
+	bibtex_dict: {}
 }
 
 export default class BibtexScholar extends Plugin {
-	settings: BibtexScholarSettings
+	cache: BibtexScholarCache
 	allbibtex = []
 
 	async onload() {
-		await this.load_settings()
+		await this.load_cache()
 
-		// settings tab
-		this.addSettingTab(new BibtexScholarSettingTab(this.app, this))
-
+		// bibtex code block processor
 		this.registerMarkdownCodeBlockProcessor('bibtex', (source, el, ctx) => {
 			const fields = parse_bitex(source)
 
@@ -40,37 +38,11 @@ export default class BibtexScholar extends Plugin {
 
 	}
 
-	async load_settings() {
+	async load_cache() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData())
 	}
 
-	async save_settings() {
+	async save_cache() {
 		await this.saveData(this.settings)
-	}
-}
-
-class BibtexScholarSettingTab extends PluginSettingTab {
-	plugin: BibtexScholar
-
-	constructor(app: App, plugin: BibtexScholar) {
-		super(app, plugin)
-		this.plugin = plugin
-	}
-
-	display(): void {
-		const {containerEl} = this
-
-		containerEl.empty()
-
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value
-					await this.plugin.save_settings()
-				}))
 	}
 }

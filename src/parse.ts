@@ -1,4 +1,4 @@
-interface BibtexField {
+export interface BibtexField {
     [key: string]: string;
 }
 
@@ -8,16 +8,14 @@ export function parse_bitex(bibtex_source: string, lower_case_type: boolean = tr
     let match = entryRegex.exec(bibtex_source.replace(/\n/g, ''))
 
     if (!match) {
-        console.error('No match found for the provided BibTeX source.');
-        return null;
+        console.error(`No match found for the provided BibTeX source: ${bibtex_source}`)
+        return null
     }
 
     let fields: BibtexField = {}
     fields['type'] = match[1]
     fields['id'] = match[2]
     let fields_str = match[3]
-
-    console.log(bibtex_source)
 
     // parse bibtex fields
     let mode = 'key'
