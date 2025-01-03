@@ -19,9 +19,10 @@ export default class BibtexScholar extends Plugin {
 
 	async onload() {
 		await this.load_cache()
+		console.log(this.cache)
 
 		// bibtex code block processor
-		this.registerMarkdownCodeBlockProcessor('bibtex', (source, el, ctx) => {
+		this.registerMarkdownCodeBlockProcessor('bibtex', async (source, el, ctx) => {
 			// parse bibtex
 			const fields = parse_bitex(source)
 
@@ -38,12 +39,13 @@ export default class BibtexScholar extends Plugin {
 					fragment.append(p)
 					new Notice(fragment, 0)
 				} else {
-					// otherwise, cache paper entry
+					// otherwise, add paper entry to cache and export
 					this.cache.bibtex_dict[id] = {
 						fields: fields,
 						source: source,
 						source_path: ctx.sourcePath
 					}
+					await this.save_cache()
 				}
 
 				// render paper entry
