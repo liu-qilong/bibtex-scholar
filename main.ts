@@ -19,7 +19,6 @@ export default class BibtexScholar extends Plugin {
 
 	async onload() {
 		await this.load_cache()
-		console.log(this.cache)
 
 		// bibtex code block processor
 		this.registerMarkdownCodeBlockProcessor('bibtex', async (source, el, ctx) => {
@@ -35,7 +34,7 @@ export default class BibtexScholar extends Plugin {
 					duplicate = true
 					const fragment = new DocumentFragment()
 					const p = document.createElement("p")
-					MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\``, p, '', this)
+					MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\`\nRevise for successful import`, p, '', this)
 					fragment.append(p)
 					new Notice(fragment, 0)
 				} else {
