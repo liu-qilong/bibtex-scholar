@@ -2,7 +2,12 @@ import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Set
 import { parse_bitex, BibtexField } from 'src/parse'
 
 interface BibtexScholarCache {
-	bibtex_dict: Map<string, BibtexField> | {}
+	bibtex_dict: {
+		[key: string]: {  // paper id
+			fields: BibtexField,  // bibtex fields
+			[key: string]: any,  // other data associated to the paper
+		}
+	}
 }
 
 const DEFAULT_SETTINGS: BibtexScholarCache = {
@@ -11,25 +16,55 @@ const DEFAULT_SETTINGS: BibtexScholarCache = {
 
 export default class BibtexScholar extends Plugin {
 	cache: BibtexScholarCache
-	allbibtex = []
 
 	async onload() {
 		await this.load_cache()
 
 		// bibtex code block processor
 		this.registerMarkdownCodeBlockProcessor('bibtex', (source, el, ctx) => {
+			// parse bibtex
 			const fields = parse_bitex(source)
 
-			el.createEl('hr')
-			const table = el.createEl('table')
-      		const body = table.createEl('tbody')
-			
-			for (const key in fields) {
-				const tr = body.createEl('tr')
-				const td1 = tr.createEl('td')
-				td1.innerText = key
-				const td2 = tr.createEl('td')
-				MarkdownRenderer.render(this.app, fields[key], td2, '', this)
+			if (fields != null) {
+				const id = fields.id
+				let duplicate = false
+
+				if (this.cache.bibtex_dict[id] && this.cache.bibtex_dict[id].source_path != ctx.sourcePath) {
+					// if id existed, prompt warning
+					duplicate = true
+					const fragment = new DocumentFragment()
+					const p = document.createElement("p")
+					MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\``, p, '', this)
+					fragment.append(p)
+					new Notice(fragment, 0)
+				} else {
+					// otherwise, cache paper entry
+					this.cache.bibtex_dict[id] = {
+						fields: fields,
+						source: source,
+						source_path: ctx.sourcePath
+					}
+				}
+
+				// render paper entry
+				el.createEl('hr')
+				let table
+				
+				if (duplicate) {
+					table = el.createEl('table', { cls: 'bibtex-entry-duplicate-id' })  // mark duplication in the class
+				} else {
+					table = el.createEl('table', { cls: 'bibtex-entry' })
+				}
+				
+				const body = table.createEl('tbody')
+				
+				for (const key in fields) {
+					const tr = body.createEl('tr')
+					const td1 = tr.createEl('td')
+					td1.innerText = key
+					const td2 = tr.createEl('td')
+					MarkdownRenderer.render(this.app, fields[key], td2, '', this)
+				}
 			}
 		})
 	}
@@ -39,10 +74,10 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	async load_cache() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData())
+		this.cache = Object.assign({}, DEFAULT_SETTINGS, await this.loadData())
 	}
 
 	async save_cache() {
-		await this.saveData(this.settings)
+		await this.saveData(this.cache)
 	}
 }

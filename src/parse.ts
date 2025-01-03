@@ -1,5 +1,7 @@
 export interface BibtexField {
-    [key: string]: string;
+    type: string,
+    id: string,
+    [key: string]: string,
 }
 
 export function parse_bitex(bibtex_source: string, lower_case_type: boolean = true): BibtexField | null {
@@ -12,9 +14,11 @@ export function parse_bitex(bibtex_source: string, lower_case_type: boolean = tr
         return null
     }
 
-    let fields: BibtexField = {}
-    fields['type'] = match[1]
-    fields['id'] = match[2]
+    let fields: BibtexField = {
+        type: match[1],
+        id : match[2],
+    }
+
     let fields_str = match[3]
 
     // parse bibtex fields
