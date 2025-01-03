@@ -1,5 +1,7 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, MarkdownRenderer } from 'obsidian'
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, MarkdownRenderer, setTooltip } from 'obsidian'
+import tippy from "tippy.js"
 import { parse_bitex, BibtexField } from 'src/parse'
+
 
 interface BibtexScholarCache {
 	bibtex_dict: {
@@ -19,17 +21,6 @@ export default class BibtexScholar extends Plugin {
 
 	async onload() {
 		await this.load_cache()
-
-		// copy all bibtex entries to the clipboard
-		const ribbonIconEl = this.addRibbonIcon('package', 'Copy All BibTeX', (evt: MouseEvent) => {
-			let bibtex = ''
-			for (const id in this.cache.bibtex_dict) {
-				bibtex += this.cache.bibtex_dict[id].source + '\n\n'
-			}
-			navigator.clipboard.writeText(bibtex)
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
 
 		// bibtex code block processor
 		this.registerMarkdownCodeBlockProcessor('bibtex', async (source, el, ctx) => {
@@ -79,6 +70,33 @@ export default class BibtexScholar extends Plugin {
 				}
 			}
 		})
+
+		// inline reference of paper
+		this.registerMarkdownPostProcessor((el, ctx) => {
+			const codeblocks = el.findAll('code')
+
+			for (let codeblock of codeblocks) {
+				const text = codeblock.innerText.trim()
+				if (text[0] === ':' && text[text.length - 1] === ':') {
+					const paper_id = text.slice(1, -1)
+					const paper_bibtex = this.cache.bibtex_dict[paper_id]?.source || 'null'
+					
+					const paper_el = codeblock.createEl('a', { text: paper_id })
+					setTooltip(paper_el, paper_bibtex)
+					codeblock.replaceWith(paper_el)
+				}
+			}
+		})
+
+		// copy all bibtex entries to the clipboard
+		const cp_all_btn = this.addRibbonIcon('package', 'Copy All BibTeX', (evt: MouseEvent) => {
+			let bibtex = ''
+			for (const id in this.cache.bibtex_dict) {
+				bibtex += this.cache.bibtex_dict[id].source + '\n\n'
+			}
+			navigator.clipboard.writeText(bibtex)
+		})
+		cp_all_btn.addClass('my-plugin-ribbon-class')
 	}
 
 	onunload() {
