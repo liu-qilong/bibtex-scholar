@@ -20,6 +20,17 @@ export default class BibtexScholar extends Plugin {
 	async onload() {
 		await this.load_cache()
 
+		// copy all bibtex entries to the clipboard
+		const ribbonIconEl = this.addRibbonIcon('package', 'Copy All BibTeX', (evt: MouseEvent) => {
+			let bibtex = ''
+			for (const id in this.cache.bibtex_dict) {
+				bibtex += this.cache.bibtex_dict[id].source + '\n\n'
+			}
+			navigator.clipboard.writeText(bibtex)
+		});
+		// Perform additional things with the ribbon
+		ribbonIconEl.addClass('my-plugin-ribbon-class');
+
 		// bibtex code block processor
 		this.registerMarkdownCodeBlockProcessor('bibtex', async (source, el, ctx) => {
 			// parse bibtex
