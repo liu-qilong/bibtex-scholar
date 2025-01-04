@@ -1,5 +1,4 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, MarkdownRenderer, setTooltip } from 'obsidian'
-import tippy from "tippy.js"
 import { parse_bitex, BibtexField } from 'src/parse'
 
 
@@ -77,12 +76,14 @@ export default class BibtexScholar extends Plugin {
 
 			for (let codeblock of codeblocks) {
 				const text = codeblock.innerText.trim()
-				if (text[0] === ':' && text[text.length - 1] === ':') {
+				if (text[0] === '{' && text[text.length - 1] === '}') {
 					const paper_id = text.slice(1, -1)
-					const paper_bibtex = this.cache.bibtex_dict[paper_id]?.source || 'null'
+					const paper_title = this.cache.bibtex_dict[paper_id]?.fields?.title || 'null'
+					const paper_author = this.cache.bibtex_dict[paper_id]?.fields?.author || 'null'
+					const paper_abstract = this.cache.bibtex_dict[paper_id]?.fields?.abstract || 'null'
 					
 					const paper_el = codeblock.createEl('a', { text: paper_id })
-					setTooltip(paper_el, paper_bibtex)
+					setTooltip(paper_el, `${paper_title}\n${paper_author}\n${paper_abstract}`)
 					codeblock.replaceWith(paper_el)
 				}
 			}
