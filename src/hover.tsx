@@ -9,51 +9,46 @@ const HoverPopup = ({ bibtex_dict }: { bibtex_dict: BibtexDict }) => {
     const paper_abstract = bibtex_dict?.fields?.abstract || 'null'
 
     // Handlers for mouse enter and leave
-    const [isHovered, setIsHovered] = useState(false)
+    const [is_hovered, set_is_hovered] = useState(false)
 
-    const handleMouseEnter = () => {
-        setIsHovered(true)
+    const handle_mouse_enter = () => {
+        console.log(`enter ${paper_id}`)
+        set_is_hovered(true)
     }
 
-    const handleMouseLeave = () => {
-        setIsHovered(false)
+    const handle_mouse_leave = () => {
+        console.log(`leave ${paper_id}`)
+        set_is_hovered(false)
     }
 
     return (
-        <div
-            style={{ position: "relative", display: "inline-block" }}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-        >
+        <>
             {/* This is the element to hover */}
-            <button>{paper_id}</button>
-
-            {/* This is the popup that appears on hover */}
-            {isHovered && (
             <div
-                onMouseEnter={handleMouseEnter}
-                onMouseLeave={handleMouseLeave}
-                style={{
-                position: "absolute",
-                top: "-100%",
-                left: "100%",
-                // transform: "translateX(-50%)",
-                background: "white",
-                border: "1px solid #ccc",
-                boxShadow: "0 4px 8px rgba(0, 0, 0, 0.2)",
-                borderRadius: "4px",
-                padding: "10px",
-                fontSize: "10px",
-                zIndex: 1000,
-                width: "300%", // Adjust the width as needed
-                }}
+                style={{ position: "relative", display: "inline-block" }}
+                onMouseEnter={handle_mouse_enter}
+                onMouseLeave={handle_mouse_leave}
             >
-                <p style={{ margin: 0 }}>Title: {paper_title}</p>
-                <p style={{ margin: 0 }}>Author: {paper_author}</p>
-                <p style={{ margin: 0 }}>Abstract: {paper_abstract}</p>
+                <button>{paper_id}</button>
+            </div>
+            {/* This is the popup that appears on hover */}
+            {is_hovered && (
+            <div
+                onMouseEnter={handle_mouse_enter}
+                onMouseLeave={handle_mouse_leave}
+                style={{
+                    padding: "10px",
+                    fontSize: "12px",
+                    position: "relative",
+                    display: "inline-block",
+                }}
+                >
+                <div style={{ margin: 0 }}><strong>Title</strong> {paper_title}</div>
+                <div style={{ margin: 0 }}><strong>Author</strong> {paper_author}</div>
+                <div style={{ margin: 0 }}><strong>Abstract</strong> {paper_abstract}</div>
             </div>
             )}
-        </div>
+        </>
     )
 }
 
