@@ -7,8 +7,6 @@ interface BibtexScholarCache {
 	bibtex_dict: BibtexDict
 }
 
-
-
 const DEFAULT_SETTINGS: BibtexScholarCache = {
 	bibtex_dict: {}
 }
@@ -26,10 +24,12 @@ export default class BibtexScholar extends Plugin {
 
 			if (fields != null) {
 				const id = fields.id
-				let duplicate = false
+				let duplicate
 
-				if (this.cache.bibtex_dict[id] && this.cache.bibtex_dict[id].source_path != ctx.sourcePath) {
-					// if id existed, prompt warning
+				if (this.cache.bibtex_dict[id] && (this.cache.bibtex_dict[id].source_path != ctx.sourcePath || this.cache.bibtex_dict[id].source != source)) {
+					// if the same id existed in different files
+					// or the same id has different bibtex source
+					// prompt warning
 					duplicate = true
 					const fragment = new DocumentFragment()
 					const p = document.createElement("p")
@@ -41,30 +41,16 @@ export default class BibtexScholar extends Plugin {
 					this.cache.bibtex_dict[id] = {
 						fields: fields,
 						source: source,
-						source_path: ctx.sourcePath
+						source_path: ctx.sourcePath,
 					}
 					await this.save_cache()
 				}
 
 				// render paper entry
-				el.createEl('hr')
-				let table
-				
-				if (duplicate) {
-					table = el.createEl('table', { cls: 'bibtex-entry-duplicate-id' })  // mark duplication in the class
-				} else {
-					table = el.createEl('table', { cls: 'bibtex-entry' })
-				}
-				
-				const body = table.createEl('tbody')
-				
-				for (const key in fields) {
-					const tr = body.createEl('tr')
-					const td1 = tr.createEl('td')
-					td1.innerText = key
-					const td2 = tr.createEl('td')
-					MarkdownRenderer.render(this.app, fields[key], td2, '', this)
-				}
+				const paper_bar = el.createEl('span', {
+					cls: (duplicate)?('bibtex-entry-duplicate-id'):('bibtex-entry'),
+				})
+				render_hover(paper_bar, this.cache.bibtex_dict[id])
 			}
 		})
 
@@ -76,7 +62,9 @@ export default class BibtexScholar extends Plugin {
 				const text = codeblock.innerText.trim()
 				if (text[0] === '{' && text[text.length - 1] === '}') {
 					const paper_id = text.slice(1, -1)
-					render_hover(codeblock, this.cache.bibtex_dict[paper_id])
+					const paper_bar = codeblock.createSpan()
+					render_hover(paper_bar, this.cache.bibtex_dict[paper_id])
+					codeblock.replaceWith(paper_bar)
 				}
 			}
 		})

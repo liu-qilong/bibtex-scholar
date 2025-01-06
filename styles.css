@@ -7,7 +7,7 @@ If your plugin does not need CSS, delete this file.
 
 */
 
-.bibtex-entry-duplicate-id tbody {
+.bibtex-entry-duplicate-id button {
     /* background-color: crimson !important; */
     background-color: crimson !important;
 }
