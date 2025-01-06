@@ -1,15 +1,13 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, MarkdownRenderer, setTooltip } from 'obsidian'
-import { parse_bitex, BibtexField } from 'src/parse'
+import { parse_bitex, BibtexField, BibtexDict } from 'src/bibtex'
+import { render_hover } from 'src/hover'
 
 
 interface BibtexScholarCache {
-	bibtex_dict: {
-		[key: string]: {  // paper id
-			fields: BibtexField,  // bibtex fields
-			[key: string]: any,  // other data associated to the paper
-		}
-	}
+	bibtex_dict: BibtexDict
 }
+
+
 
 const DEFAULT_SETTINGS: BibtexScholarCache = {
 	bibtex_dict: {}
@@ -78,13 +76,7 @@ export default class BibtexScholar extends Plugin {
 				const text = codeblock.innerText.trim()
 				if (text[0] === '{' && text[text.length - 1] === '}') {
 					const paper_id = text.slice(1, -1)
-					const paper_title = this.cache.bibtex_dict[paper_id]?.fields?.title || 'null'
-					const paper_author = this.cache.bibtex_dict[paper_id]?.fields?.author || 'null'
-					const paper_abstract = this.cache.bibtex_dict[paper_id]?.fields?.abstract || 'null'
-					
-					const paper_el = codeblock.createEl('a', { text: paper_id })
-					setTooltip(paper_el, `${paper_title}\n${paper_author}\n${paper_abstract}`)
-					codeblock.replaceWith(paper_el)
+					render_hover(codeblock, this.cache.bibtex_dict[paper_id])
 				}
 			}
 		})

@@ -4,6 +4,13 @@ export interface BibtexField {
     [key: string]: string,
 }
 
+export interface BibtexDict {
+	[key: string]: {  // paper id
+		fields: BibtexField,  // bibtex fields
+		[key: string]: any,  // other data associated to the paper
+	}
+}
+
 export function parse_bitex(bibtex_source: string, lower_case_type: boolean = true): BibtexField | null {
     // match type, id, & fields
     const entryRegex = /@([a-zA-Z]+){([^,]+),(.*)}/g
