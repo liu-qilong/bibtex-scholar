@@ -1,5 +1,8 @@
 import { useState, StrictMode } from "react"
 import { createRoot } from 'react-dom/client'
+import Markdown from 'react-markdown'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import { BibtexDict } from 'src/bibtex'
 
 const HoverPopup = ({ bibtex_dict }: { bibtex_dict: BibtexDict }) => {
@@ -31,12 +34,20 @@ const HoverPopup = ({ bibtex_dict }: { bibtex_dict: BibtexDict }) => {
                 onMouseEnter={handle_mouse_enter}
                 onMouseLeave={handle_mouse_leave}
                 style={{
-                    padding: "10px",
-                    fontSize: "12px",
+                    margin: 0,
+                    fontSize: "14px",
                 }}
                 >
                 {Object.entries(bibtex_dict.fields).map(([key, value]) => {
-                    return (<p key={key} style={{ margin: 0 }}><strong>{key}</strong> {value}</p>)
+                    if (key == 'id') {
+                        return
+                    }
+                    if (key.includes('url')) {
+                        value = `[${value}](${value})`
+                    }
+                    return (<div key={key}>
+                        <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{`**\`${key}\`** ${value}`}</Markdown>
+                    </div>)
                 })}
             </span>
             )}

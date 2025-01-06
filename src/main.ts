@@ -26,10 +26,8 @@ export default class BibtexScholar extends Plugin {
 				const id = fields.id
 				let duplicate
 
-				if (this.cache.bibtex_dict[id] && (this.cache.bibtex_dict[id].source_path != ctx.sourcePath || this.cache.bibtex_dict[id].source != source)) {
-					// if the same id existed in different files
-					// or the same id has different bibtex source
-					// prompt warning
+				if (this.cache.bibtex_dict[id] && (this.cache.bibtex_dict[id].source_path != ctx.sourcePath)) {
+					// if the same id existed in different files, prompt warning
 					duplicate = true
 					const fragment = new DocumentFragment()
 					const p = document.createElement("p")
