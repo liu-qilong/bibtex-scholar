@@ -1,5 +1,5 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, MarkdownRenderer, setTooltip } from 'obsidian'
-import { parse_bitex, BibtexField, BibtexDict } from 'src/bibtex'
+import { Notice, Plugin, MarkdownRenderer } from 'obsidian'
+import { parse_bitex, BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 
 

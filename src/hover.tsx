@@ -1,9 +1,18 @@
+import { Notice } from 'obsidian'
 import { useState, StrictMode } from "react"
 import { createRoot } from 'react-dom/client'
 import Markdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { BibtexDict } from 'src/bibtex'
+
+const copy_to_clipboard = (text: any) => {
+    navigator.clipboard.writeText(text).then(() => {
+        new Notice('Copied to clipboard')
+    }).catch(err => {
+        console.error('Failed to copy text: ', err)
+    })
+}
 
 const HoverPopup = ({ bibtex_dict }: { bibtex_dict: BibtexDict }) => {
     const paper_id = bibtex_dict.fields.id
@@ -38,6 +47,20 @@ const HoverPopup = ({ bibtex_dict }: { bibtex_dict: BibtexDict }) => {
                     fontSize: "14px",
                 }}
                 >
+                <div>
+                    <button onClick={() => copy_to_clipboard(paper_id)}>
+                        ID
+                    </button>
+                    <button onClick={() => copy_to_clipboard(bibtex_dict.source)}>
+                        BibTeX
+                    </button>
+                    <a href={`${paper_id}.md`} className="internal-link">
+                        <button>Note</button>
+                    </a>
+                    <a href={`${paper_id}.pdf`} className="internal-link">
+                        <button>PDF</button>
+                    </a>
+                </div>
                 {Object.entries(bibtex_dict.fields).map(([key, value]) => {
                     if (key == 'id') {
                         return
