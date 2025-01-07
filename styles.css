@@ -19,6 +19,14 @@ If your plugin does not need CSS, delete this file.
     font-size: small;
 }
 
+.bibtex-prompt-id, .bibtex-prompt-title {
+    font-size: small;
+}
+
+.bibtex-prompt-author {
+    font-size: x-small;
+}
+
 /* katex */
 
 /* stylelint-disable font-family-no-missing-generic-family-keyword */

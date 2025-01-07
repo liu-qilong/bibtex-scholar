@@ -1,7 +1,7 @@
 import { Editor, Notice, Plugin, MarkdownRenderer } from 'obsidian'
 import { parse_bitex, BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
-import { SelectPaper } from './prompt'
+import { ModalPrompt, EditorPrompt } from './prompt'
 
 interface BibtexScholarCache {
 	bibtex_dict: BibtexDict
@@ -93,9 +93,11 @@ export default class BibtexScholar extends Plugin {
 			id: 'cite-paper',
 			name: 'Cite Paper',
 			editorCallback: (editor: Editor) => {
-			  	new SelectPaper(this.app, editor, this.cache.bibtex_dict).open()
+			  	new ModalPrompt(this.app, editor, this.cache.bibtex_dict).open()
 			},
 		})
+
+		this.registerEditorSuggest(new EditorPrompt(this.app, this.cache.bibtex_dict))
 	}
 
 	onunload() {
