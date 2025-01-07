@@ -1,4 +1,4 @@
-import { Notice, Keymap } from 'obsidian'
+import { App, Notice } from 'obsidian'
 import { useState, StrictMode } from "react"
 import { createRoot } from 'react-dom/client'
 import Markdown from 'react-markdown'
@@ -14,6 +14,35 @@ const copy_to_clipboard = (text: any) => {
     }).catch(err => {
         console.error('Failed to copy text: ', err)
     })
+}
+
+const LinkedFileButton = ({label, path, app}: {label: string, path: string, app: App}) => {
+    const cls = (app.metadataCache.getFirstLinkpathDest(path, ''))?('bibtex-file-exist'):('bibtex-file-not-exist')
+
+    return (
+    <a 
+        href={path}
+        className={cls}
+        onMouseOver={ (event) => {
+            app.workspace.trigger("hover-link", {
+                event,
+                source: "preview",
+                hoverParent: { hoverPopover: null },
+                targetEl: event.currentTarget,
+                linktext: path,
+                sourcePath: path,
+            })
+        }}
+        onClick={ (event) => {
+            app.workspace.openLinkText(
+                path,
+                path,
+            )
+        }}
+    >
+        <button>{label}</button>
+    </a>
+    )
 }
 
 const HoverPopup = ({ bibtex, plugin }: { bibtex: BibtexDict, plugin: BibtexScholar }) => {
@@ -65,69 +94,13 @@ const HoverPopup = ({ bibtex, plugin }: { bibtex: BibtexDict, plugin: BibtexScho
                     </button>
                     <code>{'+'}</code>
                     {/* linked note */}
-                    <a href={`${paper_id}.md`}
-                        onMouseOver={ (event) => {
-                            plugin.app.workspace.trigger("hover-link", {
-                                event,
-                                source: "preview",
-                                hoverParent: { hoverPopover: null },
-                                targetEl: event.currentTarget,
-                                linktext: `${paper_id}.md`,
-                                sourcePath: `${paper_id}.md`,
-                            })
-                        }}
-                        onClick={ (event) => {
-                            plugin.app.workspace.openLinkText(
-                                `${paper_id}.md`,
-                                `${paper_id}.md`,
-                            )
-                        }}
-                    >
-                        <button>note</button>
-                    </a>
+                    <LinkedFileButton label='note' path={`${paper_id}.md`} app={plugin.app}/>
                     {/* linked pdf */}
-                    <a href={`${paper_id}.pdf`}
-                        onMouseOver={ (event) => {
-                            plugin.app.workspace.trigger("hover-link", {
-                                event,
-                                source: "preview",
-                                hoverParent: { hoverPopover: null },
-                                targetEl: event.currentTarget,
-                                linktext: `${paper_id}.pdf`,
-                                sourcePath: `${paper_id}.pdf`,
-                            })
-                        }}
-                        onClick={ (event) => {
-                            plugin.app.workspace.openLinkText(
-                                `${paper_id}.pdf`,
-                                `${paper_id}.pdf`,
-                            )
-                        }}
-                    >
-                        <button>pdf</button>
-                    </a>
+                    <LinkedFileButton label='pdf' path={`${paper_id}.pdf`} app={plugin.app}/>
                     {/* linked bibtex source */}
-                    <a href={String(bibtex.source_path)}
-                        onMouseOver={ (event) => {
-                            plugin.app.workspace.trigger("hover-link", {
-                                event,
-                                source: "preview",
-                                hoverParent: { hoverPopover: null },
-                                targetEl: event.currentTarget,
-                                linktext: String(bibtex.source_path),
-                                sourcePath: String(bibtex.source_path),
-                            })
-                        }}
-                        onClick={ (event) => {
-                            plugin.app.workspace.openLinkText(
-                                String(bibtex.source_path),
-                                String(bibtex.source_path),
-                            )
-                        }}
-                    >
-                        <button>source</button>
-                    </a>
+                    <LinkedFileButton label='soure' path={String(bibtex.source_path)} app={plugin.app}/>
                     <code>{'+'}</code>
+                    {/* tool */}
                     <button onClick={() => {
                         delete plugin.cache.bibtex_dict[paper_id]
                         plugin.save_cache()

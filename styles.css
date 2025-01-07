@@ -22,6 +22,10 @@ If your plugin does not need CSS, delete this file.
     margin: 0;
 }
 
+.bibtex-file-not-exist button {
+    color: gray !important;
+}
+
 /* bibtex prompt */
 
 .bibtex-prompt-id, .bibtex-prompt-title {
