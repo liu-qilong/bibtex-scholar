@@ -53,6 +53,7 @@ export default class BibtexScholar extends Plugin {
 					cls: (duplicate)?('bibtex-entry-duplicate-id'):('bibtex-entry'),
 				})
 				render_hover(paper_bar, this.cache.bibtex_dict[id], this)
+				el.createEl('code').setText('source')
 			}
 		})
 

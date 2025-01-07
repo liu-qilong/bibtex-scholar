@@ -47,26 +47,34 @@ const HoverPopup = ({ bibtex, plugin }: { bibtex: BibtexDict, plugin: BibtexScho
                 >
                 <div className='bibtex-hover-button-bar'>
                     <button onClick={() => copy_to_clipboard(paper_id)}>
-                        ID
+                        id
+                    </button>
+                    <button onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)}>
+                        cite
+                    </button>
+                    <button onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)}>
+                        \autocite
                     </button>
                     <button onClick={() => copy_to_clipboard(bibtex.source)}>
-                        BibTeX
+                        bibtex
                     </button>
+                    <code>{'+'}</code>
                     <a href={`${paper_id}.md`} className="internal-link">
-                        <button>Note</button>
+                        <button>note</button>
                     </a>
                     <a href={`${paper_id}.pdf`} className="internal-link">
-                        <button>PDF</button>
+                        <button>pdf</button>
                     </a>
                     <a href={String(bibtex.source_path)} className="internal-link">
-                        <button>Source</button>
+                        <button>source</button>
                     </a>
+                    <code>{'+'}</code>
                     <button onClick={() => {
                         delete plugin.cache.bibtex_dict[paper_id]
                         plugin.save_cache()
                         new Notice(`Uncached ${paper_id}`)
                     }}>
-                        Uncache
+                        uncache
                     </button>
                 </div>
                 {Object.entries(bibtex.fields).map(([key, value]) => {

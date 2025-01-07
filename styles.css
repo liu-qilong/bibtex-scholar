@@ -8,19 +8,15 @@ If your plugin does not need CSS, delete this file.
 */
 
 .bibtex-entry-duplicate-id button {
-    /* background-color: crimson !important; */
     background-color: crimson !important;
 }
 
 .bibtex-hover-button-bar button {
-    color: 'gray' !important;
     font-size: small;
 }
 
 .markdown-rendered p {
     font-size: small;
-    margin-block-start: 0;
-    margin-block-end: 0;
 }
 
 /* katex */
