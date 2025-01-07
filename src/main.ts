@@ -48,7 +48,7 @@ export default class BibtexScholar extends Plugin {
 				const paper_bar = el.createEl('span', {
 					cls: (duplicate)?('bibtex-entry-duplicate-id'):('bibtex-entry'),
 				})
-				render_hover(paper_bar, this.cache.bibtex_dict[id])
+				render_hover(paper_bar, this.cache.bibtex_dict[id], this)
 			}
 		})
 
@@ -60,9 +60,15 @@ export default class BibtexScholar extends Plugin {
 				const text = codeblock.innerText.trim()
 				if (text[0] === '{' && text[text.length - 1] === '}') {
 					const paper_id = text.slice(1, -1)
-					const paper_bar = codeblock.createSpan()
-					render_hover(paper_bar, this.cache.bibtex_dict[paper_id])
-					codeblock.replaceWith(paper_bar)
+
+					if (!this.cache.bibtex_dict[paper_id]) {
+						new Notice(`Paper ID not found in BibTeX cache: ${paper_id}`)
+						continue
+					} else {
+						const paper_bar = codeblock.createSpan()
+						render_hover(paper_bar, this.cache.bibtex_dict[paper_id], this)
+						codeblock.replaceWith(paper_bar)
+					}
 				}
 			}
 		})
@@ -74,8 +80,8 @@ export default class BibtexScholar extends Plugin {
 				bibtex += this.cache.bibtex_dict[id].source + '\n\n'
 			}
 			navigator.clipboard.writeText(bibtex)
+			new Notice('Copied all BibTeX to clipboard')
 		})
-		cp_all_btn.addClass('my-plugin-ribbon-class')
 	}
 
 	onunload() {
