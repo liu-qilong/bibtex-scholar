@@ -17,7 +17,6 @@ const copy_to_clipboard = (text: any) => {
 }
 
 const HoverPopup = ({ bibtex, plugin }: { bibtex: BibtexDict, plugin: BibtexScholar }) => {
-    console.log(bibtex)
     const paper_id = bibtex.fields.id
 
     // handlers for mouse enter and leave

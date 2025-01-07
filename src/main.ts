@@ -35,13 +35,17 @@ export default class BibtexScholar extends Plugin {
 					fragment.append(p)
 					new Notice(fragment, 0)
 				} else {
-					// otherwise, add paper entry to cache and export
-					this.cache.bibtex_dict[id] = {
-						fields: fields,
-						source: source,
-						source_path: ctx.sourcePath,
+					if (!this.cache.bibtex_dict[id] || (this.cache.bibtex_dict[id] && source != this.cache.bibtex_dict[id].source)) {
+						// if the id doesn't existed
+						// or its source is changed
+						// add paper entry to cache and export
+						this.cache.bibtex_dict[id] = {
+							fields: fields,
+							source: source,
+							source_path: ctx.sourcePath,
+						}
+						await this.save_cache()
 					}
-					await this.save_cache()
 				}
 
 				// render paper entry
@@ -93,6 +97,7 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	async save_cache() {
+		console.log('export bibtex cache')
 		await this.saveData(this.cache)
 	}
 }
