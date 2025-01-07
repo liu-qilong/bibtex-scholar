@@ -126,7 +126,7 @@ export default class BibtexScholar extends Plugin {
 	async add_paper_panel() {
 		const { workspace } = this.app
 		let leaf = workspace.getRightLeaf(false)
-		
+
 		if (leaf) {
 			leaf.setViewState({ type: PAPER_PANEL_VIEW_TYPE, active: true })
 		}

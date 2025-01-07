@@ -1,4 +1,4 @@
-import { IconName, ItemView, WorkspaceLeaf, Setting, Plugin } from 'obsidian'
+import { IconName, ItemView, WorkspaceLeaf, Setting } from 'obsidian'
 import { BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import BibtexScholar from 'src/main'
@@ -12,7 +12,7 @@ export class PaperPanelView extends ItemView {
     constructor(leaf: WorkspaceLeaf, bibtex_dict: BibtexDict, plugin: BibtexScholar) {
         super(leaf)
         this.bibtex_dict = bibtex_dict
-        this.plugin = this.plugin
+        this.plugin = plugin
     }
 
     getViewType() {
