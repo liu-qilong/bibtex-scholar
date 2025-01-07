@@ -74,7 +74,9 @@ export class EditorPrompt extends EditorSuggest<string> {
                 bibtex.fields.id.toLowerCase().includes(query.toLowerCase()) ||
                 bibtex.fields.title.toLowerCase().includes(query.toLowerCase()) ||
                 bibtex.fields.author.toLowerCase().includes(query.toLowerCase()) ||
-                bibtex.fields.tags.toLowerCase().includes(query.toLowerCase()))
+                bibtex.fields.tags.toLowerCase().includes(query.toLowerCase()) ||
+                bibtex.fields.abstract.toLowerCase().includes(query.toLowerCase())
+            )
             .map((bibtex: BibtexDict) => String(bibtex.fields.id))
     }
 

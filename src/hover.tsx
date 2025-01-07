@@ -40,6 +40,7 @@ const HoverPopup = ({ bibtex, plugin }: { bibtex: BibtexDict, plugin: BibtexScho
                 <button>{paper_id}</button>
             </span>
             {/* This is the popup that appears on hover */}
+            {/* {( */}
             {is_hovered && (
             <span
                 onMouseEnter={handle_mouse_enter}
@@ -84,7 +85,7 @@ const HoverPopup = ({ bibtex, plugin }: { bibtex: BibtexDict, plugin: BibtexScho
                     if (key.includes('url')) {
                         value = `[${value}](${value})`
                     }
-                    return (<div key={key}>
+                    return (<div key={key} className='bibtex-markdown-rendered'>
                         <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{`**\`${key}\`** ${value}`}</Markdown>
                     </div>)
                 })}

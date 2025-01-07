@@ -103,8 +103,11 @@ export default class BibtexScholar extends Plugin {
 		// paper panel
 		this.registerView(
 			PAPER_PANEL_VIEW_TYPE,
-			(leaf) => new PaperPanelView(leaf)
+			(leaf) => new PaperPanelView(leaf, this.cache.bibtex_dict, this)
 		)
+		this.addRibbonIcon('scan-search', 'Paper Panel', () => {
+			this.add_paper_panel()
+		})
 	}
 
 	onunload() {
@@ -120,23 +123,12 @@ export default class BibtexScholar extends Plugin {
 		await this.saveData(this.cache)
 	}
 
-	async onUserEnable() {
-		// when enable, add the paper panel to the right sidebar
+	async add_paper_panel() {
 		const { workspace } = this.app
-	
-		let leaf: WorkspaceLeaf | null = null
-		const leaves = workspace.getLeavesOfType(PAPER_PANEL_VIEW_TYPE)
-	
-		if (leaves.length > 0) {
-		  	// a leaf with our view already exists, use that
-		  	leaf = leaves[0]
-		} else {
-		  	// our view could not be found in the workspace
-			// create a new leaf in the right sidebar for it
-		  	leaf = workspace.getRightLeaf(false)
-		  	if (leaf) {
-				await leaf.setViewState({ type: PAPER_PANEL_VIEW_TYPE, active: true })
-			}
+		let leaf = workspace.getRightLeaf(false)
+		
+		if (leaf) {
+			leaf.setViewState({ type: PAPER_PANEL_VIEW_TYPE, active: true })
 		}
 	}
 }

@@ -7,6 +7,8 @@ If your plugin does not need CSS, delete this file.
 
 */
 
+/* bibtex entry & hover */
+
 .bibtex-entry-duplicate-id button {
     background-color: crimson !important;
 }
@@ -15,9 +17,12 @@ If your plugin does not need CSS, delete this file.
     font-size: small;
 }
 
-.markdown-rendered p {
+.bibtex-markdown-rendered p {
     font-size: small;
+    margin: 0;
 }
+
+/* bibtex prompt */
 
 .bibtex-prompt-id, .bibtex-prompt-title {
     font-size: small;
@@ -25,6 +30,17 @@ If your plugin does not need CSS, delete this file.
 
 .bibtex-prompt-author {
     font-size: x-small;
+}
+
+/* bibtex paper panel */
+
+.bibtex-panel-query .setting-item-control, 
+.bibtex-panel-query .search-input-container {
+    width: 100% !important;
+}
+
+.bibtex-panel-query .setting-item {
+    display: block;
 }
 
 /* katex */
