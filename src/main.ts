@@ -1,7 +1,8 @@
-import { Editor, Notice, Plugin, MarkdownRenderer } from 'obsidian'
+import { Editor, Notice, Plugin, MarkdownRenderer, WorkspaceLeaf } from 'obsidian'
 import { parse_bitex, BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
-import { ModalPrompt, EditorPrompt } from './prompt'
+import { ModalPrompt, EditorPrompt } from 'src/prompt'
+import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 
 interface BibtexScholarCache {
 	bibtex_dict: BibtexDict
@@ -79,7 +80,7 @@ export default class BibtexScholar extends Plugin {
 		})
 
 		// copy all bibtex entries to the clipboard
-		this.addRibbonIcon('package', 'Copy All BibTeX', (evt: MouseEvent) => {
+		this.addRibbonIcon('scroll-text', 'Copy All BibTeX', (evt: MouseEvent) => {
 			let bibtex = ''
 			for (const id in this.cache.bibtex_dict) {
 				bibtex += this.cache.bibtex_dict[id].source + '\n\n'
@@ -88,7 +89,7 @@ export default class BibtexScholar extends Plugin {
 			new Notice('Copied all BibTeX to clipboard')
 		})
 
-		// cite paper command
+		// cite paper command & editor prompt
 		this.addCommand({
 			id: 'cite-paper',
 			name: 'Cite Paper',
@@ -98,6 +99,12 @@ export default class BibtexScholar extends Plugin {
 		})
 
 		this.registerEditorSuggest(new EditorPrompt(this.app, this.cache.bibtex_dict))
+
+		// paper panel
+		this.registerView(
+			PAPER_PANEL_VIEW_TYPE,
+			(leaf) => new PaperPanelView(leaf)
+		)
 	}
 
 	onunload() {
@@ -111,5 +118,25 @@ export default class BibtexScholar extends Plugin {
 	async save_cache() {
 		console.log('export bibtex cache')
 		await this.saveData(this.cache)
+	}
+
+	async onUserEnable() {
+		// when enable, add the paper panel to the right sidebar
+		const { workspace } = this.app
+	
+		let leaf: WorkspaceLeaf | null = null
+		const leaves = workspace.getLeavesOfType(PAPER_PANEL_VIEW_TYPE)
+	
+		if (leaves.length > 0) {
+		  	// a leaf with our view already exists, use that
+		  	leaf = leaves[0]
+		} else {
+		  	// our view could not be found in the workspace
+			// create a new leaf in the right sidebar for it
+		  	leaf = workspace.getRightLeaf(false)
+		  	if (leaf) {
+				await leaf.setViewState({ type: PAPER_PANEL_VIEW_TYPE, active: true })
+			}
+		}
 	}
 }

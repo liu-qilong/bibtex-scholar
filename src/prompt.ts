@@ -70,7 +70,7 @@ export class EditorPrompt extends EditorSuggest<string> {
         // generate suggestion items based on the context
         const query = context.query
         return Object.values(this.bibtex_dict)
-            .filter((bibtex) => 
+            .filter((bibtex) =>
                 bibtex.fields.id.toLowerCase().includes(query.toLowerCase()) ||
                 bibtex.fields.title.toLowerCase().includes(query.toLowerCase()) ||
                 bibtex.fields.author.toLowerCase().includes(query.toLowerCase()) ||
