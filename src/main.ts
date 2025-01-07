@@ -1,7 +1,7 @@
-import { Notice, Plugin, MarkdownRenderer } from 'obsidian'
+import { Editor, Notice, Plugin, MarkdownRenderer } from 'obsidian'
 import { parse_bitex, BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
-
+import { SelectPaper } from './prompt'
 
 interface BibtexScholarCache {
 	bibtex_dict: BibtexDict
@@ -79,13 +79,22 @@ export default class BibtexScholar extends Plugin {
 		})
 
 		// copy all bibtex entries to the clipboard
-		const cp_all_btn = this.addRibbonIcon('package', 'Copy All BibTeX', (evt: MouseEvent) => {
+		this.addRibbonIcon('package', 'Copy All BibTeX', (evt: MouseEvent) => {
 			let bibtex = ''
 			for (const id in this.cache.bibtex_dict) {
 				bibtex += this.cache.bibtex_dict[id].source + '\n\n'
 			}
 			navigator.clipboard.writeText(bibtex)
 			new Notice('Copied all BibTeX to clipboard')
+		})
+
+		// cite paper command
+		this.addCommand({
+			id: 'cite-paper',
+			name: 'Cite Paper',
+			editorCallback: (editor: Editor) => {
+			  	new SelectPaper(this.app, editor, this.cache.bibtex_dict).open()
+			},
 		})
 	}
 
