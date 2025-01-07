@@ -37,6 +37,7 @@ const LinkedFileButton = ({label, path, app}: {label: string, path: string, app:
             app.workspace.openLinkText(
                 path,
                 path,
+                true,
             )
         }}
     >
