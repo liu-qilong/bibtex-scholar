@@ -85,7 +85,7 @@ export default class BibtexScholar extends Plugin {
 			}
 		})
 
-		// copy all bibtex entries to the clipboard
+		// commands for copy all bibtex entries to the clipboard
 		this.addRibbonIcon('scroll-text', 'Copy All BibTeX', (evt: MouseEvent) => {
 			let bibtex = ''
 			for (const id in this.cache.bibtex_dict) {
@@ -95,17 +95,74 @@ export default class BibtexScholar extends Plugin {
 			new Notice('Copied all BibTeX to clipboard')
 		})
 
-		// remove all bibtex entries
 		this.addCommand({
-			id: 'remove-all-bibtex',
-			name: 'Remove All BibTeX',
+			id: 'copy-file-bibtex',
+			name: 'Copy BibTeX Entries from Current File',
 			checkCallback: (checking: boolean) => {
 				if (!checking) {
+					const current_file = this.app.workspace.getActiveFile()
+					if (current_file) {
+						let bibtex = ''
+						for (const id in this.cache.bibtex_dict) {
+							if (this.cache.bibtex_dict[id].source_path === current_file.path) {
+								bibtex += this.cache.bibtex_dict[id].source + '\n\n'
+							}
+						}
+						navigator.clipboard.writeText(bibtex)
+						new Notice('Copied all BibTeX to clipboard')
+					}
+				}
+				return true
+			},
+		})
+
+		// commands for uncache bibtex entries
+		this.addCommand({
+			id: 'uncache-all-bibtex',
+			name: 'Uncache All BibTeX Entries',
+			checkCallback: (checking: boolean) => {
+				if (!checking) {
+					// prompt confirm
+					const confirmed = window.confirm('Are you sure you want to uncache all BibTeX entries?')
+					
+					if (!confirmed) {
+						return false
+					}
+
+					// uncache bibtex entries
 					for (const id in this.cache.bibtex_dict) {
 						delete this.cache.bibtex_dict[id]
 					}
 					this.save_cache()
-					new Notice('Removed all BibTeX entries')
+					new Notice('Uncached all BibTeX entries')
+				}
+				return true
+			},
+		})
+
+		this.addCommand({
+			id: 'uncache-file-bibtex',
+			name: 'Uncache BibTeX Entries from Current File',
+			checkCallback: (checking: boolean) => {				
+				if (!checking) {
+					// prompt confirm
+					const confirmed = window.confirm('Are you sure you want to uncache BibTeX entries from the current file?')
+
+					if (!confirmed) {
+						return false
+					}
+
+					// uncache bibtex entries
+					const current_file = this.app.workspace.getActiveFile()
+					if (current_file) {
+						for (const id in this.cache.bibtex_dict) {
+							if (this.cache.bibtex_dict[id].source_path === current_file.path) {
+								delete this.cache.bibtex_dict[id]
+							}
+						}
+						this.save_cache()
+						new Notice('Uncached BibTeX entries from the current file')
+					}
 				}
 				return true
 			},
