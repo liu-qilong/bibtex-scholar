@@ -40,6 +40,7 @@ export class ModalPrompt extends SuggestModal<BibtexDict> {
 export class EditorPrompt extends EditorSuggest<string> {
     bibtex_dict: BibtexDict
     editor: Editor
+    match_start: string
     trigger_info: EditorSuggestTriggerInfo
 
     constructor(app: App, bibtex_dict: BibtexDict) {
@@ -51,10 +52,11 @@ export class EditorPrompt extends EditorSuggest<string> {
         // determine if this EditorSuggest should be triggered
         this.editor = editor
         const line = editor.getLine(cursor.line)
-        const match = line.match(/`{([^}]*)`/)
+        const match = line.match(/`[{\[]([^}]*)`/)
 
         if (match) {
             const query = match[1]
+            this.match_start = match[0][1]
             this.trigger_info = {
                 start: { line: cursor.line, ch: cursor.ch - query.length },
                 end: cursor,
@@ -91,8 +93,9 @@ export class EditorPrompt extends EditorSuggest<string> {
     selectSuggestion(id: string, evt: MouseEvent | KeyboardEvent): void {
         // handle the selection of a suggestion
         const bibtex = this.bibtex_dict[id]
+        console.log(this.match_start)
         this.editor.replaceRange(
-            `${bibtex.fields.id}}`,
+            `${bibtex.fields.id}${(this.match_start === '{')?('}'):(']')}`,
             this.trigger_info.start,
             this.trigger_info.end,
         )

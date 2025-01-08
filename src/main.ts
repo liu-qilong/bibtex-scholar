@@ -53,7 +53,7 @@ export default class BibtexScholar extends Plugin {
 				const paper_bar = el.createEl('span', {
 					cls: (duplicate)?('bibtex-entry-duplicate-id'):('bibtex-entry'),
 				})
-				render_hover(paper_bar, this.cache.bibtex_dict[id], this)
+				render_hover(paper_bar, this.cache.bibtex_dict[id], this, this.app)
 				el.createEl('code').setText('source')
 			}
 		})
@@ -64,7 +64,10 @@ export default class BibtexScholar extends Plugin {
 
 			for (let codeblock of codeblocks) {
 				const text = codeblock.innerText.trim()
-				if (text[0] === '{' && text[text.length - 1] === '}') {
+				
+				if ((text[0] === '{' || text[0] === '[') && (text[text.length - 1] === '}' || text[text.length - 1] === ']')) {
+					// `{<id>}` -> collapsed inline reference
+					// `[<id>]` -> collapsed inline reference
 					const paper_id = text.slice(1, -1)
 
 					if (!this.cache.bibtex_dict[paper_id]) {
@@ -72,7 +75,7 @@ export default class BibtexScholar extends Plugin {
 						continue
 					} else {
 						const paper_bar = codeblock.createSpan()
-						render_hover(paper_bar, this.cache.bibtex_dict[paper_id], this)
+						render_hover(paper_bar, this.cache.bibtex_dict[paper_id], this, this.app, text[0] === '[')
 						codeblock.replaceWith(paper_bar)
 					}
 				}

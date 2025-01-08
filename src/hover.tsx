@@ -46,18 +46,18 @@ const LinkedFileButton = ({label, path, app}: {label: string, path: string, app:
     )
 }
 
-const HoverPopup = ({ bibtex, plugin }: { bibtex: BibtexDict, plugin: BibtexScholar }) => {
+const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexDict, plugin: BibtexScholar, app: App, expand: boolean }) => {
     const paper_id = bibtex.fields.id
 
     // handlers for mouse enter and leave
-    const [is_hovered, set_is_hovered] = useState(false)
+    const [is_hovered, set_is_hovered] = useState(expand)
 
     const handle_mouse_enter = () => {
         set_is_hovered(true)
     }
 
     const handle_mouse_leave = () => {
-        set_is_hovered(false)
+        set_is_hovered(expand)
     }
 
     return (
@@ -95,11 +95,11 @@ const HoverPopup = ({ bibtex, plugin }: { bibtex: BibtexDict, plugin: BibtexScho
                     </button>
                     <code>{'+'}</code>
                     {/* linked note */}
-                    <LinkedFileButton label='note' path={`${paper_id}.md`} app={plugin.app}/>
+                    <LinkedFileButton label='note' path={`${paper_id}.md`} app={app}/>
                     {/* linked pdf */}
-                    <LinkedFileButton label='pdf' path={`${paper_id}.pdf`} app={plugin.app}/>
+                    <LinkedFileButton label='pdf' path={`${paper_id}.pdf`} app={app}/>
                     {/* linked bibtex source */}
-                    <LinkedFileButton label='soure' path={String(bibtex.source_path)} app={plugin.app}/>
+                    <LinkedFileButton label='soure' path={String(bibtex.source_path)} app={app}/>
                     <code>{'+'}</code>
                     {/* tool */}
                     <button onClick={() => {
@@ -127,10 +127,10 @@ const HoverPopup = ({ bibtex, plugin }: { bibtex: BibtexDict, plugin: BibtexScho
     )
 }
 
-export const render_hover = async ( el: HTMLElement, bibtex: BibtexDict, plugin: BibtexScholar ) => {
+export const render_hover = async ( el: HTMLElement, bibtex: BibtexDict, plugin: BibtexScholar, app: App, expand: boolean = false ) => {
     createRoot(el).render(
         <StrictMode>
-            <HoverPopup bibtex={bibtex} plugin={plugin} />
+            <HoverPopup bibtex={bibtex} plugin={plugin} app={app} expand={expand}/>
         </StrictMode>
     )
 }

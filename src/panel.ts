@@ -40,7 +40,7 @@ export class PaperPanelView extends ItemView {
                     papers.empty()
                     this.get_papers(query).forEach((id) => {
                         const paper_bar = papers.createEl('span')
-                        render_hover(paper_bar, this.bibtex_dict[id], this.plugin)
+                        render_hover(paper_bar, this.bibtex_dict[id], this.plugin, this.app)
                     })
                 }
             ))
@@ -50,7 +50,7 @@ export class PaperPanelView extends ItemView {
 
         for (const id in this.bibtex_dict) {
             const paper_bar = papers.createEl('span')
-            render_hover(paper_bar, this.bibtex_dict[id], this.plugin)
+            render_hover(paper_bar, this.bibtex_dict[id], this.plugin, this.app)
         }
     }
 
