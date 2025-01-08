@@ -1,3 +1,5 @@
+import { App, type MarkdownPostProcessorContext } from 'obsidian'
+
 export interface BibtexField {
     type: string,
     id: string,
@@ -110,4 +112,31 @@ export function make_bibtex(fields: BibtexField): string {
     bibtex += '}\n'
 
     return bibtex
+}
+
+export function check_duplicate_id(bibtex_dict: BibtexDict, id: string, file_path: string, file_content: string): boolean {
+    // if the id appears more than 1 time in the file
+    // it means the id is duplicated in the same file
+    function escape_reg_exp(string: string): string {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+    }
+    
+    const id_regex = new RegExp(`@[a-zA-Z]+{${escape_reg_exp(id)},`, 'g')
+    let count = 0
+
+    while (id_regex.exec(file_content.replace(/\n/g, '')) !== null) {
+        count++
+        if (count > 1) {
+            return true
+        }
+    }
+
+    // if the same id existed in bibtex_dict and it's from a different file
+    // it means the id is duplicated in different files
+    if (bibtex_dict[id] && (bibtex_dict[id].source_path != file_path)) {
+        return true
+    }
+
+    // otherwise, the id is not duplicated
+    return false
 }

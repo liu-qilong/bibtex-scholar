@@ -47,6 +47,10 @@ If your plugin does not need CSS, delete this file.
     display: block;
 }
 
+.bibtex-panel-query .search-input-container input {
+    border-bottom: 1px solid var(--background-modifier-border-focus);
+}
+
 /* katex */
 
 /* stylelint-disable font-family-no-missing-generic-family-keyword */

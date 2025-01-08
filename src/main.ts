@@ -1,5 +1,5 @@
-import { Editor, Notice, Plugin, MarkdownRenderer, WorkspaceLeaf } from 'obsidian'
-import { parse_bitex, make_bibtex, BibtexDict } from 'src/bibtex'
+import { Editor, Notice, Plugin, MarkdownRenderer } from 'obsidian'
+import { parse_bitex, make_bibtex, check_duplicate_id, type BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import { ModalPrompt, EditorPrompt } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
@@ -24,24 +24,27 @@ export default class BibtexScholar extends Plugin {
 			parse_bitex(source)?.forEach( async (fields) => {
 				if (fields != null) {
 					const id = fields.id
-					let duplicate
-	
-					if (this.cache.bibtex_dict[id] && (this.cache.bibtex_dict[id].source_path != ctx.sourcePath)) {
-						// if the same id existed in different files, prompt warning
-						duplicate = true
+					const bibtex_source = make_bibtex(fields)
+					const duplicate = check_duplicate_id(
+						this.cache.bibtex_dict, id,
+						ctx.sourcePath,
+						String(ctx.getSectionInfo(el)?.text)
+					)
+
+					if (duplicate) {
+						// if duplicated, prompt warning
 						const fragment = new DocumentFragment()
 						const p = document.createElement("p")
 						MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\`\nRevise for successful import`, p, '', this)
 						fragment.append(p)
-						new Notice(fragment, 0)
+						new Notice(fragment, 5e3)
 					} else {
-						if (!this.cache.bibtex_dict[id] || (this.cache.bibtex_dict[id] && source != this.cache.bibtex_dict[id].source)) {
-							// if the id doesn't existed
-							// or its source is changed
-							// add paper entry to cache and export
+						// if not duplicated, check if the id has exist and with updated bibtex code
+						// if so, cache the bibtex entry
+						if (this.cache.bibtex_dict[id] && this.cache.bibtex_dict[id].source != bibtex_source) {
 							this.cache.bibtex_dict[id] = {
 								fields: fields,
-								source: make_bibtex(fields),
+								source: bibtex_source,
 								source_path: ctx.sourcePath,
 							}
 							await this.save_cache()

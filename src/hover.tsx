@@ -5,7 +5,7 @@ import Markdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 
-import { BibtexDict } from 'src/bibtex'
+import { type BibtexDict } from 'src/bibtex'
 import BibtexScholar from 'src/main'
 
 const copy_to_clipboard = (text: any) => {

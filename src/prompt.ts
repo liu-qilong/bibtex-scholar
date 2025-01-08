@@ -1,5 +1,5 @@
-import { App, Editor, SuggestModal, EditorSuggest, EditorPosition, EditorSuggestContext, EditorSuggestTriggerInfo, TFile } from 'obsidian'
-import { BibtexDict } from 'src/bibtex'
+import { App, Editor, SuggestModal, EditorSuggest, TFile, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian'
+import { type BibtexDict } from 'src/bibtex'
 
 export class ModalPrompt extends SuggestModal<BibtexDict> {
     all_bibtex: BibtexDict[]

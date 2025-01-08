@@ -1,5 +1,5 @@
-import { IconName, ItemView, WorkspaceLeaf, Setting } from 'obsidian'
-import { BibtexDict } from 'src/bibtex'
+import { ItemView, WorkspaceLeaf, Setting, type IconName } from 'obsidian'
+import { type BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import BibtexScholar from 'src/main'
 
