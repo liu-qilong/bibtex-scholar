@@ -2,12 +2,12 @@ import { App, Modal, Notice } from 'obsidian'
 
 export class UploadPdfModal extends Modal {
     folder: string
-    name: string
+    fname: string
 
-    constructor(app: App, folder: string = 'paper/pdf', name: string = 'paper.pdf') {
+    constructor(app: App, folder: string = 'paper/pdf', fname: string = 'paper.pdf') {
         super(app)
         this.folder = folder
-        this.name = name
+        this.fname = fname
     }
 
     onOpen() {
@@ -30,7 +30,7 @@ export class UploadPdfModal extends Modal {
         reader.onload = async (event) => {
             const { result } = event.target as FileReader
             const data = result as ArrayBuffer
-            const file_path = `${this.folder}/${this.name}`
+            const file_path = `${this.folder}/${this.fname}`
 
             // ensure the folder exists
             if (!await this.app.vault.adapter.exists(this.folder)) {
@@ -39,7 +39,8 @@ export class UploadPdfModal extends Modal {
 
             // save the file to the vault
             await this.app.vault.createBinary(file_path, data)
-            new Notice(`File saved to ${file_path}`)
+            this.app.workspace.openLinkText(this.fname, this.fname, true)
+            // new Notice(`File saved to ${file_path}`)
         }
         reader.readAsArrayBuffer(file)
 

@@ -1,15 +1,19 @@
-import { Editor, Notice, Plugin, MarkdownRenderer, type MarkdownPostProcessorContext } from 'obsidian'
+import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, type MarkdownPostProcessorContext } from 'obsidian'
 import { parse_bitex, make_bibtex, check_duplicate_id, type BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import { ModalPrompt, EditorPrompt } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 
 interface BibtexScholarCache {
-	bibtex_dict: BibtexDict
+	bibtex_dict: BibtexDict,
+	note_folder: string,
+	pdf_folder: string,
 }
 
 const DEFAULT_SETTINGS: BibtexScholarCache = {
-	bibtex_dict: {}
+	bibtex_dict: {},
+	note_folder: 'note',
+	pdf_folder: 'pdf',
 }
 
 export default class BibtexScholar extends Plugin {
@@ -17,6 +21,9 @@ export default class BibtexScholar extends Plugin {
 
 	async onload() {
 		await this.load_cache()
+
+		// setting tab
+		this.addSettingTab(new BibtexScholarSetting(this.app, this))
 
 		// bibtex code block processor
 		this.registerMarkdownCodeBlockProcessor('bibtex', async (source, el, ctx) => await this.bibtex_codeblock_processor(source, el, ctx))
@@ -211,3 +218,41 @@ export default class BibtexScholar extends Plugin {
 	}
 }
 
+class BibtexScholarSetting extends PluginSettingTab {
+	plugin: BibtexScholar
+
+	constructor(app: App, plugin: BibtexScholar) {
+		super(app, plugin)
+		this.plugin = plugin
+	}
+
+	display(): void {
+		const {containerEl} = this
+
+		containerEl.empty()
+
+		containerEl.createEl('h2', { text: 'BibTeX Scholar Settings' })
+
+		new Setting(containerEl)
+			.setName('Default paper note folder')
+			.setDesc('Default paper note folder')
+			.addText(text => text
+				.setPlaceholder('Without / at the end')
+				.setValue(this.plugin.cache.note_folder)
+				.onChange(async (value) => {
+					this.plugin.cache.note_folder = value
+					await this.plugin.save_cache()
+				}))
+
+		new Setting(containerEl)
+			.setName('Default PDF folder')
+			.setDesc('Default PDF folder')
+			.addText(text => text
+				.setPlaceholder('Without / at the end')
+				.setValue(this.plugin.cache.pdf_folder)
+				.onChange(async (value) => {
+					this.plugin.cache.pdf_folder = value
+					await this.plugin.save_cache()
+				}))
+	}
+}

@@ -32,7 +32,6 @@ export class PaperPanelView extends ItemView {
         container.empty()
 
         // query
-        let query = ''
         const query_div = container.createEl('div', { cls: 'bibtex-panel-query' })
         new Setting(query_div)
             .addSearch((text) => text.onChange(

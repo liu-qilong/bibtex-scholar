@@ -17,13 +17,15 @@ const copy_to_clipboard = (text: any) => {
     })
 }
 
-const LinkedFileButton = ({label, path, app}: {label: string, path: string, app: App}) => {
-    const exist = app.metadataCache.getFirstLinkpathDest(path, '')
+const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: string, folder: string, app: App}) => {
+    /** fname only contains the file name
+    created/uploaded file will be put to folder  */
+    const exist = app.metadataCache.getFirstLinkpathDest(fname, '')
     const cls = (exist)?('bibtex-file-exist'):('bibtex-file-not-exist')
 
     return (
     <a 
-        href={path}
+        href={fname}
         className={cls}
         onMouseOver={ (event) => {
             app.workspace.trigger("hover-link", {
@@ -31,21 +33,28 @@ const LinkedFileButton = ({label, path, app}: {label: string, path: string, app:
                 source: "preview",
                 hoverParent: { hoverPopover: null },
                 targetEl: event.currentTarget,
-                linktext: path,
-                sourcePath: path,
+                linktext: fname,
+                sourcePath: fname,
             })
         }}
         onClick={ async (event) => {
             if (exist) {
-                app.workspace.openLinkText(path, path, true)
+                app.workspace.openLinkText(fname, fname, true)
             } else {
-                if (path.endsWith('.pdf')) {
-                    new UploadPdfModal(app, 'pdf', path).open()
-                } else if (path.endsWith('.md')) {
-                    await app.vault.create(`paper/${path}`, `\`[${path.replace('.md', '')}]\``)
-                    app.workspace.openLinkText(path, path, true)
+                if (fname.endsWith('.pdf')) {
+                    new UploadPdfModal(app, folder, fname).open()
+                } else if (fname.endsWith('.md')) {
+                    // ensure the folder exists
+                    if (!await app.vault.adapter.exists(folder)) {
+                        await app.vault.createFolder(folder)
+                    }
+
+                    // create the file
+                    await app.vault.create(`${folder}/${fname}`, `\`[${fname.replace('.md', '')}]\``)
+                    app.workspace.openLinkText(fname, fname, true)
                 }
             }
+            
         }}
     >
         <button>{label}</button>
@@ -105,11 +114,11 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexDict,
                     </button>
                     <code>{'+'}</code>
                     {/* linked note */}
-                    <LinkedFileButton label='note' path={`${paper_id}.md`} app={app}/>
+                    <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app}/>
                     {/* linked pdf */}
-                    <LinkedFileButton label='pdf' path={`${paper_id}.pdf`} app={app}/>
+                    <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app}/>
                     {/* linked bibtex source */}
-                    <LinkedFileButton label='soure' path={String(bibtex.source_path)} app={app}/>
+                    <LinkedFileButton label='soure' fname={String(bibtex.source_path)} folder={''} app={app}/>
                     <code>{'+'}</code>
                     {/* tool */}
                     <button onClick={() => {
