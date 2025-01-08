@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import Markdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import { UploadPdfModal } from 'src/upload'
 
 import { type BibtexDict } from 'src/bibtex'
 import BibtexScholar from 'src/main'
@@ -17,7 +18,8 @@ const copy_to_clipboard = (text: any) => {
 }
 
 const LinkedFileButton = ({label, path, app}: {label: string, path: string, app: App}) => {
-    const cls = (app.metadataCache.getFirstLinkpathDest(path, ''))?('bibtex-file-exist'):('bibtex-file-not-exist')
+    const exist = app.metadataCache.getFirstLinkpathDest(path, '')
+    const cls = (exist)?('bibtex-file-exist'):('bibtex-file-not-exist')
 
     return (
     <a 
@@ -34,11 +36,14 @@ const LinkedFileButton = ({label, path, app}: {label: string, path: string, app:
             })
         }}
         onClick={ (event) => {
-            app.workspace.openLinkText(
-                path,
-                path,
-                true,
-            )
+            if (exist) {
+                app.workspace.openLinkText(path, path, true)
+            } else {
+                if (path.endsWith('.pdf')) {
+                    new UploadPdfModal(app, 'paper/pdf', path).open()
+                }
+            }
+            
         }}
     >
         <button>{label}</button>

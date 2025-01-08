@@ -3,7 +3,6 @@ import { parse_bitex, make_bibtex, check_duplicate_id, type BibtexDict } from 's
 import { render_hover } from 'src/hover'
 import { ModalPrompt, EditorPrompt } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
-import Markdown from 'react-markdown'
 
 interface BibtexScholarCache {
 	bibtex_dict: BibtexDict
