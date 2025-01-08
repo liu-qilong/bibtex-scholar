@@ -13,7 +13,7 @@ export interface BibtexDict {
 	}
 }
 
-export function parse_bitex(bibtex_source: string, lower_case_type: boolean = true): BibtexField[] | null {
+export async function parse_bitex(bibtex_source: string, lower_case_type: boolean = true): Promise<BibtexField[]> {
     // match type, id, & fields
     // p.s. no @ string in the fields!
     const entry_regex = /@([a-zA-Z]+){([^,]+),([^@]*)}/g

@@ -21,43 +21,43 @@ export default class BibtexScholar extends Plugin {
 		// bibtex code block processor
 		this.registerMarkdownCodeBlockProcessor('bibtex', async (source, el, ctx) => {
 			// parse bibtex
-			parse_bitex(source)?.forEach( async (fields) => {
-				if (fields != null) {
-					const id = fields.id
-					const bibtex_source = make_bibtex(fields)
-					const duplicate = check_duplicate_id(
-						this.cache.bibtex_dict, id,
-						ctx.sourcePath,
-						String(ctx.getSectionInfo(el)?.text)
-					)
+			const fields_ls = await parse_bitex(source)
+			fields_ls.forEach( async (fields) => {
+				const id = fields.id
+				const bibtex_source = make_bibtex(fields)
+				const duplicate = check_duplicate_id(
+					this.cache.bibtex_dict, id,
+					ctx.sourcePath,
+					String(ctx.getSectionInfo(el)?.text)
+				)
 
-					if (duplicate) {
-						// if duplicated, prompt warning
-						const fragment = new DocumentFragment()
-						const p = document.createElement("p")
-						MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\`\nRevise for successful import`, p, '', this)
-						fragment.append(p)
-						new Notice(fragment, 5e3)
-					} else {
-						// if not duplicated, check if the id has exist and with updated bibtex code
-						// if so, cache the bibtex entry
-						if (this.cache.bibtex_dict[id] && this.cache.bibtex_dict[id].source != bibtex_source) {
-							this.cache.bibtex_dict[id] = {
-								fields: fields,
-								source: bibtex_source,
-								source_path: ctx.sourcePath,
-							}
-							await this.save_cache()
+				if (duplicate) {
+					// if duplicated, prompt warning
+					const fragment = new DocumentFragment()
+					const p = document.createElement("p")
+					MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\`\nRevise for successful import`, p, '', this)
+					fragment.append(p)
+					new Notice(fragment, 5e3)
+				} else {
+					// if not duplicated, check if the id exists
+					// if exists, only cache bibtex code that is updated
+					// if not exists, cache the bibtex entry
+					if (!this.cache.bibtex_dict[id] || this.cache.bibtex_dict[id].source != bibtex_source) {
+						this.cache.bibtex_dict[id] = {
+							fields: fields,
+							source: bibtex_source,
+							source_path: ctx.sourcePath,
 						}
+						await this.save_cache()
 					}
-	
-					// render paper entry
-					const paper_bar = el.createEl('span', {
-						cls: (duplicate)?('bibtex-entry-duplicate-id'):('bibtex-entry'),
-					})
-					render_hover(paper_bar, this.cache.bibtex_dict[id], this, this.app)
-					el.createEl('code').setText('source')
 				}
+
+				// render paper entry
+				const paper_bar = el.createEl('span', {
+					cls: (duplicate)?('bibtex-entry-duplicate-id'):('bibtex-entry'),
+				})
+				render_hover(paper_bar, this.cache.bibtex_dict[id], this, this.app)
+				el.createEl('code').setText('source')
 			})
 		})
 
@@ -93,6 +93,22 @@ export default class BibtexScholar extends Plugin {
 			}
 			navigator.clipboard.writeText(bibtex)
 			new Notice('Copied all BibTeX to clipboard')
+		})
+
+		// remove all bibtex entries
+		this.addCommand({
+			id: 'remove-all-bibtex',
+			name: 'Remove All BibTeX',
+			checkCallback: (checking: boolean) => {
+				if (!checking) {
+					for (const id in this.cache.bibtex_dict) {
+						delete this.cache.bibtex_dict[id]
+					}
+					this.save_cache()
+					new Notice('Removed all BibTeX entries')
+				}
+				return true
+			},
 		})
 
 		// cite paper command & editor prompt
