@@ -231,13 +231,10 @@ class BibtexScholarSetting extends PluginSettingTab {
 
 		containerEl.empty()
 
-		containerEl.createEl('h2', { text: 'BibTeX Scholar Settings' })
-
 		new Setting(containerEl)
 			.setName('Default paper note folder')
-			.setDesc('Default paper note folder')
+			.setDesc('When click on the note button, it will create a note in this folder. Without / at the end')
 			.addText(text => text
-				.setPlaceholder('Without / at the end')
 				.setValue(this.plugin.cache.note_folder)
 				.onChange(async (value) => {
 					this.plugin.cache.note_folder = value
@@ -246,9 +243,8 @@ class BibtexScholarSetting extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Default PDF folder')
-			.setDesc('Default PDF folder')
+			.setDesc('When click on the pdf button, it will upload a PDF file to this folder. Without / at the end')
 			.addText(text => text
-				.setPlaceholder('Without / at the end')
 				.setValue(this.plugin.cache.pdf_folder)
 				.onChange(async (value) => {
 					this.plugin.cache.pdf_folder = value
