@@ -79,19 +79,22 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexDict,
                 <div className='bibtex-hover-button-bar'>
                     {/* copy id */}
                     <button onClick={() => copy_to_clipboard(paper_id)}>
-                        id
-                    </button>
-                    {/* md cite */}
-                    <button onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)}>
-                        md cite
-                    </button>
-                    {/* latex cite */}
-                    <button onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)}>
-                        latex cite
+                        <code>id</code>
                     </button>
                     {/* copy bibtex */}
                     <button onClick={() => copy_to_clipboard(bibtex.source)}>
-                        bibtex
+                        <code>bibtex</code>
+                    </button>
+                    {/* md cite */}
+                    <button onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)}>
+                        <code>{'`{}`'}</code>
+                    </button>
+                    <button onClick={() => copy_to_clipboard(`\`[${paper_id}]\``)}>
+                        <code>{'`[]`'}</code>
+                    </button>
+                    {/* latex cite */}
+                    <button onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)}>
+                        <code>{'\\autocite{}'}</code>
                     </button>
                     <code>{'+'}</code>
                     {/* linked note */}

@@ -1,5 +1,5 @@
 import { Editor, Notice, Plugin, MarkdownRenderer, WorkspaceLeaf } from 'obsidian'
-import { parse_bitex, BibtexDict } from 'src/bibtex'
+import { parse_bitex, make_bibtex, BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import { ModalPrompt, EditorPrompt } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
@@ -21,41 +21,41 @@ export default class BibtexScholar extends Plugin {
 		// bibtex code block processor
 		this.registerMarkdownCodeBlockProcessor('bibtex', async (source, el, ctx) => {
 			// parse bibtex
-			const fields = parse_bitex(source)
-
-			if (fields != null) {
-				const id = fields.id
-				let duplicate
-
-				if (this.cache.bibtex_dict[id] && (this.cache.bibtex_dict[id].source_path != ctx.sourcePath)) {
-					// if the same id existed in different files, prompt warning
-					duplicate = true
-					const fragment = new DocumentFragment()
-					const p = document.createElement("p")
-					MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\`\nRevise for successful import`, p, '', this)
-					fragment.append(p)
-					new Notice(fragment, 0)
-				} else {
-					if (!this.cache.bibtex_dict[id] || (this.cache.bibtex_dict[id] && source != this.cache.bibtex_dict[id].source)) {
-						// if the id doesn't existed
-						// or its source is changed
-						// add paper entry to cache and export
-						this.cache.bibtex_dict[id] = {
-							fields: fields,
-							source: source,
-							source_path: ctx.sourcePath,
+			parse_bitex(source)?.forEach( async (fields) => {
+				if (fields != null) {
+					const id = fields.id
+					let duplicate
+	
+					if (this.cache.bibtex_dict[id] && (this.cache.bibtex_dict[id].source_path != ctx.sourcePath)) {
+						// if the same id existed in different files, prompt warning
+						duplicate = true
+						const fragment = new DocumentFragment()
+						const p = document.createElement("p")
+						MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\`\nRevise for successful import`, p, '', this)
+						fragment.append(p)
+						new Notice(fragment, 0)
+					} else {
+						if (!this.cache.bibtex_dict[id] || (this.cache.bibtex_dict[id] && source != this.cache.bibtex_dict[id].source)) {
+							// if the id doesn't existed
+							// or its source is changed
+							// add paper entry to cache and export
+							this.cache.bibtex_dict[id] = {
+								fields: fields,
+								source: make_bibtex(fields),
+								source_path: ctx.sourcePath,
+							}
+							await this.save_cache()
 						}
-						await this.save_cache()
 					}
+	
+					// render paper entry
+					const paper_bar = el.createEl('span', {
+						cls: (duplicate)?('bibtex-entry-duplicate-id'):('bibtex-entry'),
+					})
+					render_hover(paper_bar, this.cache.bibtex_dict[id], this, this.app)
+					el.createEl('code').setText('source')
 				}
-
-				// render paper entry
-				const paper_bar = el.createEl('span', {
-					cls: (duplicate)?('bibtex-entry-duplicate-id'):('bibtex-entry'),
-				})
-				render_hover(paper_bar, this.cache.bibtex_dict[id], this, this.app)
-				el.createEl('code').setText('source')
-			}
+			})
 		})
 
 		// inline reference of paper
@@ -113,7 +113,7 @@ export default class BibtexScholar extends Plugin {
 		})
 	}
 
-	onunload() {
+	async onunload() {
 
 	}
 
