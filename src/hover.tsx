@@ -35,15 +35,17 @@ const LinkedFileButton = ({label, path, app}: {label: string, path: string, app:
                 sourcePath: path,
             })
         }}
-        onClick={ (event) => {
+        onClick={ async (event) => {
             if (exist) {
                 app.workspace.openLinkText(path, path, true)
             } else {
                 if (path.endsWith('.pdf')) {
-                    new UploadPdfModal(app, 'paper/pdf', path).open()
+                    new UploadPdfModal(app, 'pdf', path).open()
+                } else if (path.endsWith('.md')) {
+                    await app.vault.create(`paper/${path}`, `\`[${path.replace('.md', '')}]\``)
+                    app.workspace.openLinkText(path, path, true)
                 }
             }
-            
         }}
     >
         <button>{label}</button>
