@@ -1,7 +1,7 @@
 import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, type MarkdownPostProcessorContext } from 'obsidian'
 import { parse_bitex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
-import { ModalPrompt, EditorPrompt } from 'src/prompt'
+import { EditorPrompt } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 
 interface BibtexScholarCache {
@@ -37,6 +37,17 @@ export default class BibtexScholar extends Plugin {
 			'Copy All BibTeX',
 			(evt: MouseEvent) => this.cp_bibtex(true)
 		)
+
+		this.addCommand({
+			id: 'copy-all-bibtex',
+			name: 'Copy All BibTeX Entries',
+			checkCallback: (checking: boolean) => {
+				if (!checking) {
+					this.cp_bibtex(true)
+				}
+				return true
+			},
+		})
 
 		this.addCommand({
 			id: 'copy-file-bibtex',
@@ -79,15 +90,18 @@ export default class BibtexScholar extends Plugin {
 			(evt: MouseEvent) => new FetchBibtexOnline(this.app, this).open()
 		)
 
-		// cite paper command & editor prompt
 		this.addCommand({
-			id: 'cite-paper',
-			name: 'Cite Paper',
-			editorCallback: (editor: Editor) => {
-			  	new ModalPrompt(this.app, editor, this.cache.bibtex_dict).open()
+			id: 'fetch-bibtex-online',
+			name: 'Fetch BibTeX Online',
+			checkCallback: (checking: boolean) => {
+				if (!checking) {
+					new FetchBibtexOnline(this.app, this).open()
+				}
+				return true
 			},
 		})
 
+		// cite paper editor prompt
 		this.registerEditorSuggest(new EditorPrompt(this.app, this.cache.bibtex_dict))
 
 		// paper panel
@@ -95,8 +109,20 @@ export default class BibtexScholar extends Plugin {
 			PAPER_PANEL_VIEW_TYPE,
 			(leaf) => new PaperPanelView(leaf, this.cache.bibtex_dict, this)
 		)
+
 		this.addRibbonIcon('scan-search', 'Paper Panel', () => {
 			this.add_paper_panel()
+		})
+
+		this.addCommand({
+			id: 'open-paper-panel',
+			name: 'Open Paper Panel',
+			checkCallback: (checking: boolean) => {
+				if (!checking) {
+					this.add_paper_panel()
+				}
+				return true
+			},
 		})
 	}
 
