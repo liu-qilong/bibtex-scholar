@@ -1,4 +1,4 @@
-import { App, Modal, Plugin, Setting } from 'obsidian'
+import { App, Modal, ButtonComponent, Setting, Notice } from 'obsidian'
 import BibtexScholar from 'src/main'
 import { copy_to_clipboard } from 'src/hover'
 
@@ -180,6 +180,7 @@ export function match_query(bibtex: BibtexDict, query: string): boolean {
 export class FetchBibtexOnline extends Modal {
     plugin: BibtexScholar
     changable_el: HTMLElement
+    btn: ButtonComponent
 
     doi: string = ''
     id_surfix: string = ''
@@ -247,10 +248,11 @@ export class FetchBibtexOnline extends Modal {
                 }))
 
         new Setting(this.changable_el)
-            .addButton(btn => btn
-                .setButtonText('Fetch')
-                .onClick(async () => await this.onfetch())
-            )
+            .addButton(btn => {
+                btn.setButtonText('Fetch')
+                    .onClick(async () => await this.onfetch())
+                this.btn = btn
+            })
     }
 
     switch_manual_mode() {
@@ -266,10 +268,11 @@ export class FetchBibtexOnline extends Modal {
                 }))
 
         new Setting(this.changable_el)
-            .addButton(btn => btn
-                .setButtonText('Process')
-                .onClick(async () => this.on_process(this.bibtex))
-            )
+            .addButton(btn => {
+                btn.setButtonText('Process')
+                    .onClick(async () => this.on_process(this.bibtex))
+                this.btn = btn
+            })
     }
 
     process_bibtex_field(field: BibtexField) {
@@ -302,6 +305,8 @@ export class FetchBibtexOnline extends Modal {
     }
 
     async onfetch() {
+        this.btn.setIcon('loader')
+
         async function fetch_bibtex(doi: string) {
             return fetch(`https://doi.org/${doi}`, { headers: { Accept: "application/x-bibtex" }})
                 .then(response => response.text())
@@ -312,19 +317,33 @@ export class FetchBibtexOnline extends Modal {
 
         await fetch_bibtex(this.doi).then(async (bibtex) => {
             const fields = await parse_bitex(String(bibtex))
+
             if (fields.length != 0) {
                 this.bibtex = make_bibtex(this.process_bibtex_field(fields[0]))
+                copy_to_clipboard(this.bibtex)
+                this.btn.setIcon('check')
+            } else {
+                new Notice('Fetch failed')
+                this.btn.setIcon('ban')
             }
-        })
 
-        copy_to_clipboard(this.bibtex)
+            setTimeout(() => this.btn.setButtonText('Fetch'), 1000)
+        })
     }
 
     async on_process(bibtex: string) {
+        this.btn.setIcon('loader')
         const fields = await parse_bitex(bibtex)
+
         if (fields.length != 0) {
             this.bibtex = make_bibtex(this.process_bibtex_field(fields[0]))
+            copy_to_clipboard(this.bibtex)
+            this.btn.setIcon('check')
+        } else {
+            new Notice('Process failed')
+            this.btn.setIcon('ban')
         }
-        copy_to_clipboard(this.bibtex)
+
+        setTimeout(() => this.btn.setButtonText('Process'), 1000)
     }
 }
