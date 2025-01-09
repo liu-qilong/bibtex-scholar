@@ -140,3 +140,36 @@ export function check_duplicate_id(bibtex_dict: BibtexDict, id: string, file_pat
     // otherwise, the id is not duplicated
     return false
 }
+
+export function match_query(bibtex: BibtexDict, query: string): boolean {
+    function match_query_single(q: string): boolean {
+        const q_low_trim = q.toLowerCase().trim()
+
+        if (q_low_trim.includes(':')) {
+            // if the query is in the format of <key>:<value>
+            // match the key and value separately
+            const [key, value] = q_low_trim.split(':')
+            if (key in bibtex.fields) {
+                return String(bibtex.fields[key]).toLowerCase().includes(value)
+            }
+            return false
+        } else {
+            // if the query is not in the format of <key>:<value>
+            // match the query in all fields
+            for (let key in bibtex.fields) {
+                if (String(bibtex.fields[key]).toLowerCase().includes(q_low_trim)) {
+                    return true
+                }
+            }
+            return false
+        }
+    }
+
+    for (let q of query.split(';')) {
+        if (q.length > 0 && !match_query_single(q)) {
+            return false
+        }
+    }
+
+    return true
+}

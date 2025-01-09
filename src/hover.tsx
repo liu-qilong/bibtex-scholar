@@ -4,7 +4,6 @@ import { createRoot } from 'react-dom/client'
 import Markdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-// import { UploadPdfModal } from 'src/upload'
 
 import { type BibtexDict } from 'src/bibtex'
 import BibtexScholar from 'src/main'
@@ -17,7 +16,7 @@ const copy_to_clipboard = (text: any) => {
     })
 }
 
-export class UploadPdfModal extends Modal {
+class UploadPdfModal extends Modal {
     folder: string
     fname: string
 
@@ -36,12 +35,12 @@ export class UploadPdfModal extends Modal {
             const target = event.target as HTMLInputElement
             if (target.files && target.files.length > 0) {
                 const file = target.files[0]
-                this.handleFileUpload(file)
+                this.handle_file_upload(file)
             }
         })
     }
 
-    handleFileUpload(file: File) {
+    handle_file_upload(file: File) {
         // read the file as an ArrayBuffer
         const reader = new FileReader()
         reader.onload = async (event) => {
@@ -63,10 +62,10 @@ export class UploadPdfModal extends Modal {
         this.close()
     }
 
-    onClose() {
-        const { contentEl } = this
-        contentEl.empty()
-    }
+    // onClose() {
+    //     const { contentEl } = this
+    //     contentEl.empty()
+    // }
 }
 
 const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: string, folder: string, app: App}) => {
