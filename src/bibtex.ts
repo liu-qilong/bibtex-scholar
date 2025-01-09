@@ -108,7 +108,7 @@ export function make_bibtex(fields: BibtexField): string {
             continue
         }
 
-        bibtex += `    ${key} = {${fields[key]}},\n`
+        bibtex += `  ${key} = {${fields[key]}},\n`
     }
 
     bibtex += '}\n'
@@ -179,6 +179,8 @@ export function match_query(bibtex: BibtexDict, query: string): boolean {
 
 export class FetchBibtexOnline extends Modal {
     plugin: BibtexScholar
+    changable_el: HTMLElement
+
     doi: string = ''
     id_surfix: string = ''
     abstract: string = ''
@@ -194,14 +196,22 @@ export class FetchBibtexOnline extends Modal {
         contentEl.createEl('h4', { text: 'Fetch BibTeX Online' })
 
         new Setting(contentEl)
-			.setName('DOI')
-			.setDesc('Digital Object Identifier (DOI) of the paper')
-			.addText(text => text
-				.setValue(this.doi)
-				.onChange(async (value) => {
-					this.doi = value
-				}))
-
+			.setName('Mode')
+			.setDesc('')
+			.addDropdown(dropdown => dropdown
+                .addOptions({
+                    'doi': 'DOI',
+                    'manual': 'Manual',
+                })
+                .onChange(async (value) => {
+                    if (value === 'doi') {
+                        this.switch_doi_mode()
+                    } else {
+                        this.switch_manual_mode()
+                    }
+                })
+            )
+        
         new Setting(contentEl)
 			.setName('ID Surfix')
 			.setDesc('Surfix to the paper ID')
@@ -219,55 +229,102 @@ export class FetchBibtexOnline extends Modal {
                 .onChange(async (value) => {
                     this.abstract = value
                 }))
+        
+        this.changable_el = contentEl.createDiv()
+        this.switch_doi_mode()
+    }
 
-        new Setting(contentEl)
+    switch_doi_mode() {
+        this.changable_el.empty()
+
+        new Setting(this.changable_el)
+            .setName('DOI')
+            .setDesc('Digital Object Identifier (DOI) of the paper')
+            .addText(text => text
+                .setValue(this.doi)
+                .onChange(async (value) => {
+                    this.doi = value
+                }))
+
+        new Setting(this.changable_el)
             .addButton(btn => btn
                 .setButtonText('Fetch')
-                .onClick(async (event) => await this.onfetch(contentEl))
+                .onClick(async () => await this.onfetch())
             )
     }
 
-    async fetch_bibtex(doi: string) {
-        return fetch(`https://doi.org/${doi}`, { headers: { Accept: "application/x-bibtex" }})
-            .then(response => response.text())
-            .catch(error => {
-                console.error('Error:', error)
-            })
+    switch_manual_mode() {
+        this.changable_el.empty()
+
+        new Setting(this.changable_el)
+            .setName('BibTeX')
+            .setDesc('BibTeX of the paper')
+            .addTextArea(textarea => textarea
+                .setValue(this.bibtex)
+                .onChange(async (value) => {
+                    this.bibtex = value
+                }))
+
+        new Setting(this.changable_el)
+            .addButton(btn => btn
+                .setButtonText('Process')
+                .onClick(async () => this.on_process(this.bibtex))
+            )
     }
 
-    async onfetch(contentEl: HTMLElement) {
-        await this.fetch_bibtex(this.doi).then(async (bibtex) => {
+    process_bibtex_field(field: BibtexField) {
+        // gen id
+        let authors = field.author.split(' and ')
+        let first_author = authors[0]
+        let last_name, first_name
+
+        if (first_author.includes(',')) {
+            [last_name, first_name] = first_author.split(',').map(str => str.trim())
+        } else {
+            let name_parts = first_author.split(' ').map(str => str.trim())
+            last_name = name_parts.pop()
+            first_name = name_parts.join(' ')
+        }
+
+        field['id'] = `${first_name}${last_name}${field['year'] || ''}`.replace(/[^a-zA-Z0-9]/g, '') + this.id_surfix
+
+        // fix duplication
+        if (field.id in this.plugin.cache.bibtex_dict) {
+            field.id += '+'
+        }
+
+        // add abstract
+        if (this.abstract != '') {
+            field.abstract = this.abstract
+        }
+
+        return field
+    }
+
+    async onfetch() {
+        async function fetch_bibtex(doi: string) {
+            return fetch(`https://doi.org/${doi}`, { headers: { Accept: "application/x-bibtex" }})
+                .then(response => response.text())
+                .catch(error => {
+                    console.error('Error:', error)
+                })
+        }
+
+        await fetch_bibtex(this.doi).then(async (bibtex) => {
             const fields = await parse_bitex(String(bibtex))
-            if (fields.length > 0) {
-                let field = fields[0]
-
-                // gen id
-                let authors = field.author.split(' and ')
-                let first_author = authors[0]
-                let last_name, first_name
-
-                if (first_author.includes(',')) {
-                    [last_name, first_name] = first_author.split(',').map(str => str.trim())
-                } else {
-                    let name_parts = first_author.split(' ').map(str => str.trim())
-                    last_name = name_parts.pop()
-                    first_name = name_parts.join(' ')
-                }
-
-                field['id'] = `${first_name}${last_name}${field['year'] || ''}`.replace(/[^a-zA-Z0-9]/g, '') + this.id_surfix
-
-                // fix duplication
-                if (field.id in this.plugin.cache.bibtex_dict) {
-                    field.id += '+'
-                }
-
-                // add abstract
-                if (this.abstract != '') {
-                    field.abstract = this.abstract
-                }
-                this.bibtex = make_bibtex(field)
+            if (fields.length != 0) {
+                this.bibtex = make_bibtex(this.process_bibtex_field(fields[0]))
             }
         })
+
+        copy_to_clipboard(this.bibtex)
+    }
+
+    async on_process(bibtex: string) {
+        const fields = await parse_bitex(bibtex)
+        if (fields.length != 0) {
+            this.bibtex = make_bibtex(this.process_bibtex_field(fields[0]))
+        }
         copy_to_clipboard(this.bibtex)
     }
 }
