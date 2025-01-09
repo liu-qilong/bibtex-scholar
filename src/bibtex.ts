@@ -1,4 +1,6 @@
-import { App, type MarkdownPostProcessorContext } from 'obsidian'
+import { App, Modal, Plugin, Setting } from 'obsidian'
+import BibtexScholar from 'src/main'
+import { copy_to_clipboard } from 'src/hover'
 
 export interface BibtexField {
     type: string,
@@ -148,7 +150,9 @@ export function match_query(bibtex: BibtexDict, query: string): boolean {
         if (q_low_trim.includes(':')) {
             // if the query is in the format of <key>:<value>
             // match the key and value separately
-            const [key, value] = q_low_trim.split(':')
+            let [key, value] = q_low_trim.split(':')
+            key = key.trim()
+            value = value.trim()
             if (key in bibtex.fields) {
                 return String(bibtex.fields[key]).toLowerCase().includes(value)
             }
@@ -170,6 +174,100 @@ export function match_query(bibtex: BibtexDict, query: string): boolean {
             return false
         }
     }
-
     return true
+}
+
+export class FetchBibtexOnline extends Modal {
+    plugin: BibtexScholar
+    doi: string = ''
+    id_surfix: string = ''
+    abstract: string = ''
+    bibtex: string = ''
+
+    constructor(app: App, plugin: BibtexScholar) {
+        super(app)
+        this.plugin = plugin
+    }
+
+    onOpen() {
+        const { contentEl } = this
+        contentEl.createEl('h4', { text: 'Fetch BibTeX Online' })
+
+        new Setting(contentEl)
+			.setName('DOI')
+			.setDesc('Digital Object Identifier (DOI) of the paper')
+			.addText(text => text
+				.setValue(this.doi)
+				.onChange(async (value) => {
+					this.doi = value
+				}))
+
+        new Setting(contentEl)
+			.setName('ID Surfix')
+			.setDesc('Surfix to the paper ID')
+			.addText(text => text
+				.setValue(this.id_surfix)
+				.onChange(async (value) => {
+					this.id_surfix = value
+				}))
+
+        new Setting(contentEl)
+            .setName('Abstract')
+            .setDesc('Abstract of the paper')
+            .addText(text => text
+                .setValue(this.abstract)
+                .onChange(async (value) => {
+                    this.abstract = value
+                }))
+
+        new Setting(contentEl)
+            .addButton(btn => btn
+                .setButtonText('Fetch')
+                .onClick(async (event) => await this.onfetch(contentEl))
+            )
+    }
+
+    async fetch_bibtex(doi: string) {
+        return fetch(`https://doi.org/${doi}`, { headers: { Accept: "application/x-bibtex" }})
+            .then(response => response.text())
+            .catch(error => {
+                console.error('Error:', error)
+            })
+    }
+
+    async onfetch(contentEl: HTMLElement) {
+        await this.fetch_bibtex(this.doi).then(async (bibtex) => {
+            const fields = await parse_bitex(String(bibtex))
+            if (fields.length > 0) {
+                let field = fields[0]
+
+                // gen id
+                let authors = field.author.split(' and ')
+                let first_author = authors[0]
+                let last_name, first_name
+
+                if (first_author.includes(',')) {
+                    [last_name, first_name] = first_author.split(',').map(str => str.trim())
+                } else {
+                    let name_parts = first_author.split(' ').map(str => str.trim())
+                    last_name = name_parts.pop()
+                    first_name = name_parts.join(' ')
+                }
+
+                field['id'] = `${first_name}${last_name}${field['year'] || ''}`.replace(/[^a-zA-Z0-9]/g, '') + this.id_surfix
+
+                // fix duplication
+                if (field.id in this.plugin.cache.bibtex_dict) {
+                    field.id += '+'
+                }
+
+                // add abstract
+                if (this.abstract != '') {
+                    field.abstract = this.abstract
+                }
+                this.bibtex = make_bibtex(field)
+            }
+        })
+        copy_to_clipboard(this.bibtex)
+    }
 }

@@ -1,5 +1,5 @@
 import { App, Editor, SuggestModal, EditorSuggest, TFile, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian'
-import { type BibtexDict } from 'src/bibtex'
+import { match_query, type BibtexDict } from 'src/bibtex'
 
 export class ModalPrompt extends SuggestModal<BibtexDict> {
     all_bibtex: BibtexDict[]
@@ -13,12 +13,7 @@ export class ModalPrompt extends SuggestModal<BibtexDict> {
 
     // returns all available suggestions
     getSuggestions(query: string): BibtexDict[] {
-        return this.all_bibtex.filter((bibtex) =>
-            bibtex.fields.id.toLowerCase().includes(query.toLowerCase()) ||
-            bibtex.fields.title.toLowerCase().includes(query.toLowerCase()) ||
-            bibtex.fields.author.toLowerCase().includes(query.toLowerCase()) ||
-            bibtex.fields.tags.toLowerCase().includes(query.toLowerCase())
-        )
+        return this.all_bibtex.filter((bibtex) => match_query(bibtex, query))
     }
 
     // renders each suggestion item
@@ -72,13 +67,7 @@ export class EditorPrompt extends EditorSuggest<string> {
         // generate suggestion items based on the context
         const query = context.query
         return Object.values(this.bibtex_dict)
-            .filter((bibtex) =>
-                bibtex.fields.id.toLowerCase().includes(query.toLowerCase()) ||
-                bibtex.fields.title.toLowerCase().includes(query.toLowerCase()) ||
-                bibtex.fields.author.toLowerCase().includes(query.toLowerCase()) ||
-                bibtex.fields.tags.toLowerCase().includes(query.toLowerCase()) ||
-                bibtex.fields.abstract.toLowerCase().includes(query.toLowerCase())
-            )
+            .filter((bibtex) => match_query(bibtex, query))
             .map((bibtex: BibtexDict) => String(bibtex.fields.id))
     }
 
@@ -93,7 +82,6 @@ export class EditorPrompt extends EditorSuggest<string> {
     selectSuggestion(id: string, evt: MouseEvent | KeyboardEvent): void {
         // handle the selection of a suggestion
         const bibtex = this.bibtex_dict[id]
-        console.log(this.match_start)
         this.editor.replaceRange(
             `${bibtex.fields.id}${(this.match_start === '{')?('}'):(']')}`,
             this.trigger_info.start,

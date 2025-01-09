@@ -1,5 +1,5 @@
 import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bitex, make_bibtex, check_duplicate_id, type BibtexDict } from 'src/bibtex'
+import { parse_bitex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import { ModalPrompt, EditorPrompt } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
@@ -32,7 +32,11 @@ export default class BibtexScholar extends Plugin {
 		this.registerMarkdownPostProcessor((el, ctx) => this.inline_ref_processor(el, ctx))
 
 		// commands for copy all bibtex entries to the clipboard
-		this.addRibbonIcon('scroll-text', 'Copy All BibTeX', (evt: MouseEvent) => this.cp_bibtex(true))
+		this.addRibbonIcon(
+			'scroll-text',
+			'Copy All BibTeX',
+			(evt: MouseEvent) => this.cp_bibtex(true)
+		)
 
 		this.addCommand({
 			id: 'copy-file-bibtex',
@@ -67,6 +71,13 @@ export default class BibtexScholar extends Plugin {
 				return true
 			},
 		})
+
+		// commands for fetch bibtex online
+		this.addRibbonIcon(
+			'antenna',
+			'Fetch BibTeX Online',
+			(evt: MouseEvent) => new FetchBibtexOnline(this.app, this).open()
+		)
 
 		// cite paper command & editor prompt
 		this.addCommand({
