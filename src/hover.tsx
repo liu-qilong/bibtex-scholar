@@ -1,10 +1,10 @@
-import { App, Notice } from 'obsidian'
+import { App, Notice, Modal } from 'obsidian'
 import { useState, StrictMode } from "react"
 import { createRoot } from 'react-dom/client'
 import Markdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import { UploadPdfModal } from 'src/upload'
+// import { UploadPdfModal } from 'src/upload'
 
 import { type BibtexDict } from 'src/bibtex'
 import BibtexScholar from 'src/main'
@@ -15,6 +15,58 @@ const copy_to_clipboard = (text: any) => {
     }).catch(err => {
         console.error('Failed to copy text: ', err)
     })
+}
+
+export class UploadPdfModal extends Modal {
+    folder: string
+    fname: string
+
+    constructor(app: App, folder: string = 'paper/pdf', fname: string = 'paper.pdf') {
+        super(app)
+        this.folder = folder
+        this.fname = fname
+    }
+
+    onOpen() {
+        const { contentEl } = this
+        contentEl.createEl('h4', { text: 'Upload PDF' })
+
+        const file_input = contentEl.createEl('input', { type: 'file' })
+        file_input.addEventListener('change', (event: Event) => {
+            const target = event.target as HTMLInputElement
+            if (target.files && target.files.length > 0) {
+                const file = target.files[0]
+                this.handleFileUpload(file)
+            }
+        })
+    }
+
+    handleFileUpload(file: File) {
+        // read the file as an ArrayBuffer
+        const reader = new FileReader()
+        reader.onload = async (event) => {
+            const { result } = event.target as FileReader
+            const data = result as ArrayBuffer
+            const file_path = `${this.folder}/${this.fname}`
+
+            // ensure the folder exists
+            if (!await this.app.vault.adapter.exists(this.folder)) {
+                await this.app.vault.createFolder(this.folder)
+            }
+
+            // save the file to the vault
+            await this.app.vault.createBinary(file_path, data)
+            await this.app.workspace.openLinkText(this.fname, this.fname, true)
+        }
+        reader.readAsArrayBuffer(file)
+
+        this.close()
+    }
+
+    onClose() {
+        const { contentEl } = this
+        contentEl.empty()
+    }
 }
 
 const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: string, folder: string, app: App}) => {
@@ -51,7 +103,7 @@ const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: st
 
                     // create the file
                     await app.vault.create(`${folder}/${fname}`, `\`[${fname.replace('.md', '')}]\``)
-                    app.workspace.openLinkText(fname, fname, true)
+                    await app.workspace.openLinkText(fname, fname, true)
                 }
             }
             
