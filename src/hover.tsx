@@ -71,7 +71,6 @@ const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: st
 
     return (
     <a 
-        href={fname}
         className={cls}
         onMouseOver={ (event) => {
             app.workspace.trigger("hover-link", {
