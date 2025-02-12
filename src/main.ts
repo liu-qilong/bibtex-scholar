@@ -66,7 +66,7 @@ export default class BibtexScholar extends Plugin {
 			name: 'Uncache All BibTeX Entries',
 			checkCallback: (checking: boolean) => {
 				if (!checking) {
-					this.uncache_bibtex(true)
+					this.uncache_bibtex()
 				}
 				return true
 			},
@@ -77,11 +77,23 @@ export default class BibtexScholar extends Plugin {
 			name: 'Uncache BibTeX Entries from Current File',
 			checkCallback: (checking: boolean) => {				
 				if (!checking) {
-					this.uncache_bibtex(false)
+					const current_file = this.app.workspace.getActiveFile()
+					if (current_file) {
+						this.uncache_bibtex(current_file.path)
+					}
 				}
 				return true
 			},
 		})
+		
+		// events for rename and delete file
+		this.registerEvent(this.app.vault.on('rename', (file, old_path) => {
+			this.update_bibtex_source(old_path, file.path)
+		}))
+
+		this.registerEvent(this.app.vault.on('delete', (file) => {
+			this.uncache_bibtex(file.path)
+		}))
 
 		// commands for fetch bibtex online
 		this.addRibbonIcon(
@@ -222,27 +234,46 @@ export default class BibtexScholar extends Plugin {
 		new Notice('Copied BibTeX entries to clipboard')
 	}
 
-	async uncache_bibtex(all: boolean = false) {
-		// prompt confirm
-		const confirmed = window.confirm('Are you sure you want to uncache BibTeX entries?')
-		const current_file = this.app.workspace.getActiveFile()
-					
-		if (!confirmed) {
-			return false
-		}
+	async uncache_bibtex(source_path: string = '') {
+		let update = false
 
 		// uncache bibtex entries
 		for (const id in this.cache.bibtex_dict) {
-			if (!all) {
-				// if not all, only uncache bibtex from the current file
-				if (!current_file || (current_file && this.cache.bibtex_dict[id].source_path != current_file.path)) {
-					continue
+			if (source_path == '') {
+				// if source_path is empty, prompt confirmation and then uncache all bibtex entries
+				if (window.confirm('Are you sure you want to uncache BibTeX entries?')) {
+					delete this.cache.bibtex_dict[id]
+					update = true
 				}
+			} else if (this.cache.bibtex_dict[id].source_path == source_path) {
+				// if source_path is not empty, uncache bibtex entries from the current file
+				delete this.cache.bibtex_dict[id]
+				update = true
 			}
-			delete this.cache.bibtex_dict[id]
 		}
-		this.save_cache()
-		new Notice('Uncached all BibTeX entries')
+
+		if (update) {
+			await this.save_cache()
+			new Notice('Uncached BibTeX entries')
+		}
+	}
+
+	async update_bibtex_source(old_path: string, new_path: string) {
+		let update = false
+
+		// uncache bibtex entries
+		for (const id in this.cache.bibtex_dict) {
+			if (this.cache.bibtex_dict[id].source_path == old_path) {
+				// if source_path is not empty, uncache bibtex entries from the current file
+				this.cache.bibtex_dict[id].source_path = new_path
+				update = true
+			}
+		}
+
+		if (update) {
+			await this.save_cache()
+			new Notice('Updated BibTeX entry paths')
+		}
 	}
 
 	add_paper_panel() {
