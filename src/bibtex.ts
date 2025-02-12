@@ -23,7 +23,7 @@ export async function parse_bitex(bibtex_source: string, lower_case_type: boolea
     let fields_ls: BibtexField[] = []
     // let match = entry_regex.exec(bibtex_source.replace(/\n/g, ''))
 
-    while ((match = entry_regex.exec(bibtex_source.replace(/\n/g, ''))) !== null) {
+    while ((match = entry_regex.exec(bibtex_source.replace(/\n/g, '').replace(/\s+/g, ' '))) !== null) {
         let fields: BibtexField = {
             type: match[1],
             id : match[2],

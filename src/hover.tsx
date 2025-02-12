@@ -99,7 +99,6 @@ const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: st
                     await app.workspace.openLinkText(fname, fname, true)
                 }
             }
-            
         }}
     >
         <button>{label}</button>
