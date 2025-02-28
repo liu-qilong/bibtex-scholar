@@ -255,7 +255,7 @@ export default class BibtexScholar extends Plugin {
 			content = content.replace(/\`(\{|\[)([^\}\]]+)(\}|\])\`/g, (match, p1, id, p3) => {
 				const fields = this.cache.bibtex_dict[id]?.fields
 				if (fields.url) {
-					return `[${id}](${fields.doi})`
+					return `[${id}](${fields.url})`
 				} else if  (fields.doi){
 					return `[${id}](http://dx.doi.org/${fields.doi})`
 				} else {
