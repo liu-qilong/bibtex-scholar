@@ -95,7 +95,7 @@ const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: st
                     }
 
                     // create the file
-                    await app.vault.create(`${folder}/${fname}`, `\`[${fname.replace('.md', '')}]\``)
+                    await app.vault.create(`${folder}/${fname}`, `---\naliases:\n  - \n---\n\`[${fname.replace('.md', '')}]\`\n\n---\n\n`)
                     await app.workspace.openLinkText(fname, fname, true)
                 }
             }
