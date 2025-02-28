@@ -60,6 +60,18 @@ export default class BibtexScholar extends Plugin {
 			},
 		})
 
+		// commands for copy file in standard markdown syntax
+		this.addCommand({
+			id: 'copy-std-md',
+			name: 'Copy Current File as Standard Markdown',
+			checkCallback: (checking: boolean) => {
+				if (!checking) {
+					this.cp_std_md()
+				}
+				return true
+			},
+		})
+
 		// commands for uncache bibtex entries
 		this.addCommand({
 			id: 'uncache-all-bibtex',
@@ -232,6 +244,32 @@ export default class BibtexScholar extends Plugin {
 		
 		navigator.clipboard.writeText(bibtex)
 		new Notice('Copied BibTeX entries to clipboard')
+	}
+
+	async cp_std_md() {
+		const current_file = this.app.workspace.getActiveFile()
+		// read file content
+		if (current_file) {
+			let content = await this.app.vault.read(current_file)
+			content = content.replace(/```bibtex[\s\S]*?```/g, '')
+			content = content.replace(/\`(\{|\[)([^\}\]]+)(\}|\])\`/g, (match, p1, id, p3) => {
+				const fields = this.cache.bibtex_dict[id]?.fields
+				if (fields.url) {
+					return `[${id}](${fields.doi})`
+				} else if  (fields.doi){
+					return `[${id}](http://dx.doi.org/${fields.doi})`
+				} else {
+					return `[${id}](data:text/plain,${encodeURIComponent(this.cache.bibtex_dict[id].source)})`
+				}
+
+				// encode entire bibtex in the link (abandoned)
+				// return `[${id}](data:text/plain,${encodeURIComponent(this.cache.bibtex_dict[id].source)})`
+			})
+			navigator.clipboard.writeText(content)
+			new Notice('Copied standard markdown to clipboard')
+		} else {
+			new Notice('No active file to copy')
+		}
 	}
 
 	async uncache_bibtex(source_path: string = '') {
