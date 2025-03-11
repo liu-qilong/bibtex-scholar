@@ -5,7 +5,7 @@ import Markdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 
-import { type BibtexDict } from 'src/bibtex'
+import { type BibtexElement, make_bibtex } from 'src/bibtex'
 import BibtexScholar from 'src/main'
 
 export const copy_to_clipboard = (text: any) => {
@@ -106,7 +106,7 @@ const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: st
     )
 }
 
-const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexDict, plugin: BibtexScholar, app: App, expand: boolean }) => {
+const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean }) => {
     const paper_id = bibtex.fields.id
 
     // handlers for mouse enter and leave
@@ -142,7 +142,8 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexDict,
                         <code>id</code>
                     </button>
                     {/* copy bibtex */}
-                    <button onClick={() => copy_to_clipboard(bibtex.source)}>
+                    <button onClick={() => copy_to_clipboard(make_bibtex(bibtex.fields, false))}>
+                    {/* <button onClick={() => copy_to_clipboard(bibtex.source)}> */}
                         <code>bibtex</code>
                     </button>
                     {/* md cite */}
@@ -190,7 +191,7 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexDict,
     )
 }
 
-export const render_hover = async ( el: HTMLElement, bibtex: BibtexDict, plugin: BibtexScholar, app: App, expand: boolean = false ) => {
+export const render_hover = async ( el: HTMLElement, bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false ) => {
     createRoot(el).render(
         <StrictMode>
             <HoverPopup bibtex={bibtex} plugin={plugin} app={app} expand={expand}/>

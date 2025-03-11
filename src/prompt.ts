@@ -1,5 +1,5 @@
 import { App, Editor, SuggestModal, EditorSuggest, TFile, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian'
-import { match_query, type BibtexDict } from 'src/bibtex'
+import { BibtexElement, match_query, type BibtexDict } from 'src/bibtex'
 
 export class EditorPrompt extends EditorSuggest<string> {
     bibtex_dict: BibtexDict
@@ -37,7 +37,7 @@ export class EditorPrompt extends EditorSuggest<string> {
         const query = context.query
         return Object.values(this.bibtex_dict)
             .filter((bibtex) => match_query(bibtex, query))
-            .map((bibtex: BibtexDict) => String(bibtex.fields.id))
+            .map((bibtex: BibtexElement) => String(bibtex.fields.id))
     }
 
     renderSuggestion(id: string, el: HTMLElement): void {

@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf, Setting, type IconName } from 'obsidian'
-import { match_query, type BibtexDict } from 'src/bibtex'
+import { match_query, type BibtexDict, type BibtexElement } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import BibtexScholar from 'src/main'
 
@@ -60,6 +60,6 @@ export class PaperPanelView extends ItemView {
     get_papers(query: string): string[] {
         return Object.values(this.bibtex_dict)
             .filter((bibtex) => match_query(bibtex, query))
-            .map((bibtex: BibtexDict) => String(bibtex.fields.id))
+            .map((bibtex: BibtexElement) => String(bibtex.fields.id))
     }
 }

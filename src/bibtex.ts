@@ -8,11 +8,13 @@ export interface BibtexField {
     [key: string]: string,
 }
 
+export interface BibtexElement {
+    fields: BibtexField,  // bibtex fields
+    [key: string]: any,  // other data associated to the paper
+}
+
 export interface BibtexDict {
-	[key: string]: {  // paper id
-		fields: BibtexField,  // bibtex fields
-		[key: string]: any,  // other data associated to the paper
-	}
+	[key: string]: BibtexElement
 }
 
 export async function parse_bitex(bibtex_source: string, lower_case_type: boolean = true): Promise<BibtexField[]> {
@@ -21,7 +23,6 @@ export async function parse_bitex(bibtex_source: string, lower_case_type: boolea
     const entry_regex = /@([a-zA-Z]+){([^,]+),([^@]*)}/g
     let match
     let fields_ls: BibtexField[] = []
-    // let match = entry_regex.exec(bibtex_source.replace(/\n/g, ''))
 
     while ((match = entry_regex.exec(bibtex_source.replace(/\n/g, '').replace(/\s+/g, ' '))) !== null) {
         let fields: BibtexField = {
@@ -100,15 +101,17 @@ export async function parse_bitex(bibtex_source: string, lower_case_type: boolea
     return fields_ls
 }
 
-export function make_bibtex(fields: BibtexField): string {
+export function make_bibtex(fields: BibtexField, include_abstract: Boolean = true): string {
     let bibtex = `@${fields.type}{${fields.id},\n`
 
     for (let key in fields) {
         if (key === 'type' || key === 'id') {
             continue
         }
-
-        bibtex += `  ${key} = {${fields[key]}},\n`
+        if (key === 'abstract' && !include_abstract) {
+            continue
+        }
+        bibtex += `  ${key} = {${fields[key].replace(/&amp;/g, '\\&')}},\n`
     }
 
     bibtex += '}\n'
@@ -143,7 +146,7 @@ export function check_duplicate_id(bibtex_dict: BibtexDict, id: string, file_pat
     return false
 }
 
-export function match_query(bibtex: BibtexDict, query: string): boolean {
+export function match_query(bibtex: BibtexElement, query: string): boolean {
     function match_query_single(q: string): boolean {
         const q_low_trim = q.toLowerCase().trim()
 

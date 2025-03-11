@@ -239,7 +239,8 @@ export default class BibtexScholar extends Plugin {
 					continue
 				}
 			}
-			bibtex += this.cache.bibtex_dict[id].source + '\n\n'
+			// bibtex += this.cache.bibtex_dict[id].source + '\n\n'
+			bibtex += make_bibtex(this.cache.bibtex_dict[id].fields, false) + '\n'
 		}
 		
 		navigator.clipboard.writeText(bibtex)
