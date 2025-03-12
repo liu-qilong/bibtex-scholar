@@ -35,7 +35,7 @@ export default class BibtexScholar extends Plugin {
 		this.addRibbonIcon(
 			'scroll-text',
 			'Copy All BibTeX',
-			(evt: MouseEvent) => this.cp_bibtex(true)
+			(evt: MouseEvent) => this.cp_bibtex()
 		)
 
 		this.addCommand({
@@ -43,18 +43,7 @@ export default class BibtexScholar extends Plugin {
 			name: 'Copy All BibTeX Entries',
 			checkCallback: (checking: boolean) => {
 				if (!checking) {
-					this.cp_bibtex(true)
-				}
-				return true
-			},
-		})
-
-		this.addCommand({
-			id: 'copy-file-bibtex',
-			name: 'Copy BibTeX Entries from Current File',
-			checkCallback: (checking: boolean) => {
-				if (!checking) {
-					this.cp_bibtex(false)
+					this.cp_bibtex()
 				}
 				return true
 			},
@@ -228,18 +217,11 @@ export default class BibtexScholar extends Plugin {
 		}
 	}
 
-	cp_bibtex(all: boolean = false) {
+	cp_bibtex() {
 		let bibtex = ''
 		const current_file = this.app.workspace.getActiveFile()
 		
 		for (const id in this.cache.bibtex_dict) {
-			if (!all) {
-				// if not all, only copy bibtex from the current file
-				if (!current_file || (current_file && this.cache.bibtex_dict[id].source_path != current_file.path)) {
-					continue
-				}
-			}
-			// bibtex += this.cache.bibtex_dict[id].source + '\n\n'
 			bibtex += make_bibtex(this.cache.bibtex_dict[id].fields, false) + '\n'
 		}
 		
