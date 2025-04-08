@@ -182,13 +182,13 @@ export function match_query(bibtex: BibtexElement, query: string): boolean {
 
 export function mentions_search_query(id: string): string {
     // example: MaksOvsjanikov2012TOG ->
-    // /\`[\[\{]MaksOvsjanikov2012TOG[\]\}]\`/
+    // /\`[\[\{]MaksOvsjanikov2012TOG[\]\}]\`/  <-- `[id]` or `{id}`
     // OR
-    // /\[\[MaksOvsjanikov2012TOG\]\]/
+    // /\[\[MaksOvsjanikov2012TOG\]\]/  <-- `[[id]]`
     // OR
-    // /\[\[MaksOvsjanikov2012TOG\|[^\]]*\]\]/
+    // /\[\[MaksOvsjanikov2012TOG\|[^\]]*\]\]/  <-- `[[id|text]]`
     // OR
-    // /\[\[MaksOvsjanikov2012TOG\#[^\]]*\]\]/
+    // /\[\[MaksOvsjanikov2012TOG\#[^\]]*\]\]/  <-- `[[id#text]]`
     return `/\\\`[\\[\\{]${id}[\\]\\}]\\\`/\n` +
         `OR /\\[\\[${id}\\]\\]/\n` +
         `OR /\\[\\[${id}\\|[^\\]]*\\]\\]/\n` +
