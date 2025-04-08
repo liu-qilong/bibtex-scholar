@@ -5,7 +5,7 @@ import Markdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 
-import { type BibtexElement, make_bibtex } from 'src/bibtex'
+import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
 import BibtexScholar from 'src/main'
 
 export const copy_to_clipboard = (text: any) => {
@@ -164,6 +164,34 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexEleme
                     <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app}/>
                     {/* linked bibtex source */}
                     <LinkedFileButton label='soure' fname={String(bibtex.source_path)} folder={''} app={app}/>
+                    {/* mentions query */}
+                    <button
+                        onClick={async () => {
+                            const query = mentions_search_query(paper_id)
+
+                            // check if a search leaf exists
+                            // if no search leaf exists, create one
+                            let search_leaf = app.workspace.getLeavesOfType('search')[0]
+                            
+                            if (!search_leaf) {
+                                const leaf = app.workspace.getLeftLeaf(false)
+                                if (leaf) {
+                                    leaf.setViewState({ type: 'search', active: true })
+                                    search_leaf = app.workspace.getLeavesOfType('search')[0]
+                                }
+                            }
+                            
+                            // set the query in the search panel
+                            if (search_leaf) {
+                                await app.workspace.revealLeaf(search_leaf);
+
+                                (search_leaf.view as any).setQuery(query)
+                                app.workspace.setActiveLeaf(search_leaf)
+                            }
+                        }}
+                    >
+                        mentions
+                    </button>
                     <code>{'+'}</code>
                     {/* tool */}
                     <button onClick={() => {

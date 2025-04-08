@@ -180,6 +180,21 @@ export function match_query(bibtex: BibtexElement, query: string): boolean {
     return true
 }
 
+export function mentions_search_query(id: string): string {
+    // example: MaksOvsjanikov2012TOG ->
+    // /\`[\[\{]MaksOvsjanikov2012TOG[\]\}]\`/
+    // OR
+    // /\[\[MaksOvsjanikov2012TOG\]\]/
+    // OR
+    // /\[\[MaksOvsjanikov2012TOG\|[^\]]*\]\]/
+    // OR
+    // /\[\[MaksOvsjanikov2012TOG\#[^\]]*\]\]/
+    return `/\\\`[\\[\\{]${id}[\\]\\}]\\\`/\n` +
+        `OR /\\[\\[${id}\\]\\]/\n` +
+        `OR /\\[\\[${id}\\|[^\\]]*\\]\\]/\n` +
+        `OR /\\[\\[${id}#[^\\]]*\\]\\]/`
+}
+
 export class FetchBibtexOnline extends Modal {
     plugin: BibtexScholar
     changable_el: HTMLElement
