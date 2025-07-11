@@ -204,9 +204,9 @@ export default class BibtexScholar extends Plugin {
 				}
 			}
 	
-			// render paper entry
+			// render paper element
 			const paper_bar = el.createEl('span', {
-				cls: (duplicate)?('bibtex-entry-duplicate-id'):('bibtex-entry'),
+				cls: (duplicate)?('bibtex-hover-duplicate-id'):('bibtex-entry'),
 			})
 			render_hover(paper_bar, this.cache.bibtex_dict[id], this, this.app)
 			el.createEl('code').setText('source')

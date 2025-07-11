@@ -8,8 +8,29 @@ If your plugin does not need CSS, delete this file.
 */
 
 /* bibtex entry & hover */
+.bibtex-hover button {
+    --o-border: 1px solid var(--background-modifier-border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--font-ui-small);
+    padding: var(--size-4-1) var(--size-4-3);
+    height: var(--input-height);
+    font-weight: var(--input-font-weight);
+    cursor: var(--cursor);
+    font-family: inherit;
+    outline: none;
+    user-select: none;
+    white-space: nowrap;
+    background-color: var(--background-primary);
+    color: var(--color-accent);
+    border: var(--o-border);
+    border-radius: var(--ulu-radius) !important;
+    transition: .3s;
+    box-shadow: none;
+}
 
-.bibtex-entry-duplicate-id button {
+.bibtex-hover-duplicate-id button {
     background-color: crimson !important;
 }
 
