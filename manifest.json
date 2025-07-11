@@ -3,7 +3,7 @@
 	"name": "BibTeX Scholar",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Obsidian plugin for managing/citing BibTeX entries",
+	"description": "A BibTeX citation management tool built entirely on Obsidian",
 	"author": "Qilong Liu",
 	"authorUrl": "https://liu-qilong.github.io",
 	"fundingUrl": "",

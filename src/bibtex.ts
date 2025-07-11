@@ -285,6 +285,7 @@ export class FetchBibtexOnline extends Modal {
                     'doi': 'DOI',
                     'manual': 'Manual',
                 })
+                .setValue(this.plugin.cache.fetch_mode)
                 .onChange(async (value) => {
                     if (value === 'doi') {
                         this.switch_doi_mode()
@@ -313,7 +314,12 @@ export class FetchBibtexOnline extends Modal {
                 }))
         
         this.changable_el = contentEl.createDiv()
-        this.switch_doi_mode()
+        
+        if (this.plugin.cache.fetch_mode === 'doi') {
+            this.switch_doi_mode()
+        } else {
+            this.switch_manual_mode()
+        }
     }
 
     /**

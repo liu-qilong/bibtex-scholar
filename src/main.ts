@@ -8,12 +8,14 @@ interface BibtexScholarCache {
 	bibtex_dict: BibtexDict,
 	note_folder: string,
 	pdf_folder: string,
+	fetch_mode: string,
 }
 
 const DEFAULT_SETTINGS: BibtexScholarCache = {
 	bibtex_dict: {},
 	note_folder: 'note',
 	pdf_folder: 'pdf',
+	fetch_mode: 'doi',
 }
 
 export default class BibtexScholar extends Plugin {
@@ -160,7 +162,7 @@ export default class BibtexScholar extends Plugin {
 	 * P.S. The BibTeX entries are also saved to the cache: this.cache.bibtex_dict
 	 */
 	async save_cache() {
-		console.log('export bibtex cache')
+		// console.log('export bibtex cache')
 		await this.saveData(this.cache)
 	}
 
@@ -308,7 +310,6 @@ export default class BibtexScholar extends Plugin {
 		let update = false
 
 		for (const id in this.cache.bibtex_dict) {
-			console.log(this.cache.bibtex_dict[id].source_path == path)
 			if (this.cache.bibtex_dict[id].source_path == path) {
 				delete this.cache.bibtex_dict[id]
 				update = true
@@ -404,6 +405,18 @@ class BibtexScholarSetting extends PluginSettingTab {
 				.setValue(this.plugin.cache.pdf_folder)
 				.onChange(async (value) => {
 					this.plugin.cache.pdf_folder = value
+					await this.plugin.save_cache()
+				}))
+
+		new Setting(containerEl)
+			.setName('Default mode for fetching BibTeX online')
+			.setDesc('Choose the default mode for fetching BibTeX entries online')
+			.addDropdown(dropdown => dropdown
+				.addOption('doi', 'DOI')
+				.addOption('manual', 'Manual')
+				.setValue(this.plugin.cache.fetch_mode)
+				.onChange(async (value) => {
+					this.plugin.cache.fetch_mode = value
 					await this.plugin.save_cache()
 				}))
 	}
