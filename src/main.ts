@@ -1,5 +1,5 @@
 import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bitex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type BibtexDict } from 'src/bibtex'
+import { parse_bibtex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import { EditorPrompt } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
@@ -147,18 +147,33 @@ export default class BibtexScholar extends Plugin {
 
 	}
 
+	/**
+	 * Loads the plugin cache from storage.
+	 * P.S. The BibTeX entries is also loaded from the cache: this.cache.bibtex_dict
+	 */
 	async load_cache() {
 		this.cache = Object.assign({}, DEFAULT_SETTINGS, await this.loadData())
 	}
 
+	/**
+	 * Saves the plugin cache to storage.
+	 * P.S. The BibTeX entries are also saved to the cache: this.cache.bibtex_dict
+	 */
 	async save_cache() {
 		console.log('export bibtex cache')
 		await this.saveData(this.cache)
 	}
 
+	/**
+	 * Processes a BibTeX code block.
+	 * It adds the BibTeX entry to the cache if no duplication is found.
+	 * @param {string} source - The source text of the code block.
+	 * @param {HTMLElement} el - The HTML element representing the code block.
+	 * @param {MarkdownPostProcessorContext} ctx - The Markdown post-processing context.
+	 */
 	async bibtex_codeblock_processor(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
 		// parse bibtex
-		const fields_ls = await parse_bitex(source)
+		const fields_ls = await parse_bibtex(source)
 		fields_ls.forEach( async (fields) => {
 			const id = fields.id
 			const bibtex_source = make_bibtex(fields)
@@ -198,6 +213,13 @@ export default class BibtexScholar extends Plugin {
 		})
 	}
 
+	/**
+	 * Processes an inline reference in the formats:
+	 * * `{<id>}`: Show the collapsed paper element (hover to expand)
+	 * * `[<id>]`: Show the expanded paper element
+	 * @param el - The HTML element representing the inline reference.
+	 * @param ctx - The Markdown post-processing context.
+	 */
 	inline_ref_processor(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
 		const codeblocks = el.findAll('code')
 
@@ -221,6 +243,10 @@ export default class BibtexScholar extends Plugin {
 		}
 	}
 
+	/**
+	 * Copy all BibTeX entries to clipboard
+	 * P.S. The abstract will be omitted to ensure that LaTeX compiles correctly
+	 */
 	cp_bibtex() {
 		let bibtex = ''
 		const current_file = this.app.workspace.getActiveFile()
@@ -233,6 +259,9 @@ export default class BibtexScholar extends Plugin {
 		new Notice('Copied BibTeX entries to clipboard')
 	}
 
+	/**
+	 * Copy the current file's content as standard markdown, i.e. replacing inline references with url links
+	 */
 	async cp_std_md() {
 		const current_file = this.app.workspace.getActiveFile()
 		// read file content
@@ -261,7 +290,7 @@ export default class BibtexScholar extends Plugin {
 
 	/**
 	 * Uncache a single BibTeX entry
-	 * @param paper_id The ID of the paper to uncache
+	 * @param paper_id - The ID of the paper to uncache
 	 */
 	async uncache_bibtex_with_id(paper_id: string) {
 		// uncache single bibtex
@@ -272,12 +301,11 @@ export default class BibtexScholar extends Plugin {
 	
 	/**
 	 * Uncache all BibTeX entry from a path
-	 * @param path The path to uncache papers from
+	 * @param path - The path to uncache papers from
 	 */
 	async uncache_bibtex_from_path(path: string) {
 		// batch uncache
 		let update = false
-		// console.log(path, this.cache.bibtex_dict['FedericoTombari2010ECCV'], this.cache.bibtex_dict['FedericoTombari2010ECCV'].source_path)
 
 		for (const id in this.cache.bibtex_dict) {
 			console.log(this.cache.bibtex_dict[id].source_path == path)
@@ -306,6 +334,12 @@ export default class BibtexScholar extends Plugin {
 		new Notice('Uncached all BibTeX entries')
 	}
 
+	/**
+	 * Update the source path of a BibTeX entry
+	 * P.S. Usually called when a file is renamed
+	 * @param old_path - The old source path
+	 * @param new_path - The new source path
+	 */
 	async update_bibtex_source_path(old_path: string, new_path: string) {
 		let update = false
 
@@ -324,6 +358,9 @@ export default class BibtexScholar extends Plugin {
 		}
 	}
 
+	/**
+	 * Add paper panel to the right sidebar
+	 */
 	add_paper_panel() {
 		const { workspace } = this.app
 		let leaf = workspace.getRightLeaf(false)
@@ -334,6 +371,9 @@ export default class BibtexScholar extends Plugin {
 	}
 }
 
+/**
+ * BibTeX Scholar's setting
+ */
 class BibtexScholarSetting extends PluginSettingTab {
 	plugin: BibtexScholar
 

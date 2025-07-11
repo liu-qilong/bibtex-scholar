@@ -2,22 +2,48 @@ import { App, Modal, ButtonComponent, Setting, Notice } from 'obsidian'
 import BibtexScholar from 'src/main'
 import { copy_to_clipboard } from 'src/hover'
 
+/**
+ * Represents a single BibTeX entry field.
+ * @property {string} type - The type of the BibTeX entry (e.g. article, book, etc.)
+ * @property {string} id - The unique identifier for the BibTeX entry.
+ * @property {string} [key] - The other fields associated with the BibTeX entry (e.g. author, title, year, etc.)
+ */
 export interface BibtexField {
     type: string,
     id: string,
     [key: string]: string,
 }
 
+/**
+ * Represents a single BibTeX element, which includes the main BibTeX fields
+ * as well as any additional data associated with a paper.
+ * @property {BibtexField} fields - The BibTeX fields for the entry (e.g., type, id, author, title).
+ * @property {string} source - The raw BibTeX source for the entry.
+ * @property {string} source_path - The file path to the BibTeX source.
+ * @property {any} [key: string] - Any other data associated with the paper, accessible by key (e.g. abstract, keywords).
+ */
 export interface BibtexElement {
     fields: BibtexField,  // bibtex fields
+    source: string,
+    source_path: string,
     [key: string]: any,  // other data associated to the paper
 }
 
+/**
+ * Represents a dictionary (map) of BibTeX elements, indexed by their citation key or unique identifier.
+ * The key is typically the BibTeX citation key, and the value is the associated BibtexElement.
+ */
 export interface BibtexDict {
 	[key: string]: BibtexElement
 }
 
-export async function parse_bitex(bibtex_source: string, lower_case_type: boolean = true): Promise<BibtexField[]> {
+/**
+ * Parses a BibTeX string and extracts its fields.
+ * @param {string} bibtex_source - The BibTeX source string to parse. P.S. it could contains multiple BibTeX entries.
+ * @param {boolean} [lower_case_type=true] - Whether to convert the BibTeX entry type to lower case.
+ * @returns {Promise<BibtexField[]>} - A promise that resolves to an array of BibtexField objects.
+ */
+export async function parse_bibtex(bibtex_source: string, lower_case_type: boolean = true): Promise<BibtexField[]> {
     // match type, id, & fields
     // p.s. no @ string in the fields!
     const entry_regex = /@([a-zA-Z]+){([^,]+),([^@]*)}/g
@@ -101,6 +127,12 @@ export async function parse_bitex(bibtex_source: string, lower_case_type: boolea
     return fields_ls
 }
 
+/**
+ * Generate a BibTeX string from the given fields.
+ * @param fields - The BibTeX fields to include in the entry.
+ * @param include_abstract - Whether to include the abstract field, default is true. P.S. When the generated BibTex string will be used for LaTeX, don't include the abstract, otherwise it may cause issues due to some special characters.
+ * @returns The generated BibTeX string.
+ */
 export function make_bibtex(fields: BibtexField, include_abstract: Boolean = true): string {
     let bibtex = `@${fields.type}{${fields.id},\n`
 
@@ -119,6 +151,14 @@ export function make_bibtex(fields: BibtexField, include_abstract: Boolean = tru
     return bibtex
 }
 
+/**
+ * Check if a BibTeX entry ID is duplicated within a file or across different files.
+ * @param bibtex_dict - The dictionary of BibTeX entries.
+ * @param id - The ID of the BibTeX entry to check.
+ * @param file_path - The path of the file to check.
+ * @param file_content - The content of the file to check.
+ * @returns True if the ID is duplicated, false otherwise.
+ */
 export function check_duplicate_id(bibtex_dict: BibtexDict, id: string, file_path: string, file_content: string): boolean {
     // if the id appears more than 1 time in the file
     // it means the id is duplicated in the same file
@@ -146,6 +186,19 @@ export function check_duplicate_id(bibtex_dict: BibtexDict, id: string, file_pat
     return false
 }
 
+/**
+ * Check if a BibTeX entry matches a search query.
+ * Format: <query>;<query>;...
+ * Each query could be a string or a <key>:<value> pair. Only the paper that matches all queries will be considered a match.
+ * @param bibtex - The BibTeX entry to check.
+ * @param query - The search query to match against.
+ * @returns True if the BibTeX entry matches the query, false otherwise.
+ * @example
+ * ```
+ * match_query(bibtex, 'CVPR')
+ * match_query(bibtex, 'author:John Doe;year:2020')
+ * ```
+ */
 export function match_query(bibtex: BibtexElement, query: string): boolean {
     function match_query_single(q: string): boolean {
         const q_low_trim = q.toLowerCase().trim()
@@ -180,6 +233,11 @@ export function match_query(bibtex: BibtexElement, query: string): boolean {
     return true
 }
 
+/**
+ * Generate a search query for all mentions of a BibTeX entry.
+ * @param id - The ID of the BibTeX entry.
+ * @returns A regular expression string to match mentions of the entry.
+ */
 export function mentions_search_query(id: string): string {
     // example: MaksOvsjanikov2012TOG ->
     // /\`[\[\{]MaksOvsjanikov2012TOG[\]\}]\`/  <-- `[id]` or `{id}`
@@ -195,6 +253,11 @@ export function mentions_search_query(id: string): string {
         `OR /\\[\\[${id}#[^\\]]*\\]\\]/`
 }
 
+/**
+ * The modal for fetching BibTeX entries online or manually.
+ * * DOI mode: Fetches BibTeX data from an online source using the DOI.
+ * * Manual mode: Allows users to input BibTeX & abstracts manually.
+ */
 export class FetchBibtexOnline extends Modal {
     plugin: BibtexScholar
     changable_el: HTMLElement
@@ -253,6 +316,9 @@ export class FetchBibtexOnline extends Modal {
         this.switch_doi_mode()
     }
 
+    /**
+     * Switching to DOI mode.
+     */
     switch_doi_mode() {
         this.changable_el.empty()
 
@@ -273,6 +339,9 @@ export class FetchBibtexOnline extends Modal {
             })
     }
 
+    /**
+     * Switching to manual mode.
+     */
     switch_manual_mode() {
         this.changable_el.empty()
 
@@ -293,6 +362,11 @@ export class FetchBibtexOnline extends Modal {
             })
     }
 
+    /**
+     * Process the BibTeX field to generate a unique ID and add relevant information.
+     * @param field The BibTeX field to process.
+     * @returns The processed BibTeX field.
+     */
     process_bibtex_field(field: BibtexField) {
         // gen id
         let authors = field.author.split(' and ')
@@ -322,6 +396,10 @@ export class FetchBibtexOnline extends Modal {
         return field
     }
 
+    /**
+     * Fetch BibTeX data from an online source, process it, and copy to clipboard.
+     * P.S. Used in DOI mode.
+     */
     async onfetch() {
         this.btn.setIcon('loader')
 
@@ -334,7 +412,7 @@ export class FetchBibtexOnline extends Modal {
         }
 
         await fetch_bibtex(this.doi).then(async (bibtex) => {
-            const fields = await parse_bitex(String(bibtex))
+            const fields = await parse_bibtex(String(bibtex))
 
             if (fields.length != 0) {
                 this.bibtex = make_bibtex(this.process_bibtex_field(fields[0]))
@@ -349,9 +427,13 @@ export class FetchBibtexOnline extends Modal {
         })
     }
 
+    /**
+     * Combine BibTeX data from manual input, process it, and copy to clipboard.
+     * P.S. Used in manual mode.
+     */
     async on_process(bibtex: string) {
         this.btn.setIcon('loader')
-        const fields = await parse_bitex(bibtex)
+        const fields = await parse_bibtex(bibtex)
 
         if (fields.length != 0) {
             this.bibtex = make_bibtex(this.process_bibtex_field(fields[0]))

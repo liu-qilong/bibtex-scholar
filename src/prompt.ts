@@ -1,6 +1,12 @@
 import { App, Editor, SuggestModal, EditorSuggest, TFile, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian'
 import { BibtexElement, match_query, type BibtexDict } from 'src/bibtex'
 
+/**
+ * An editor prompt to suggest BibTeX entries. Triggered by:
+ * * Type ` and { for collapsed paper element
+ * * Type ` and [ for expanded paper element
+ * P.S. Since Obsidian auto-completes ``, we are actually matching `{<cursor>` or `[<cursor>`
+ */
 export class EditorPrompt extends EditorSuggest<string> {
     bibtex_dict: BibtexDict
     editor: Editor

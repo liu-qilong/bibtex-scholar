@@ -5,6 +5,9 @@ import BibtexScholar from 'src/main'
 
 export const PAPER_PANEL_VIEW_TYPE = 'paper-panel-view'
 
+/**
+ * Represents the paper panel view in the Obsidian app.
+ */
 export class PaperPanelView extends ItemView {
     bibtex_dict: BibtexDict
     plugin: BibtexScholar

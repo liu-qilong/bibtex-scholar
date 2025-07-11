@@ -8,6 +8,10 @@ import rehypeKatex from 'rehype-katex'
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
 import BibtexScholar from 'src/main'
 
+/**
+ * Copy the given text to the clipboard.
+ * @param text - The text to copy.
+ */
 export const copy_to_clipboard = (text: any) => {
     navigator.clipboard.writeText(text).then(() => {
         new Notice('Copied to clipboard')
@@ -18,12 +22,17 @@ export const copy_to_clipboard = (text: any) => {
 
 /**
  * Modal for uploading a PDF file.
- * 
  */
 class UploadPdfModal extends Modal {
     folder: string
     fname: string
 
+    /**
+     * Constructor
+     * @param {App} app - The Obsidian app instance
+     * @param {string} folder - The folder to place the PDF file
+     * @param {string} fname - The name of the PDF file
+     */
     constructor(app: App, folder: string = 'paper/pdf', fname: string = 'paper.pdf') {
         super(app)
         this.folder = folder
@@ -69,12 +78,10 @@ class UploadPdfModal extends Modal {
 
 /**
  * Renders a button that links to or creates a file within an Obsidian vault.
- *
  * - If the file exists, hovering triggers a preview and clicking opens the file.
  * - If the file does not exist:
  *   - For PDFs, opens an upload modal.
  *   - For Markdown files, ensures the folder exists, creates a new file with a frontmatter template, and opens it.
- *
  * @param label - The text to display on the button.
  * @param fname - The name of the file (without path).
  * @param folder - The folder where the file should be located or created.
@@ -123,12 +130,10 @@ const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: st
 
 /**
  * HoverPopup component displays a hoverable popup for a given BibTeX entry.
- *
  * @param bibtex - The BibtexElement object containing the entry's fields and metadata.
  * @param plugin - The BibtexScholar plugin instance, used for accessing cache and plugin methods.
  * @param app - The Obsidian App instance, used for workspace and UI interactions.
  * @param expand - If true, the popup is expanded by default; otherwise, it appears on hover.
- * 
  * The popup provides quick actions such as copying the entry's ID, BibTeX, markdown/LaTeX citations, and links to associated note, PDF, and BibTeX source files. It also allows searching for mentions of the entry and uncaching the entry from the plugin's cache. Entry fields are rendered with markdown and math support.
  */
 const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean }) => {
