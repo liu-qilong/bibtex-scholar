@@ -68,7 +68,7 @@ export default class BibtexScholar extends Plugin {
 			checkCallback: (checking: boolean) => {
 				if (!checking) {
 					if (window.confirm('Are you sure?')) {
-						this.uncache_bibtex()
+						this.uncache_bibtex_all()
 					}
 				}
 				return true
@@ -83,7 +83,7 @@ export default class BibtexScholar extends Plugin {
 					const current_file = this.app.workspace.getActiveFile()
 					if (current_file) {
 						if (window.confirm('Are you sure?')) {
-							this.uncache_bibtex(current_file.path)
+							this.uncache_bibtex_from_path(current_file.path)
 						}
 					}
 				}
@@ -97,7 +97,7 @@ export default class BibtexScholar extends Plugin {
 		}))
 
 		this.registerEvent(this.app.vault.on('delete', (file) => {
-			this.uncache_bibtex(file.path)
+			this.uncache_bibtex_from_path(file.path)
 		}))
 
 		// commands for fetch bibtex online
@@ -259,17 +259,29 @@ export default class BibtexScholar extends Plugin {
 		}
 	}
 
-	async uncache_bibtex(source_path: string = '') {
+	/**
+	 * Uncache a single BibTeX entry
+	 * @param paper_id The ID of the paper to uncache
+	 */
+	async uncache_bibtex_with_id(paper_id: string) {
+		// uncache single bibtex
+		delete this.cache.bibtex_dict[paper_id]
+		await this.save_cache()
+		new Notice(`Uncached ${paper_id}`)
+	}
+	
+	/**
+	 * Uncache all BibTeX entry from a path
+	 * @param path The path to uncache papers from
+	 */
+	async uncache_bibtex_from_path(path: string) {
+		// batch uncache
 		let update = false
+		// console.log(path, this.cache.bibtex_dict['FedericoTombari2010ECCV'], this.cache.bibtex_dict['FedericoTombari2010ECCV'].source_path)
 
-		// uncache bibtex entries
 		for (const id in this.cache.bibtex_dict) {
-			if (source_path == '') {
-				// if source_path is empty, uncache all bibtex entries
-				delete this.cache.bibtex_dict[id]
-				update = true
-			} else if (this.cache.bibtex_dict[id].source_path == source_path) {
-				// if source_path is not empty, uncache bibtex entries from the current file
+			console.log(this.cache.bibtex_dict[id].source_path == path)
+			if (this.cache.bibtex_dict[id].source_path == path) {
 				delete this.cache.bibtex_dict[id]
 				update = true
 			}
@@ -277,8 +289,21 @@ export default class BibtexScholar extends Plugin {
 
 		if (update) {
 			await this.save_cache()
-			new Notice('Uncached BibTeX entries')
+			new Notice(`Uncached BibTeX entries from ${path}`)
 		}
+	}
+
+	/**
+	 * Uncache all BibTeX entry
+	 */
+	async uncache_bibtex_all() {
+		// batch uncache
+		for (const id in this.cache.bibtex_dict) {
+			delete this.cache.bibtex_dict[id]
+		}
+
+		await this.save_cache()
+		new Notice('Uncached all BibTeX entries')
 	}
 
 	async update_bibtex_source_path(old_path: string, new_path: string) {

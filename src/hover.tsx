@@ -16,6 +16,10 @@ export const copy_to_clipboard = (text: any) => {
     })
 }
 
+/**
+ * Modal for uploading a PDF file.
+ * 
+ */
 class UploadPdfModal extends Modal {
     folder: string
     fname: string
@@ -63,9 +67,20 @@ class UploadPdfModal extends Modal {
     }
 }
 
+/**
+ * Renders a button that links to or creates a file within an Obsidian vault.
+ *
+ * - If the file exists, hovering triggers a preview and clicking opens the file.
+ * - If the file does not exist:
+ *   - For PDFs, opens an upload modal.
+ *   - For Markdown files, ensures the folder exists, creates a new file with a frontmatter template, and opens it.
+ *
+ * @param label - The text to display on the button.
+ * @param fname - The name of the file (without path).
+ * @param folder - The folder where the file should be located or created.
+ * @param app - The Obsidian App instance for interacting with the vault and workspace.
+ */
 const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: string, folder: string, app: App}) => {
-    /** fname only contains the file name
-    created/uploaded file will be put to folder  */
     const exist = app.metadataCache.getFirstLinkpathDest(fname, '')
     const cls = (exist)?('bibtex-file-exist'):('bibtex-file-not-exist')
 
@@ -106,6 +121,16 @@ const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: st
     )
 }
 
+/**
+ * HoverPopup component displays a hoverable popup for a given BibTeX entry.
+ *
+ * @param bibtex - The BibtexElement object containing the entry's fields and metadata.
+ * @param plugin - The BibtexScholar plugin instance, used for accessing cache and plugin methods.
+ * @param app - The Obsidian App instance, used for workspace and UI interactions.
+ * @param expand - If true, the popup is expanded by default; otherwise, it appears on hover.
+ * 
+ * The popup provides quick actions such as copying the entry's ID, BibTeX, markdown/LaTeX citations, and links to associated note, PDF, and BibTeX source files. It also allows searching for mentions of the entry and uncaching the entry from the plugin's cache. Entry fields are rendered with markdown and math support.
+ */
 const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean }) => {
     const paper_id = bibtex.fields.id
 
@@ -121,7 +146,7 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexEleme
     }
 
     return (
-        <>
+        <span className='bibtex-hover'>
             {/* This is the element to hover */}
             <span
                 onMouseEnter={handle_mouse_enter}
@@ -163,7 +188,7 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexEleme
                     {/* linked pdf */}
                     <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app}/>
                     {/* linked bibtex source */}
-                    <LinkedFileButton label='soure' fname={String(bibtex.source_path)} folder={''} app={app}/>
+                    <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app}/>
                     {/* mentions query */}
                     <button
                         onClick={async () => {
@@ -198,6 +223,9 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexEleme
                         delete plugin.cache.bibtex_dict[paper_id]
                         plugin.save_cache()
                         new Notice(`Uncached ${paper_id}`)
+                        if (window.confirm('Are you sure?')) {
+							plugin.uncache_bibtex_with_id(paper_id)
+						}
                     }}>
                         uncache
                     </button>
@@ -215,10 +243,19 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexEleme
                 })}
             </span>
             )}
-        </>
+        </span>
     )
 }
 
+
+/**
+ * Functions to render a paper element with hover pop up
+ * @param el The HTML element to render the pop up in
+ * @param bibtex The BibtexElement to render
+ * @param plugin The BibtexScholar plugin instance
+ * @param app The Obsidian app instance
+ * @param expand Whether to expand the hover pop up
+ */
 export const render_hover = async ( el: HTMLElement, bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false ) => {
     createRoot(el).render(
         <StrictMode>
