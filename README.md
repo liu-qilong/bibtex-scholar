@@ -65,6 +65,10 @@ Of course, we provide a bunch of other features to turbocharge your research wor
 
 ## Usage 🔧
 
+> I am waiting for Obsidian to approve this plugin. Once it's approved, you can use it by:
+
+Install [Obsidian](https://obsidian.md/). Open Setting > Community plugins > Community plugins > Browse > Search for "BibTeX Scholar".
+
 Install and enable this plugin. Then you can start adding and managing your BibTeX references seamlessly within your Obsidian notes.
 
 ### Fetch BibTeX online ![img](/gallery/antenna.png)
