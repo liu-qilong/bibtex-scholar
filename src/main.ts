@@ -52,7 +52,7 @@ export default class BibtexScholar extends Plugin {
 		// commands for copy file in standard markdown syntax
 		this.addCommand({
 			id: 'copy-std-md',
-			name: 'Copy Current File as Standard Markdown',
+			name: 'Copy current file as standard markdown',
 			checkCallback: (checking: boolean) => {
 				if (!checking) {
 					this.cp_std_md()
@@ -64,10 +64,12 @@ export default class BibtexScholar extends Plugin {
 		// commands for uncache bibtex entries
 		this.addCommand({
 			id: 'uncache-all-bibtex',
-			name: 'Uncache All BibTeX Entries',
+			name: 'Uncache all BibTeX entries',
 			checkCallback: (checking: boolean) => {
 				if (!checking) {
-					this.uncache_bibtex()
+					if (window.confirm('Are you sure?')) {
+						this.uncache_bibtex()
+					}
 				}
 				return true
 			},
@@ -75,12 +77,14 @@ export default class BibtexScholar extends Plugin {
 
 		this.addCommand({
 			id: 'uncache-file-bibtex',
-			name: 'Uncache BibTeX Entries from Current File',
+			name: 'Uncache BibTeX entries from current file',
 			checkCallback: (checking: boolean) => {				
 				if (!checking) {
 					const current_file = this.app.workspace.getActiveFile()
 					if (current_file) {
-						this.uncache_bibtex(current_file.path)
+						if (window.confirm('Are you sure?')) {
+							this.uncache_bibtex(current_file.path)
+						}
 					}
 				}
 				return true
@@ -89,7 +93,7 @@ export default class BibtexScholar extends Plugin {
 		
 		// events for rename and delete file
 		this.registerEvent(this.app.vault.on('rename', (file, old_path) => {
-			this.update_bibtex_source(old_path, file.path)
+			this.update_bibtex_source_path(old_path, file.path)
 		}))
 
 		this.registerEvent(this.app.vault.on('delete', (file) => {
@@ -261,11 +265,9 @@ export default class BibtexScholar extends Plugin {
 		// uncache bibtex entries
 		for (const id in this.cache.bibtex_dict) {
 			if (source_path == '') {
-				// if source_path is empty, prompt confirmation and then uncache all bibtex entries
-				if (window.confirm('Are you sure you want to uncache BibTeX entries?')) {
-					delete this.cache.bibtex_dict[id]
-					update = true
-				}
+				// if source_path is empty, uncache all bibtex entries
+				delete this.cache.bibtex_dict[id]
+				update = true
 			} else if (this.cache.bibtex_dict[id].source_path == source_path) {
 				// if source_path is not empty, uncache bibtex entries from the current file
 				delete this.cache.bibtex_dict[id]
@@ -279,13 +281,13 @@ export default class BibtexScholar extends Plugin {
 		}
 	}
 
-	async update_bibtex_source(old_path: string, new_path: string) {
+	async update_bibtex_source_path(old_path: string, new_path: string) {
 		let update = false
 
-		// uncache bibtex entries
+		// update bibtex entries
 		for (const id in this.cache.bibtex_dict) {
 			if (this.cache.bibtex_dict[id].source_path == old_path) {
-				// if source_path is not empty, uncache bibtex entries from the current file
+				// if source_path is not empty, update bibtex entries from the current file
 				this.cache.bibtex_dict[id].source_path = new_path
 				update = true
 			}
