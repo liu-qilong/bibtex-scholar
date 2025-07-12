@@ -51,17 +51,17 @@ With BibTeX Scholar, you can:
 
 > **Coming soon to the Community Plugin Store—waiting for Obsidian approval!**
 
-1. Install [Obsidian](https://obsidian.md/) and create your vault
-2. Go to Settings > Community plugins > Browse > Search for "BibTeX Scholar"
-3. Install and enable the plugin
-4. Start adding and managing BibTeX references as Markdown!
+- Install [Obsidian](https://obsidian.md/) and create your vault
+- Go to Settings > Community plugins > Browse > Search for "BibTeX Scholar"
+- Install and enable the plugin
+- Start adding and managing BibTeX references as Markdown!
 
 > If you'd like to install it manually:
 
-1. Clone this repository and place it under your Obsidian vault's `.obsidian/plugins` directory
-2. `npm install` to install dependencies
-3. `npm run dev` to compile the plugin
-4. Enable the plugin in Obsidian settings
+- Clone this repository and place it under your Obsidian vault's `.obsidian/plugins` directory
+- `npm install` to install dependencies
+- `npm run dev` to compile the plugin
+- Enable the plugin in Obsidian settings
 
 ### Fetch BibTeX entries
 
