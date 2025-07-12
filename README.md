@@ -1,6 +1,6 @@
 # BibTeX Scholar 🎓
 
-**BibTeX Scholar** is a reference management plugin built entirely on [Obsidian](https://obsidian.md/) to supercharge your research workflow. Replace cluttered folder-based libraries with contextual, flexible, Markdown-powered literature notes -- directly in your knowledge base 🧠.
+**BibTeX Scholar** is a reference management plugin built entirely on [Obsidian](https://obsidian.md/) to supercharge your research workflow. Replace cluttered folder-based libraries with contextual, flexible, Markdown-powered literature notes -- directly in your knowledge base 🧠
 
 ![img](/gallery/bibtex-scholar.png)
 
@@ -18,19 +18,19 @@ As your library grows, it’s easy to lose track. **BibTeX Scholar** lets you ma
 ```markdown
 ### New LLM papers from ICLR 2025
 
-- Transfusion `{ChuntingZhou2025ICLR}` Combines next-token prediction for text and diffusion-based learning for images in a single transformer. Bridges the modality gap without image quantization. #🧠
+- Transfusion `{ChuntingZhou2025ICLR}` Combines next-token prediction for text and diffusion-based learning for images in a single transformer. Bridges the modality gap without image quantization #🧠
 
 - Embedding
-    - `{AlexIacob2025ICLR}` Decouples embedding layers for robust multi-lingual training, improving generalization.
-    - `{ZiyueLi2025ICLR+}` Studies decoder-only embeddings and MoE layers. Weighted sum > concatenation.
-    - `{KihoPark2025ICLR}` Shows hierarchical concepts are orthogonally encoded in representations. #🧠
+    - `{AlexIacob2025ICLR}` Decouples embedding layers for robust multi-lingual training, improving generalization
+    - `{ZiyueLi2025ICLR+}` Studies decoder-only embeddings and MoE layers. Weighted sum > concatenation
+    - `{KihoPark2025ICLR}` Shows hierarchical concepts are orthogonally encoded in representations #🧠
 ```
 
 With BibTeX Scholar, you can:
 
-- Use nested bullets, tables, or flowcharts for relationships and comparisons
-- Summarize insights and connections in context
-- Manage citations seamlessly as you write and think
+- Use nested bullets, tables, or flowcharts for relationships and comparisons 📊
+- Summarize insights and connections in context 💡
+- Manage citations seamlessly as you write and think ✍️
 - **Grow your literature knowledge base organically 🪴**
 
 > *See real examples of top AI conference notes at [liu-qilong.github.io/note](https://liu-qilong.github.io/note)*
@@ -39,11 +39,11 @@ With BibTeX Scholar, you can:
 ## Core features 🚀
 
 - **Add BibTeX anywhere**: Insert BibTeX code blocks in any note.
-- **Cite anywhere**: Instantly cite papers via smart ``` `{ID}` ``` or ``` `[ID]` ``` inline formats with autocomplete.
+- **Cite anywhere**: Instantly cite papers via smart ``` `{ID}` ``` or ``` `[ID]` ``` inline formats with autocomplete
 - **Rich citation popover**: Hover for title, authors, abstract & quick actions (open associated paper note, attach PDF, search mentions, copy BibTeX/LaTeX keys, etc.)
-- **Global search/filter panel**: Find and filter papers from all your entries.
-- **One-click copy**: Export all BibTeX entries for LaTeX manuscripts.
-- **PDF & notes management**: Attach PDFs and link notes to each entry.
+- **Global search/filter panel**: Find and filter papers from all your entries
+- **One-click copy**: Export all BibTeX entries for LaTeX manuscripts
+- **PDF & notes management**: Attach PDFs and link notes to each entry
 
 ## Getting started ⚙️
 
@@ -51,26 +51,26 @@ With BibTeX Scholar, you can:
 
 > **Coming soon to the Community Plugin Store—waiting for Obsidian approval!**
 
-1. Install [Obsidian](https://obsidian.md/) and create your vault.
-2. Go to Settings > Community plugins > Browse > Search for "BibTeX Scholar".
-3. Install and enable the plugin.
+1. Install [Obsidian](https://obsidian.md/) and create your vault
+2. Go to Settings > Community plugins > Browse > Search for "BibTeX Scholar"
+3. Install and enable the plugin
 4. Start adding and managing BibTeX references as Markdown!
 
 > If you'd like to install it manually:
 
-1. Clone this repository and place it under your Obsidian vault's `.obsidian/plugins` directory.
-2. `npm install` to install dependencies.
-3. `npm run dev` to compile the plugin.
-4. Enable the plugin in Obsidian settings.
+1. Clone this repository and place it under your Obsidian vault's `.obsidian/plugins` directory
+2. `npm install` to install dependencies
+3. `npm run dev` to compile the plugin
+4. Enable the plugin in Obsidian settings
 
 ### Fetch BibTeX entries
 
 ![img](/gallery/fetch-with-doi.png)
 
-- Click the ![antenna](/gallery/antenna.png) icon in the left ribbon.
-- Enter a DOI. Optionally add a custom ID suffix or abstract. (For example, you can add conference names as suffixes.)
-- Fetches BibTeX from online sources, copies it to clipboard.
-- Paste the fetched BibTeX into your note (see next section).
+- Click the ![antenna](/gallery/antenna.png) icon in the left ribbon
+- Enter a DOI. Optionally add a custom ID suffix or abstract (For example, you can add conference names as suffixes)
+- Fetches BibTeX from online sources, copies it to clipboard
+- Paste the fetched BibTeX into your note (see next section)
 
 ![img](/gallery/fetch-manually.png)
 
@@ -131,10 +131,10 @@ As you can see here, following the title are the utility buttons and paper detai
   - **note**: Create/open the paper's associated note (You can change the default folder to place your paper notes in the plugin's setting)
   - **pdf**: Attach PDF to the paper (You can change the default folder to place your PDFs in the plugin's setting)
   - **source**: Open the Obsidian note that contains the paper's source BibTeX code
-  - **mentions**: Search all mentions of the paper, including the inline citations and the [Obsidian internal links](https://help.obsidian.md/links) to the associated paper notes.
+  - **mentions**: Search all mentions of the paper, including the inline citations and the [Obsidian internal links](https://help.obsidian.md/links) to the associated paper notes
 - **uncache**: Remove paper from cache
-  - _P.S. The paper will be removed from the database. However, its source BibTeX code and all mentions won't be removed automatically._
-  - **P.S. If you reopen the note containing the paper's BibTeX code, it will be re-added to the database.**
+  - _P.S. The paper will be removed from the database. However, its source BibTeX code and all mentions won't be removed automatically_
+  - **P.S. If you reopen the note containing the paper's BibTeX code, it will be re-added to the database**
 
 ### Copy all BibTeX
 
