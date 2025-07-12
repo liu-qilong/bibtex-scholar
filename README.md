@@ -49,7 +49,7 @@ With BibTeX Scholar, you can:
 
 ### Installation
 
-> **Coming soon to the Community Plugin Store—waiting for Obsidian approval!**
+> Coming soon to the [Obsidian Community Plugin](https://obsidian.md/plugins) -- waiting for Obsidian approval!
 
 - Install [Obsidian](https://obsidian.md/) and create your vault
 - Go to Settings > Community plugins > Browse > Search for "BibTeX Scholar"
