@@ -13,7 +13,7 @@ Traditional reference managers organize papers in flat folders, leading to the l
 - What are the key contributions and relationships? 🔑
 - How do research trajectories and comparisons look? 📈
 
-As your library grows, it’s easy to lose track. **BibTeX Scholar** lets you manage your literature the way researchers actually think —- using *context-rich, narrative notes*:
+As your library grows, it’s easy to lose track. **BibTeX Scholar** lets you manage your literature the way researchers actually think -- using *context-rich, narrative notes*:
 
 ```markdown
 ### New LLM papers from ICLR 2025
