@@ -122,17 +122,17 @@ _P.S. I personally don't like to add all papers from those conferences, as each 
 As you can see here, following the title are the utility buttons and paper details. There are 3 groups of utilities:
 
 - Copyable:
-  - id: Copy paper's ID
-  - bibtex: Copy paper's BibTeX source (omitting abstract)
-  - \`{}\`: Copy paper's ID in \`{}\` format (collapsed paper element)
-  - \`[]\`: Copy paper's ID in \`[]\` format (expanded paper element)
-  - \autocite{}: Copy paper's ID in \autocite{} format (LaTeX citation)
+  - `id`: Copy paper's ID
+  - `bibtex`: Copy paper's BibTeX source (omitting abstract)
+  - ``` `{}` ```: Copy paper's ID in ``` `{ID}` ``` format (collapsed paper element)
+  - ``` [] ```: Copy paper's ID in ``` [ID] ``` format (expanded paper element)
+  - `\autocite{}`: Copy paper's ID in `\autocite{ID}` format (LaTeX citation)
 - Related resources:
-  - note: Create/open the paper's associated note (You can change the default folder to place your paper notes in the plugin's setting)
-  - pdf: Attach PDF to the paper (You can change the default folder to place your PDFs in the plugin's setting)
-  - source: Open the Obsidian note that contains the paper's source BibTeX code
-  - mentions: Search all mentions of the paper
-- uncache: Remove paper from cache
+  - **note**: Create/open the paper's associated note (You can change the default folder to place your paper notes in the plugin's setting)
+  - **pdf**: Attach PDF to the paper (You can change the default folder to place your PDFs in the plugin's setting)
+  - **source**: Open the Obsidian note that contains the paper's source BibTeX code
+  - **mentions**: Search all mentions of the paper, including the inline citations and the [Obsidian internal links](https://help.obsidian.md/links) to the associated paper notes.
+- **uncache**: Remove paper from cache
   - _P.S. The paper will be removed from the database. However, its source BibTeX code and all mentions won't be removed automatically._
   - **P.S. If you reopen the note containing the paper's BibTeX code, it will be re-added to the database.**
 
