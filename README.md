@@ -1,112 +1,112 @@
 # BibTeX Scholar 🎓
 
-This is a *BibTeX reference management tool* built **entirely on Obsidian**, designed to boost your paper reading & writing workflow. 
+**BibTeX Scholar** is a reference management plugin built entirely on [Obsidian](https://obsidian.md/) to supercharge your research workflow. Replace cluttered folder-based libraries with contextual, flexible, Markdown-powered literature notes—directly in your knowledge base.
 
-## Why you should try this? 🧐
+![img](/gallery/bibtex-scholar.png)
 
-When using traditional reference management tools, papers are added to folders. However, a list of titles **lacks context**:
+## Why choose BibTeX Scholar? 💡
 
-- Which paper follows which?
-- What's the development trajectories?
-- How do different papers relate to each other?
-- What are the key contributions of each paper?
-- ...
+Traditional reference managers organize papers in flat folders, leading to the lack of context:
 
-When the number of papers grows, you may soon be clueless, especially after a while. Instead of organizing your papers into folders, a more effective approach is *nature language literature notes*, like this:
+- Which paper builds upon which?
+- How are concepts and methods evolving?
+- What are the key contributions and relationships?
+- How do research trajectories and comparisons look?
 
-> ### New LLM papers from ICLR 2025
-> 
-> - Transfusion [ChuntingZhou2025ICLR](https://openreview.net/forum?id=SI2hI0frk6) combines _next-token prediction_ for text and _diffusion-based learning_ for images within a single transformer architecture, bridging the modality gap without quantizing images into discrete tokens #🧠 
-> - Embedding
->	- [AlexIacob2025ICLR](https://openreview.net/forum?id=vf5aUZT0Fz) introduces a pre-training framework that decouples embedding layers from the transformer body, enabling robust training on heterogeneous data _(avoiding the curse of multi-linguality)_, improving generalization, and reducing memory footprint
->	- [ZiyueLi2025ICLR+](https://openreview.net/forum?id=eFGQ97z5Cd) investigates the limitation of using decoder-only models for embedding and finds that a good embedding can be acquired from the MoE layer, by combining routing weights (RW) and hidden states (HS)
->	  _They found that weighted sum of RW and HS outperforms concatenation, similar to Transformer's positional embedding_
->	- [KihoPark2025ICLR](https://openreview.net/forum?id=bVTM2QKYuA) extend the _linear representation hypothesis_ to general concepts and show that hierarchical relationships are encoded as orthogonality #🧠 
-> 
-> ...
->
-> (I release top AI conferences paper reading notes in my homepage, all in this format. You can find them [here](https://liu-qilong.github.io/note))
+As your library grows, it’s easy to lose track. **BibTeX Scholar** lets you manage your literature the way researchers actually think—using *context-rich, narrative notes*:
 
-That is, you can create a [Markdown](https://www.markdownguide.org) note for each research topic, and express relationship of the related papers relationship as you please:
+```markdown
+### New LLM papers from ICLR 2025
 
-- Nested bullet points to reflect paper relationships ✅
-- Explain the major takeaways & insights in context ✅
-- Tables for comparison ✅
-- Flowcharts to represent research trajectories ✅
-- ...
+- Transfusion `{ChuntingZhou2025ICLR}`: Combines next-token prediction for text and diffusion-based learning for images in a single transformer. Bridges the modality gap without image quantization. #🧠
 
-What ever you want. Streamlined, flexible, and powerful.
+- Embedding
+    - `{AlexIacob2025ICLR}`: Decouples embedding layers for robust multi-lingual training, improving generalization.
+    - `{ZiyueLi2025ICLR+}`: Studies decoder-only embeddings and MoE layers. Weighted sum > concatenation.
+    - `{KihoPark2025ICLR}`: Shows hierarchical concepts are orthogonally encoded in representations. #🧠
+```
 
-## Core features ⚙️
+With BibTeX Scholar, you can:
 
-In this case, the only 2 core features of a **note-oriented** reference management tool include:
+- Use nested bullets, tables, or flowcharts for relationships and comparisons
+- Summarize insights and connections in context
+- Manage citations seamlessly as you write and think
+- **Grow your literature knowledge base organically**
 
-- Add BibTeX entry anywhere, like this:
+> *See real examples of top AI conference notes at [liu-qilong.github.io/note](https://liu-qilong.github.io/note)*
 
-![img](/gallery/bibtex-block.png)
 
-- Cite it anywhere, like this:
+## Core features 🚀
 
-![img](/gallery/bibtex-inline.png)
+- **Add BibTeX anywhere**: Insert BibTeX code blocks in any note.
+- **Cite anywhere**: Instantly cite papers via smart ``` `{ID}` ``` or ``` `[ID]` ``` inline formats with autocomplete.
+- **Rich citation popover**: Hover for title, authors, abstract & quick actions (open associated paper note, attach PDF, search mentions, copy BibTeX/LaTeX keys, etc.)
+- **Global search/filter panel**: Find and filter papers from all your entries.
+- **One-click copy**: Export all BibTeX entries for LaTeX manuscripts.
+- **PDF & notes management**: Attach PDFs and link notes to each entry.
 
-> Just type ` and { to trigger autocomplete if you want to search & cite a paper, in any Obsidian note.
+## Getting started ⚙️
 
-Of course, we provide a bunch of other features to turbocharge your research workflow 🚀:
+### Installation
 
-- Hover on citations to see paper details (title, authors, abstract, etc.)
-  - Button to create/open a paper's note
-  - Button to attach PDF to a paper
-  - Button to search all mentions of a paper
-- When you are writing LaTeX manuscript
-  - Copy BibTeX ID or `\autocite{<ID>}`
-  - Copy one or all BibTeX source code
-- A paper panel for search/filter papers from all BibTeX entries
-- ...
+> **Coming soon to the Community Plugin Store—waiting for Obsidian approval!**
 
-## Usage 🔧
+1. Install [Obsidian](https://obsidian.md/) and create your vault.
+2. Go to Settings > Community plugins > Browse > Search for "BibTeX Scholar".
+3. Install and enable the plugin.
+4. Start adding and managing BibTeX references as Markdown!
 
-> I am waiting for Obsidian to approve this plugin. Once it's approved, you can use it by:
+> If you'd like to install it manually:
 
-Install [Obsidian](https://obsidian.md/). Open Setting > Community plugins > Community plugins > Browse > Search for "BibTeX Scholar".
+1. Clone this repository and place it under your Obsidian vault's `.obsidian/plugins` directory.
+2. `npm install` to install dependencies.
+3. `npm run dev` to compile the plugin.
+4. Enable the plugin in Obsidian settings.
 
-Install and enable this plugin. Then you can start adding and managing your BibTeX references seamlessly within your Obsidian notes.
-
-### Fetch BibTeX online ![img](/gallery/antenna.png)
-
-Click the button ![img](/gallery/antenna.png) on the left ribbon. You can fill in the ID suffix (optional), abstract (optional), and DOI. It will fetch the BibTeX entry from online sources and push to the clipboard. You can then add it to your note (see the next section).
+### Fetch BibTeX entries
 
 ![img](/gallery/fetch-with-doi.png)
 
-- ID suffix is string that will be added to the end of the paper's ID. I usually add the conferences or journals' abbreviation. You can leave it blank as well.
-- If there is duplicated paper ID, `+` will be added to the end to make sure every paper has a unique ID.
-- The abstract field is also optional. If you add it, it will be shown in the paper details when hovering.
-
-You can change the Mode dropdown manual from `DOI` to `Manual` to enter the BibTeX entry manually:
+- Click the ![antenna](/gallery/antenna.png) icon in the left ribbon.
+- Enter a DOI. Optionally add a custom ID suffix or abstract. (For example, you can add conference names as suffixes.)
+- Fetches BibTeX from online sources, copies it to clipboard.
+- Paste the fetched BibTeX into your note (see next section).
 
 ![img](/gallery/fetch-manually.png)
 
-This is useful if you'd like to search the paper from [dblp](https://dblp.uni-trier.de) or [Google Scholar](https://scholar.google.com) and copy the BibTeX directly. In some cases, this is actually more convenient than finding the papers' DOI.
+You can switch to Manual mode to paste BibTeX code directly. Sometimes copying BibTeX from [DBLP](https://dblp.org/) and [Google Scholar](https://scholar.google.com/) is even more convenient than finding the DOI.
 
-### Adding BibTeX entries
+You can change the default mode in the plugin settings.
 
-To add a new BibTeX entry, simply create a `bibtex` code block in your note with the following format:
+### Add BibTeX entries
 
 ![img](/gallery/bibtex-block.png)
 
-You can add multiple BibTeX entries in one `bibtex` code block as you please.
+Create a ```` ```bibtex ```` code block in any note. You can add multiple entries per block.
 
-_P.S. To edit the added BibTeX entry, just edit the code block and rerender the note. If it doesn't change, reload the Obsidian_
+````markdown
+```bibtex
+@inproceedings{ChuntingZhou2025ICLR,
+  title = {Transfusion{:} Predict the Next Token and Diffuse Images with One Multi-Modal Model},
+  author = {Chunting Zhou and LILI YU and Arun Babu and Kushal Tirumala and Michihiro Yasunaga and Leonid Shamis and Jacob Kahn and Xuezhe Ma and Luke Zettlemoyer and Omer Levy},
+  booktitle = {The Thirteenth International Conference on Learning Representations},
+  year = {2025},
+  url = {https://openreview.net/forum?id=SI2hI0frk6},
+  abstract = {We introduce Transfusion, a recipe for training a multi-modal model over discrete and continuous data.Transfusion combines the language modeling loss function (next token prediction) with diffusion to train a single transformer over mixed-modality sequences...},
+}
+```
+````
 
-BTW, in [Top AI conferences scraping](https://github.com/liu-qilong/top-ai-conf-scrape), I've scraped all papers from some top AI conferences, in both `.bib` and `.md` formats. The `.md` files are fully compatible for this plugin. You can give it a try.
+Edit the block to update entries. Reload the note if changes don’t display.
+
+P.S. I've scraped all papers from some top AI conferences in [this repo](https://github.com/liu-qilong/top-ai-conf-scrape), with both `.bib` and `.md` formats. The `.md` files are fully compatible for this plugin. You can give it a try.
 
 _P.S. I personally don't like to add all papers from those conferences, as each of them contains thoughts of papers. Usually, I only keep the Oral section for skimming them through._
 
-### Cite a paper
+### Inline citation
 
-The inline-citation format is:
-
-- Collapsed paper element \`{ID}\`: Only shows a button with paper ID. Hover to show paper details and utilities.
-- Expanded paper element \`[ID]\`: Shows full paper details and utilities without hover.
+- Use `` `{ID}` `` for a compact, hoverable reference
+- Use `` `[ID]` `` for always-expanded details
 
 ![img](/gallery/bibtex-hover.png)
 
@@ -127,11 +127,11 @@ As you can see here, following the title are the utility buttons and paper detai
   - _P.S. The paper will be removed from the database. However, its source BibTeX code and all mentions won't be removed automatically._
   - **P.S. If you reopen the note containing the paper's BibTeX code, it will be re-added to the database.**
 
-### Copy all BibTeX ![img](/gallery/scroll-text.png)
+### Copy all BibTeX
 
 When writing LaTeX manuscript, it's very convenient to copy all BibTeX entries at once and place it to your `.bib` file. Just click the button ![img](/gallery/scroll-text.png) on the left ribbon.
 
-### Paper panel ![img](/gallery/scan-search.png)
+### Paper panel
 
 You can click ![img](/gallery/scan-search.png) on the left ribbon to open the paper panel to the right sidebar. From there, you can search and filter your papers easily:
 
@@ -140,6 +140,10 @@ You can click ![img](/gallery/scan-search.png) on the left ribbon to open the pa
 
 You can open multiple paper panels and draw them to the place you want.
 
-## Future plan
+## Future plan 🤖
 
-Adding AI features to this plugin seems promising. Coming soon...
+AI-powered features and more workflow enhancements are on the way!
+
+## Feedback & issues ❌
+
+Please report bugs, suggest features, or ask questions on [GitHub Issues](https://github.com/liu-qilong/bibtex-scholar/issues).
