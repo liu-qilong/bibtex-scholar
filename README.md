@@ -1,6 +1,6 @@
 # BibTeX Scholar 🎓
 
-**BibTeX Scholar** is a reference management plugin built entirely on [Obsidian](https://obsidian.md/) to supercharge your research workflow. Replace cluttered folder-based libraries with contextual, flexible, Markdown-powered literature notes—directly in your knowledge base.
+**BibTeX Scholar** is a reference management plugin built entirely on [Obsidian](https://obsidian.md/) to supercharge your research workflow. Replace cluttered folder-based libraries with contextual, flexible, Markdown-powered literature notes -- directly in your knowledge base 🧠.
 
 ![img](/gallery/bibtex-scholar.png)
 
@@ -8,22 +8,22 @@
 
 Traditional reference managers organize papers in flat folders, leading to the lack of context:
 
-- Which paper builds upon which?
-- How are concepts and methods evolving?
-- What are the key contributions and relationships?
-- How do research trajectories and comparisons look?
+- Which paper builds upon which? 🧐
+- How are concepts and methods evolving? 🔄
+- What are the key contributions and relationships? 🔑
+- How do research trajectories and comparisons look? 📈
 
-As your library grows, it’s easy to lose track. **BibTeX Scholar** lets you manage your literature the way researchers actually think—using *context-rich, narrative notes*:
+As your library grows, it’s easy to lose track. **BibTeX Scholar** lets you manage your literature the way researchers actually think —- using *context-rich, narrative notes*:
 
 ```markdown
 ### New LLM papers from ICLR 2025
 
-- Transfusion `{ChuntingZhou2025ICLR}`: Combines next-token prediction for text and diffusion-based learning for images in a single transformer. Bridges the modality gap without image quantization. #🧠
+- Transfusion `{ChuntingZhou2025ICLR}` Combines next-token prediction for text and diffusion-based learning for images in a single transformer. Bridges the modality gap without image quantization. #🧠
 
 - Embedding
-    - `{AlexIacob2025ICLR}`: Decouples embedding layers for robust multi-lingual training, improving generalization.
-    - `{ZiyueLi2025ICLR+}`: Studies decoder-only embeddings and MoE layers. Weighted sum > concatenation.
-    - `{KihoPark2025ICLR}`: Shows hierarchical concepts are orthogonally encoded in representations. #🧠
+    - `{AlexIacob2025ICLR}` Decouples embedding layers for robust multi-lingual training, improving generalization.
+    - `{ZiyueLi2025ICLR+}` Studies decoder-only embeddings and MoE layers. Weighted sum > concatenation.
+    - `{KihoPark2025ICLR}` Shows hierarchical concepts are orthogonally encoded in representations. #🧠
 ```
 
 With BibTeX Scholar, you can:
@@ -31,7 +31,7 @@ With BibTeX Scholar, you can:
 - Use nested bullets, tables, or flowcharts for relationships and comparisons
 - Summarize insights and connections in context
 - Manage citations seamlessly as you write and think
-- **Grow your literature knowledge base organically**
+- **Grow your literature knowledge base organically 🪴**
 
 > *See real examples of top AI conference notes at [liu-qilong.github.io/note](https://liu-qilong.github.io/note)*
 
