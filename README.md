@@ -1,6 +1,6 @@
 # BibTeX Scholar 🎓
 
-**BibTeX Scholar** is a reference management plugin built entirely on [Obsidian](https://obsidian.md/) to supercharge your research workflow. Replace cluttered folder-based libraries with contextual, flexible, Markdown-powered literature notes -- directly in your knowledge base 🧠
+**BibTeX Scholar** is a reference management plugin built entirely on [Obsidian](https://obsidian.md/) to supercharge your research workflow. Replace cluttered folder-based libraries with contextual, flexible, Markdown-powered literature notes--directly in your knowledge base 🧠
 
 ![img](/gallery/bibtex-scholar.png)
 
@@ -13,7 +13,7 @@ Traditional reference managers organize papers in flat folders, leading to the l
 - What are the key contributions and relationships? 🔑
 - How do research trajectories and comparisons look? 📈
 
-As your library grows, it’s easy to lose track. **BibTeX Scholar** lets you manage your literature the way researchers actually think -- using *context-rich, narrative notes*:
+As your library grows, it’s easy to lose track. **BibTeX Scholar** lets you manage your literature the way researchers actually think--using *context-rich, narrative notes*:
 
 ```markdown
 ### New LLM papers from ICLR 2025
@@ -49,7 +49,7 @@ With BibTeX Scholar, you can:
 
 ### Installation
 
-> Coming soon to the [Obsidian Community Plugin](https://obsidian.md/plugins) -- waiting for Obsidian approval!
+> Coming soon to the [Obsidian Community Plugin](https://obsidian.md/plugins)--waiting for Obsidian approval!
 
 - Install [Obsidian](https://obsidian.md/) and create your vault
 - Go to Settings > Community plugins > Browse > Search for "BibTeX Scholar"
