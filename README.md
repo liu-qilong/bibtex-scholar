@@ -67,7 +67,7 @@ With BibTeX Scholar, you can:
 
 ![img](/gallery/fetch-with-doi.png)
 
-- Click the ![antenna](/gallery/antenna.png) icon in the left ribbon
+- Click the ![antenna](/gallery/antenna.jpeg) icon in the left ribbon
 - Enter a DOI. Optionally add a custom ID suffix or abstract (For example, you can add conference names as suffixes)
 - Fetches BibTeX from online sources, copies it to clipboard
 - Paste the fetched BibTeX into your note (see next section)
@@ -138,11 +138,11 @@ As you can see here, following the title are the utility buttons and paper detai
 
 ### Copy all BibTeX
 
-When writing LaTeX manuscript, it's very convenient to copy all BibTeX entries at once and place it to your `.bib` file. Just click the button ![img](/gallery/scroll-text.png) on the left ribbon.
+When writing LaTeX manuscript, it's very convenient to copy all BibTeX entries at once and place it to your `.bib` file. Just click the button ![img](/gallery/scroll-text.jpeg) on the left ribbon.
 
 ### Paper panel
 
-You can click ![img](/gallery/scan-search.png) on the left ribbon to open the paper panel to the right sidebar. From there, you can search and filter your papers easily:
+You can click ![img](/gallery/scan-search.jpeg) on the left ribbon to open the paper panel to the right sidebar. From there, you can search and filter your papers easily:
 
 - You can search with various queries separated with `;`: e.g. `John;2020`
 - You can filter specific fields: e.g. `author:John;year:2020`
