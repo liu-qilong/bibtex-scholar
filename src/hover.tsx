@@ -213,9 +213,14 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexEleme
                             
                             // set the query in the search panel
                             if (search_leaf) {
+                                function is_search_view(view: any): view is { setQuery: (query: string) => void } {
+                                    return typeof view?.setQuery === 'function';
+                                }
+                                
                                 await app.workspace.revealLeaf(search_leaf);
-
-                                (search_leaf.view as any).setQuery(query)
+                                if (is_search_view(search_leaf.view)) {
+                                    search_leaf.view.setQuery(query)
+                                }
                                 app.workspace.setActiveLeaf(search_leaf)
                             }
                         }}

@@ -410,7 +410,6 @@ export class FetchBibtexOnline extends Modal {
         this.btn.setIcon('loader')
 
         async function fetch_bibtex(doi: string) {
-            // return fetch(`https://doi.org/${doi}`, { headers: { Accept: "application/x-bibtex" }})
             return requestUrl({
                 url: `https://doi.org/${doi}`,
                 headers: { Accept: "application/x-bibtex" },
