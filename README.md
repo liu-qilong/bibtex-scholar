@@ -12,6 +12,7 @@ Traditional reference managers organize papers in flat folders, leading to the l
 - How are concepts and methods evolving? 🔄
 - What are the key contributions and relationships? 🔑
 - How do research trajectories and comparisons look? 📈
+- **There is a paper mentioning [...], but I can't find it now! 😩**
 
 As your library grows, it’s easy to lose track. **BibTeX Scholar** lets you manage your literature the way researchers actually think--using *context-rich, narrative notes*:
 

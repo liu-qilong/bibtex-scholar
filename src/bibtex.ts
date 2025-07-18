@@ -1,4 +1,4 @@
-import { App, Modal, ButtonComponent, Setting, Notice } from 'obsidian'
+import { App, Modal, ButtonComponent, Setting, Notice, requestUrl } from 'obsidian'
 import BibtexScholar from 'src/main'
 import { copy_to_clipboard } from 'src/hover'
 
@@ -410,8 +410,12 @@ export class FetchBibtexOnline extends Modal {
         this.btn.setIcon('loader')
 
         async function fetch_bibtex(doi: string) {
-            return fetch(`https://doi.org/${doi}`, { headers: { Accept: "application/x-bibtex" }})
-                .then(response => response.text())
+            // return fetch(`https://doi.org/${doi}`, { headers: { Accept: "application/x-bibtex" }})
+            return requestUrl({
+                url: `https://doi.org/${doi}`,
+                headers: { Accept: "application/x-bibtex" },
+            })
+                .then(response => response.text)
                 .catch(error => {
                     console.error('Error:', error)
                 })
