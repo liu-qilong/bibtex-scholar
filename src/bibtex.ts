@@ -247,6 +247,7 @@ export function mentions_search_query(id: string): string {
     // /\[\[MaksOvsjanikov2012TOG\|[^\]]*\]\]/  <-- `[[id|text]]`
     // OR
     // /\[\[MaksOvsjanikov2012TOG\#[^\]]*\]\]/  <-- `[[id#text]]`
+    id = id.replace('+', '\\+')
     return `/\\\`[\\[\\{]${id}[\\]\\}]\\\`/\n` +
         `OR /\\[\\[${id}\\]\\]/\n` +
         `OR /\\[\\[${id}\\|[^\\]]*\\]\\]/\n` +
