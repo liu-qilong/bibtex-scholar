@@ -143,7 +143,7 @@ export function make_bibtex(fields: BibtexField, include_abstract: Boolean = tru
         if (key === 'abstract' && !include_abstract) {
             continue
         }
-        bibtex += `  ${key} = {${fields[key].replace(/&amp;/g, '\\&')}},\n`
+        bibtex += `  ${key} = {${String(fields[key]).replace(/&amp;/g, '\\&')}},\n`
     }
 
     bibtex += '}\n'
@@ -297,7 +297,7 @@ export class FetchBibtexOnline extends Modal {
             )
         
         new Setting(contentEl)
-			.setName('ID Surfix')
+			.setName('ID surfix')
 			.setDesc('Surfix to the paper ID')
 			.addText(text => text
 				.setValue(this.id_surfix)

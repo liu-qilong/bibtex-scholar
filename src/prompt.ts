@@ -1,4 +1,4 @@
-import { App, Editor, SuggestModal, EditorSuggest, TFile, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian'
+import { App, Editor, AbstractInputSuggest, SuggestModal, EditorSuggest, TFile, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian'
 import { BibtexElement, match_query, type BibtexDict } from 'src/bibtex'
 
 /**
@@ -66,5 +66,36 @@ export class EditorPrompt extends EditorSuggest<string> {
             this.trigger_info.start.line,
             this.trigger_info.start.ch + bibtex.fields.id.length + 2,
         )
+    }
+}
+
+export class FolderSuggest extends AbstractInputSuggest<string> {
+    private folders: string[];
+
+    constructor(app: App, inputEl: HTMLInputElement) {
+        super(app, inputEl);
+        // Get all folders and include root folder
+        this.folders = ["/"].concat(this.app.vault.getAllFolders().map(folder => folder.path));
+    }
+
+    getSuggestions(inputStr: string): string[] {
+        const inputLower = inputStr.toLowerCase();
+        return this.folders.filter(folder => 
+            folder.toLowerCase().includes(inputLower)
+        );
+    }
+
+    renderSuggestion(folder: string, el: HTMLElement): void {
+        el.createEl("div", { text: folder });
+    }
+
+    selectSuggestion(folder: string): void {
+		console.log(this)
+        // @ts-ignore
+        this.textInputEl.value = folder;
+        const event = new Event('input');
+        // @ts-ignore
+        this.textInputEl.dispatchEvent(event);
+        this.close();
     }
 }

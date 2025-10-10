@@ -1,7 +1,7 @@
-import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, type MarkdownPostProcessorContext } from 'obsidian'
+import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
 import { parse_bibtex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
-import { EditorPrompt } from 'src/prompt'
+import { EditorPrompt, FolderSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 
 interface BibtexScholarCache {
@@ -36,18 +36,15 @@ export default class BibtexScholar extends Plugin {
 		// commands for copy all bibtex entries to the clipboard
 		this.addRibbonIcon(
 			'scroll-text',
-			'Copy All BibTeX',
+			'Copy all BibTeX',
 			(evt: MouseEvent) => this.cp_bibtex()
 		)
 
 		this.addCommand({
 			id: 'copy-all-bibtex',
-			name: 'Copy All BibTeX Entries',
-			checkCallback: (checking: boolean) => {
-				if (!checking) {
-					this.cp_bibtex()
-				}
-				return true
+			name: 'Copy all BibTeX entries',
+			callback: () => {
+				this.cp_bibtex()
 			},
 		})
 
@@ -58,8 +55,15 @@ export default class BibtexScholar extends Plugin {
 			checkCallback: (checking: boolean) => {
 				if (!checking) {
 					this.cp_std_md()
+				} else {
+					const current_file = this.app.workspace.getActiveFile()
+					// check if there is an active file
+					if (!current_file) {
+						return false
+					} else {
+						return true
+					}
 				}
-				return true
 			},
 		})
 
@@ -67,13 +71,10 @@ export default class BibtexScholar extends Plugin {
 		this.addCommand({
 			id: 'uncache-all-bibtex',
 			name: 'Uncache all BibTeX entries',
-			checkCallback: (checking: boolean) => {
-				if (!checking) {
-					if (window.confirm('Are you sure?')) {
-						this.uncache_bibtex_all()
-					}
+			callback: () => {
+				if (window.confirm('Are you sure?')) {
+					this.uncache_bibtex_all()
 				}
-				return true
 			},
 		})
 
@@ -88,8 +89,15 @@ export default class BibtexScholar extends Plugin {
 							this.uncache_bibtex_from_path(current_file.path)
 						}
 					}
+				} else {
+					const current_file = this.app.workspace.getActiveFile()
+					// check if there is an active file
+					if (!current_file) {
+						return false
+					} else {
+						return true
+					}
 				}
-				return true
 			},
 		})
 		
@@ -105,18 +113,15 @@ export default class BibtexScholar extends Plugin {
 		// commands for fetch bibtex online
 		this.addRibbonIcon(
 			'antenna',
-			'Fetch BibTeX Online',
+			'Fetch BibTeX online',
 			(evt: MouseEvent) => new FetchBibtexOnline(this.app, this).open()
 		)
 
 		this.addCommand({
 			id: 'fetch-bibtex-online',
-			name: 'Fetch BibTeX Online',
-			checkCallback: (checking: boolean) => {
-				if (!checking) {
-					new FetchBibtexOnline(this.app, this).open()
-				}
-				return true
+			name: 'Fetch BibTeX online',
+			callback: () => {
+				new FetchBibtexOnline(this.app, this).open()
 			},
 		})
 
@@ -129,18 +134,15 @@ export default class BibtexScholar extends Plugin {
 			(leaf) => new PaperPanelView(leaf, this.cache.bibtex_dict, this)
 		)
 
-		this.addRibbonIcon('scan-search', 'Paper Panel', () => {
+		this.addRibbonIcon('scan-search', 'Paper panel', () => {
 			this.add_paper_panel()
 		})
 
 		this.addCommand({
 			id: 'open-paper-panel',
-			name: 'Open Paper Panel',
-			checkCallback: (checking: boolean) => {
-				if (!checking) {
-					this.add_paper_panel()
-				}
-				return true
+			name: 'Open paper panel',
+			callback: () => {
+				this.add_paper_panel()
 			},
 		})
 	}
@@ -189,7 +191,9 @@ export default class BibtexScholar extends Plugin {
 				// if duplicated, prompt warning
 				const fragment = new DocumentFragment()
 				const p = document.createElement("p")
-				MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\`\nRevise for successful import`, p, '', this)
+				const component = new MarkdownRenderChild(p)
+				ctx.addChild(component)
+				MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\`\nRevise for successful import`, p, '', component)
 				fragment.append(p)
 				new Notice(fragment, 5e3)
 			} else {
@@ -391,22 +395,30 @@ class BibtexScholarSetting extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Default paper note folder')
 			.setDesc('When click on the note button, it will create a note in this folder. Without / at the end')
-			.addText(text => text
-				.setValue(this.plugin.cache.note_folder)
-				.onChange(async (value) => {
-					this.plugin.cache.note_folder = value
-					await this.plugin.save_cache()
-				}))
+			.addSearch(search => {
+				search
+					.setValue(this.plugin.cache.note_folder)
+					.onChange(async (value) => {
+						this.plugin.cache.note_folder = normalizePath(value);
+						await this.plugin.save_cache();
+					});
+				// attach folder suggestion prompt
+				new FolderSuggest(this.app, search.inputEl);
+			});
 
 		new Setting(containerEl)
 			.setName('Default PDF folder')
 			.setDesc('When click on the pdf button, it will upload a PDF file to this folder. Without / at the end')
-			.addText(text => text
-				.setValue(this.plugin.cache.pdf_folder)
-				.onChange(async (value) => {
-					this.plugin.cache.pdf_folder = value
-					await this.plugin.save_cache()
-				}))
+			.addSearch(search => {
+				search
+					.setValue(this.plugin.cache.pdf_folder)
+					.onChange(async (value) => {
+						this.plugin.cache.pdf_folder = normalizePath(value);
+						await this.plugin.save_cache();
+					});
+				// attach folder suggestion prompt
+				new FolderSuggest(this.app, search.inputEl);
+			});
 
 		new Setting(containerEl)
 			.setName('Default mode for fetching BibTeX online')

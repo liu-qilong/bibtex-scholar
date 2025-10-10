@@ -1160,10 +1160,6 @@ If your plugin does not need CSS, delete this file.
     padding-left: 2em;
   }
   
-  body {
-    counter-reset: katexEqnNo mmlEqnNo;
-  }
-  
   /* customized */
   .react-flow__node-note {
     position: absolute;

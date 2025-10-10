@@ -62,7 +62,7 @@ class UploadPdfModal extends Modal {
             const file_path = `${this.folder}/${this.fname}`
 
             // ensure the folder exists
-            if (!await this.app.vault.adapter.exists(this.folder)) {
+            if (!await this.app.vault.getFolderByPath(this.folder)) {
                 await this.app.vault.createFolder(this.folder)
             }
 
@@ -112,7 +112,7 @@ const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: st
                     new UploadPdfModal(app, folder, fname).open()
                 } else if (fname.endsWith('.md')) {
                     // ensure the folder exists
-                    if (!await app.vault.adapter.exists(folder)) {
+                    if (!await app.vault.getFolderByPath(folder)) {
                         await app.vault.createFolder(folder)
                     }
 
