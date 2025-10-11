@@ -62,9 +62,9 @@ export async function parse_bibtex(bibtex_source: string, lower_case_type: boole
         let mode = 'key'
         let store = ''
         let max_layer = 0
-        let stack = []
-        let keys = []
-        let values = []
+        let stack: string[] = []
+        let keys: string[] = []
+        let values: string[] = []
 
         for (let [idx, char] of [...fields_str].entries()) {
             if (mode === 'key') {
