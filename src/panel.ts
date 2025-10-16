@@ -23,7 +23,7 @@ export class PaperPanelView extends ItemView {
     }
 
     getDisplayText() {
-        return 'Paper Panel'
+        return 'Paper panel'
     }
 
     getIcon(): IconName {

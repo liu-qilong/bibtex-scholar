@@ -276,7 +276,7 @@ export class FetchBibtexOnline extends Modal {
 
     onOpen() {
         const { contentEl } = this
-        contentEl.createEl('h4', { text: 'Fetch BibTeX Online' })
+        contentEl.createEl('h4', { text: 'Fetch BibTeX online' })
 
         new Setting(contentEl)
 			.setName('Mode')
