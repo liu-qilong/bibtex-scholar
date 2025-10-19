@@ -67,6 +67,25 @@ export default class BibtexScholar extends Plugin {
 			},
 		})
 
+		// commands for copy file with `{}` replaced as \autocite{}
+		this.addCommand({
+			id: 'copy-autocite-md',
+			name: 'Copy current file with ` {id}`  replaced as \\autocite{id}',
+			checkCallback: (checking: boolean) => {
+				if (!checking) {
+					this.cp_autocite_md()
+				} else {
+					const current_file = this.app.workspace.getActiveFile()
+					// check if there is an active file
+					if (!current_file) {
+						return false
+					} else {
+						return true
+					}
+				}
+			},
+		})
+
 		// commands for uncache bibtex entries
 		this.addCommand({
 			id: 'uncache-all-bibtex',
@@ -289,6 +308,26 @@ export default class BibtexScholar extends Plugin {
 			})
 			navigator.clipboard.writeText(content)
 			new Notice('Copied standard markdown to clipboard')
+		} else {
+			new Notice('No active file to copy')
+		}
+	}
+
+	/**
+	 * Copy the current file's content with `{id}` replaced as \autocite{id}
+	 */
+	async cp_autocite_md() {
+		const current_file = this.app.workspace.getActiveFile()
+		// read file content
+		if (current_file) {
+			let content = await this.app.vault.read(current_file)
+			content = content.replace(/```bibtex[\s\S]*?```/g, '')
+			content = content.replace(/\`(\{|\[)([^\}\]]+)(\}|\])\`/g, (match, p1, id, p3) => {
+				const fields = this.cache.bibtex_dict[id]?.fields
+				return `\\autocite{${id}}`
+			})
+			navigator.clipboard.writeText(content)
+			new Notice('Copied with \\autocite{} to clipboard')
 		} else {
 			new Notice('No active file to copy')
 		}
