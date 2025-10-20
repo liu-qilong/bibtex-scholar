@@ -90,7 +90,6 @@ export class FolderSuggest extends AbstractInputSuggest<string> {
     }
 
     selectSuggestion(folder: string): void {
-		console.log(this)
         // @ts-ignore
         this.textInputEl.value = folder;
         const event = new Event('input');

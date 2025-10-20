@@ -53,16 +53,10 @@ export default class BibtexScholar extends Plugin {
 			id: 'copy-std-md',
 			name: 'Copy current file as standard markdown',
 			checkCallback: (checking: boolean) => {
-				if (!checking) {
+				const current_file = this.app.workspace.getActiveFile()
+				if (checking) return Boolean(current_file) // return true if active file exists
+				if (current_file) {
 					this.cp_std_md()
-				} else {
-					const current_file = this.app.workspace.getActiveFile()
-					// check if there is an active file
-					if (!current_file) {
-						return false
-					} else {
-						return true
-					}
 				}
 			},
 		})
@@ -72,16 +66,10 @@ export default class BibtexScholar extends Plugin {
 			id: 'copy-autocite-md',
 			name: 'Copy current file with ` {id}`  replaced as \\autocite{id}',
 			checkCallback: (checking: boolean) => {
-				if (!checking) {
+				const current_file = this.app.workspace.getActiveFile()
+				if (checking) return Boolean(current_file) // return true if active file exists
+				if (current_file) {
 					this.cp_autocite_md()
-				} else {
-					const current_file = this.app.workspace.getActiveFile()
-					// check if there is an active file
-					if (!current_file) {
-						return false
-					} else {
-						return true
-					}
 				}
 			},
 		})
@@ -101,20 +89,11 @@ export default class BibtexScholar extends Plugin {
 			id: 'uncache-file-bibtex',
 			name: 'Uncache BibTeX entries from current file',
 			checkCallback: (checking: boolean) => {				
-				if (!checking) {
-					const current_file = this.app.workspace.getActiveFile()
-					if (current_file) {
-						if (window.confirm('Are you sure?')) {
-							this.uncache_bibtex_from_path(current_file.path)
-						}
-					}
-				} else {
-					const current_file = this.app.workspace.getActiveFile()
-					// check if there is an active file
-					if (!current_file) {
-						return false
-					} else {
-						return true
+				const current_file = this.app.workspace.getActiveFile()
+				if (checking) return Boolean(current_file) // return true if active file exists
+				if (current_file) {
+					if (window.confirm('Are you sure?')) {
+						this.uncache_bibtex_from_path(current_file.path)
 					}
 				}
 			},
@@ -208,13 +187,7 @@ export default class BibtexScholar extends Plugin {
 	
 			if (duplicate) {
 				// if duplicated, prompt warning
-				const fragment = new DocumentFragment()
-				const p = document.createElement("p")
-				const component = new MarkdownRenderChild(p)
-				ctx.addChild(component)
-				MarkdownRenderer.render(this.app, `Warning: BibTeX ID has been used\n\`${id}\`\nRevise for successful import`, p, '', component)
-				fragment.append(p)
-				new Notice(fragment, 5e3)
+				new Notice(`Warning: BibTeX ID has been used\n${id}`, 10e3)
 			} else {
 				// if not duplicated, check if the id exists
 				// if exists, only cache bibtex code that is updated
