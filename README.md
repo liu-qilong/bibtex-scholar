@@ -50,8 +50,6 @@ With BibTeX Scholar, you can:
 
 ### Installation
 
-> Coming soon to the [Obsidian Community Plugin](https://obsidian.md/plugins)--waiting for Obsidian approval!
-
 - Install [Obsidian](https://obsidian.md/) and create your vault
 - Go to Settings > Community plugins > Browse > Search for "BibTeX Scholar"
 - Install and enable the plugin
