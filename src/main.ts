@@ -3,7 +3,7 @@ import { parse_bibtex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type 
 import { render_hover } from 'src/hover'
 import { EditorPrompt, FolderSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
-import { emojiWidgetPlugin } from 'src/live'
+import { createEmojiWidgetPlugin } from 'src/live'
 
 interface BibtexScholarCache {
 	bibtex_dict: BibtexDict,
@@ -33,8 +33,9 @@ export default class BibtexScholar extends Plugin {
 
 		// inline reference of paper
 		this.registerMarkdownPostProcessor((el, ctx) => this.inline_ref_processor(el, ctx))
-
-		this.registerEditorExtension(emojiWidgetPlugin);
+		// @ts-ignore
+		const emojiWidgetPlugin = createEmojiWidgetPlugin(this, this.app)
+		this.registerEditorExtension(emojiWidgetPlugin)
 
 		// commands for copy all bibtex entries to the clipboard
 		this.addRibbonIcon(

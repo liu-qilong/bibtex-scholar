@@ -1,6 +1,5 @@
 import { RangeSetBuilder } from '@codemirror/state'
 import {
-    WidgetType,
     Decoration,
     DecorationSet,
     EditorView,
@@ -9,84 +8,72 @@ import {
     ViewPlugin,
     ViewUpdate,
 } from '@codemirror/view'
+import { App } from 'obsidian'
+import { HoverWidget } from 'src/hover'
+import BibtexScholar from 'src/main'
 
-const EMOJI = "😊"
-const PATTERN = /\`\{[^}]+\}\`/g
+export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
+    class HoverWidgetPlugin implements PluginValue {
+        decorations: DecorationSet
 
-class EmojiWidget extends WidgetType {
-	toDOM() {
-		const span = document.createElement("span")
-		span.textContent = EMOJI
-		return span
-	}
+        constructor(view: EditorView) {
+            this.decorations = this.buildDecorations(view)
+        }
 
-	eq() {
-		return true
-	}
+        update(update: ViewUpdate) {
+            if (update.docChanged || update.viewportChanged || update.selectionSet) {
+                this.decorations = this.buildDecorations(update.view)
+            }
+        }
 
-	ignoreEvent() {
-		return true
-	}
-}
+        destroy() {}
 
-class EmojiWidgetPlugin implements PluginValue {
-    decorations: DecorationSet
+        buildDecorations(view: EditorView): DecorationSet {
+            const builder = new RangeSetBuilder<Decoration>()
+            const cursor_pos = view.state.selection.main.head
 
-    constructor(view: EditorView) {
-        this.decorations = this.buildDecorations(view)
-    }
+            for (const {from, to} of view.visibleRanges) {
+                const start_line = view.state.doc.lineAt(from).number
+                const end_line = view.state.doc.lineAt(to).number
 
-    update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged || update.selectionSet) {
-            this.decorations = this.buildDecorations(update.view)
+                for (let ln = start_line; ln <= end_line; ln++) {
+                    const line = view.state.doc.line(ln)
+                    const text = line.text
+                    const PATTERN = /\`[\{\[][^\}\]]+[\}\]]\`/g
+                    PATTERN.lastIndex = 0
+                    let m: RegExpExecArray | null
+                    while ((m = PATTERN.exec(text)) !== null) {
+                        // determine if cursor is inside the match
+                        const match_from = line.from + m.index
+                        const match_to = match_from + m[0].length
+                        const cursor_inside = cursor_pos >= match_from && cursor_pos <= match_to
+
+                        if (!cursor_inside) {
+                            // if cursor is not inside, add decoration
+                            const bibtex_id = m[0].slice(2, -2)
+                            const expand = ((m[0][1] === '['))?(true):(false)
+                            const bibtex = plugin.cache.bibtex_dict[bibtex_id]
+                            
+                            if (bibtex) {
+                                builder.add(
+                                    match_from,
+                                    match_to,
+                                    Decoration.replace({
+                                       widget: new HoverWidget(bibtex, plugin, app, expand),
+                                    })
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            return builder.finish()
         }
     }
 
-    destroy() {}
-
-    buildDecorations(view: EditorView): DecorationSet {
-        const builder = new RangeSetBuilder<Decoration>()
-		const cursorPos = view.state.selection.main.head
-		console.log(cursorPos)
-
-		for (const {from, to} of view.visibleRanges) {
-			const startLine = view.state.doc.lineAt(from).number
-			const endLine = view.state.doc.lineAt(to).number
-
-			for (let ln = startLine; ln <= endLine; ln++) {
-				const line = view.state.doc.line(ln)
-				const text = line.text
-
-				PATTERN.lastIndex = 0
-				let m: RegExpExecArray | null
-				while ((m = PATTERN.exec(text)) !== null) {
-					const matchFrom = line.from + m.index
-					const matchTo = matchFrom + m[0].length
-
-					const cursorInside = cursorPos >= matchFrom && cursorPos <= matchTo
-					console.log(matchFrom, matchTo, cursorInside)
-					if (cursorInside) continue
-
-					builder.add(
-						matchFrom,
-						matchTo,
-						Decoration.replace({
-							widget: new EmojiWidget(),
-						})
-					)
-				}
-			}
-		}
-
-        return builder.finish()
+    const pluginSpec: PluginSpec<HoverWidgetPlugin> = {
+        decorations: (value: HoverWidgetPlugin) => value.decorations,
     }
-}
 
-const pluginSpec: PluginSpec<EmojiWidgetPlugin> = {
-    decorations: (value: EmojiWidgetPlugin) => value.decorations,
+    return ViewPlugin.fromClass(HoverWidgetPlugin, pluginSpec)
 }
-
-export const emojiWidgetPlugin = ViewPlugin.fromClass(
-    EmojiWidgetPlugin,
-    pluginSpec
-)

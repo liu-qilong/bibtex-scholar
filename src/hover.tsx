@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import Markdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import { WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
 import BibtexScholar from 'src/main'
@@ -272,4 +273,38 @@ export const render_hover = async ( el: HTMLElement, bibtex: BibtexElement, plug
             <HoverPopup bibtex={bibtex} plugin={plugin} app={app} expand={expand}/>
         </StrictMode>
     )
+}
+
+export class HoverWidget extends WidgetType {
+    bibtex: BibtexElement
+    plugin: BibtexScholar
+    app: App
+    expand: boolean
+
+    constructor(bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false) {
+        super()
+        this.bibtex = bibtex
+        this.plugin = plugin
+        this.app = app
+        this.expand = expand
+    }
+
+    toDOM() {
+        const span = document.createElement("span")
+        createRoot(span).render(
+            <StrictMode>
+                <HoverPopup bibtex={this.bibtex} plugin={this.plugin} app={this.app} expand={this.expand}/>
+                {/* <button>test</button> */}
+            </StrictMode>
+        )
+        return span
+    }
+
+    eq(other: HoverWidget) {
+        return this.bibtex.fields.id === other.bibtex.fields.id
+    }
+
+    ignoreEvent() {
+        return true
+    }
 }
