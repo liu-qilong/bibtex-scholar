@@ -24,17 +24,19 @@ export class EditorPrompt extends EditorSuggest<string> {
         // determine if this EditorSuggest should be triggered
         this.editor = editor
         const line = editor.getLine(cursor.line)
-        const regex = /(`)([{\[])([^}\]`]*)([}\]]?)(`?)/g
+        const regex = /(`)([{\[])([^}\]`\ ]*)([}\]]?)(`?)/g
         let match
         
         while ((match = regex.exec(line)) !== null) {
             // example: match = ('`{test}`', '`', '{', 'test', '}', '`')
+            // console.log(match)
             const query = match[3]
             const content_start = match.index + 2 // position after `{` or `[`
             const content_end = content_start + query.length
             
             // Check if cursor is within the content area
-            if (cursor.ch >= content_start && cursor.ch <= content_end) {
+            // if (cursor.ch >= content_start && cursor.ch == content_end) {
+            if (cursor.ch == content_end) {
                 this.bracket_start = match[2]
                 this.bracket_end = match[4]
                 this.code_end = match[5]
