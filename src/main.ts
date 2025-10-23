@@ -3,7 +3,7 @@ import { parse_bibtex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type 
 import { render_hover } from 'src/hover'
 import { EditorPrompt, FolderSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
-import { createEmojiWidgetPlugin } from 'src/live'
+import { createHoverWidgetPlugin } from 'src/live'
 
 interface BibtexScholarCache {
 	bibtex_dict: BibtexDict,
@@ -32,10 +32,11 @@ export default class BibtexScholar extends Plugin {
 		this.registerMarkdownCodeBlockProcessor('bibtex', async (source, el, ctx) => await this.bibtex_codeblock_processor(source, el, ctx))
 
 		// inline reference of paper
+		// reading view
 		this.registerMarkdownPostProcessor((el, ctx) => this.inline_ref_processor(el, ctx))
-		// @ts-ignore
-		const emojiWidgetPlugin = createEmojiWidgetPlugin(this, this.app)
-		this.registerEditorExtension(emojiWidgetPlugin)
+		// editing view (source + live preview modes)
+		const hover_widget_editor_plugin = createHoverWidgetPlugin(this, this.app)
+		this.registerEditorExtension(hover_widget_editor_plugin)
 
 		// commands for copy all bibtex entries to the clipboard
 		this.addRibbonIcon(
