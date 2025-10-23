@@ -10,7 +10,9 @@ import { BibtexElement, match_query, type BibtexDict } from 'src/bibtex'
 export class EditorPrompt extends EditorSuggest<string> {
     bibtex_dict: BibtexDict
     editor: Editor
-    match_start: string
+    bracket_start: string
+    bracket_end: string
+    code_end: string
     trigger_info: EditorSuggestTriggerInfo
 
     constructor(app: App, bibtex_dict: BibtexDict) {
@@ -22,17 +24,33 @@ export class EditorPrompt extends EditorSuggest<string> {
         // determine if this EditorSuggest should be triggered
         this.editor = editor
         const line = editor.getLine(cursor.line)
-        const match = line.match(/`[{\[]([^}]*)`/)
+        const regex = /(`)([{\[])([^}\]`]*)([}\]]?)(`?)/g
+        let match
+        
+        while ((match = regex.exec(line)) !== null) {
+            // example: match = ('`{test}`', '`', '{', 'test', '}', '`')
+            const query = match[3]
+            const content_start = match.index + 2 // position after `{` or `[`
+            const content_end = content_start + query.length
+            
+            // Check if cursor is within the content area
+            if (cursor.ch >= content_start && cursor.ch <= content_end) {
+                this.bracket_start = match[2]
+                this.bracket_end = match[4]
+                this.code_end = match[5]
 
-        if (match) {
-            const query = match[1]
-            this.match_start = match[0][1]
-            this.trigger_info = {
-                start: { line: cursor.line, ch: cursor.ch - query.length },
-                end: cursor,
-                query: query,
+                if (this.bracket_end && !this.code_end) {
+                    // rule out the case like `{test}, where proper insertion is not achievable
+                    continue
+                }
+
+                this.trigger_info = {
+                    start: { line: cursor.line, ch: content_start },
+                    end: { line: cursor.line, ch: content_end },
+                    query: query,
+                }
+                return this.trigger_info
             }
-            return this.trigger_info
         }
 
         return null
@@ -57,8 +75,16 @@ export class EditorPrompt extends EditorSuggest<string> {
     selectSuggestion(id: string, evt: MouseEvent | KeyboardEvent): void {
         // handle the selection of a suggestion
         const bibtex = this.bibtex_dict[id]
+        let str = bibtex.fields.id
+        if (this.bracket_end === '') {
+            str += (this.bracket_start === '{')?('}'):(']')
+        }
+        if (this.code_end === '') {
+            str += '`'
+        }
+
         this.editor.replaceRange(
-            `${bibtex.fields.id}${(this.match_start === '{')?('}'):(']')}`,
+            str,
             this.trigger_info.start,
             this.trigger_info.end,
         )
