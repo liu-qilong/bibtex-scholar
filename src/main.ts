@@ -3,7 +3,7 @@ import { parse_bibtex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type 
 import { render_hover } from 'src/hover'
 import { EditorPrompt, FolderSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
-import { createHoverWidgetPlugin } from 'src/live'
+import { createHoverWidgetPlugin } from 'src/editor'
 
 interface BibtexScholarCache {
 	bibtex_dict: BibtexDict,

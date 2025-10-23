@@ -275,6 +275,16 @@ export const render_hover = async ( el: HTMLElement, bibtex: BibtexElement, plug
     )
 }
 
+
+/**
+ * HoverWidget class for displaying BibTeX entry hover popups in the editor.
+ * Extends the WidgetType from CodeMirror to create a custom widget.
+ * 
+ * @param bibtex - The BibtexElement object containing the entry's fields and metadata.
+ * @param plugin - The BibtexScholar plugin instance, used for accessing cache and plugin methods.
+ * @param app - The Obsidian App instance, used for workspace and UI interactions.
+ * @param expand - If true, the popup is expanded by default; otherwise, it appears on hover.
+ */
 export class HoverWidget extends WidgetType {
     bibtex: BibtexElement
     plugin: BibtexScholar
