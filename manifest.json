@@ -1,9 +1,9 @@
 {
 	"id": "bibtex-scholar",
 	"name": "BibTeX Scholar",
-	"version": "1.0.5",
+	"version": "1.0.8",
 	"minAppVersion": "0.15.0",
-	"description": "A complete BibTeX citation management solution designed for contextual, frictionless literature reviews and paper writing--right inside your notes",
+	"description": "A complete BibTeX citation management solution designed for contextual, frictionless literature reviews and paper writing--right inside your notes.",
 	"author": "Qilong Liu",
 	"authorUrl": "https://liu-qilong.github.io",
 	"isDesktopOnly": false

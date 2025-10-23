@@ -50,7 +50,7 @@ With BibTeX Scholar, you can:
 
 ### Installation
 
-> Coming soon to the [Obsidian Community Plugin](https://obsidian.md/plugins)--waiting for Obsidian approval!
+![img](/gallery/install.png)
 
 - Install [Obsidian](https://obsidian.md/) and create your vault
 - Go to Settings > Community plugins > Browse > Search for "BibTeX Scholar"
@@ -85,7 +85,7 @@ You can change the default mode in the plugin settings.
 
 Create a ```` ```bibtex ```` code block in any note. You can add multiple entries per block.
 
-_P.S. If you use [live preview](https://help.obsidian.md/Live+preview+update) editing mode, you are recommended to put too many entries in the same block. It may not render properly._
+_P.S. If you use [live preview](https://help.obsidian.md/Live+preview+update) editing mode, you are not recommended to put too many entries in the same block. It may not render properly._
 
 ````markdown
 ```bibtex

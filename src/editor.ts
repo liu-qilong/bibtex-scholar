@@ -12,6 +12,15 @@ import { App } from 'obsidian'
 import { HoverWidget } from 'src/hover'
 import BibtexScholar from 'src/main'
 
+/**
+ * Creates a hover widget plugin for displaying BibTeX entry popups, under the editing mode (including the live preview mode).
+ * 
+ * When the cursor is outside the matched pattern, the hover widget will be displayed as a decoration; otherwise, the original text remains visible for editing.
+ * 
+ * @param plugin - The BibtexScholar plugin instance.
+ * @param app - The Obsidian App instance.
+ * @returns A CodeMirror ViewPlugin for the hover widget.
+ */
 export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
     class HoverWidgetPlugin implements PluginValue {
         decorations: DecorationSet
