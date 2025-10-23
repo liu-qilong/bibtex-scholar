@@ -85,6 +85,8 @@ You can change the default mode in the plugin settings.
 
 Create a ```` ```bibtex ```` code block in any note. You can add multiple entries per block.
 
+_P.S. If you use [live preview](https://help.obsidian.md/Live+preview+update) editing mode, you are recommended to put too many entries in the same block. It may not render properly._
+
 ````markdown
 ```bibtex
 @inproceedings{ChuntingZhou2025ICLR,
