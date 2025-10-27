@@ -152,6 +152,12 @@ You can click ![img](/gallery/scan-search.jpeg) on the left ribbon to open the p
 
 You can open multiple paper panels and draw them to the place you want.
 
+### Custom template for `.md` notes
+
+If you want, you can overload the default template for the creation of `.md` note from the bibtex citation. You can choose the template in the settings under *Custom note template path*. When filled, the plugin uses the template to create the next note in the folder specified as *Default paper note folder*.
+
+You can also use Templater plugin functionality: see [New bibtex.md](gallery/New%20bibtex.md).
+
 ## Future plan 🤖
 
 AI-powered features and more workflow enhancements are on the way!
