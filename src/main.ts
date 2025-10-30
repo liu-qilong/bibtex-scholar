@@ -440,8 +440,8 @@ class BibtexScholarSetting extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName('Custom note template path')
-			.setDesc('Path to a template file used when creating notes from BibTeX entries. Leave empty to use the default.')
+			.setName('Custom paper note template path')
+			.setDesc('Path to a template file used when creating associated paper notes from BibTeX entries. Leave empty to use the default.')
 			.addSearch(search => {
 				search
 					.setPlaceholder('templates/bibtex-note.md')

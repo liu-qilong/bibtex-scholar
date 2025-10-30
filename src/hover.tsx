@@ -117,23 +117,26 @@ const LinkedFileButton = ({ label, fname, folder, app, plugin }: { label: string
                             await app.vault.createFolder(folder)
                         }
 
-                        // Load custom template if provided
+                        // load custom template if provided
                         let content = ''
-                        const templatePath = plugin.cache.template_path
-                        if (templatePath && await app.vault.adapter.exists(templatePath)) {
+                        const template_path = plugin.cache.template_path
+
+                        if (template_path != '/' && await app.vault.adapter.exists(template_path)) {
+                            // if template found, load it
                             try {
-                                content = await app.vault.adapter.read(templatePath)
+                                content = await app.vault.adapter.read(template_path)
                             } catch (e) {
                                 console.error('Failed to read custom template:', e)
                                 new Notice('Failed to load custom template, using default.')
                             }
+                        } else {
+                            // if no template found, use default
+                            content = `---\naliases:\n  - \n---\n\`[${fname.replace('.md', '')}]\`\n\n---\n\n`
                         }
 
-                        // If no template found, use default
-                        if (!content) {
-                            content = `${folder}/${fname}`, `---\naliases:\n  - \n---\n\`[${fname.replace('.md', '')}]\`\n\n---\n\n`
-                        }
-
+                        // create the file with the content
+                        // if Templater plugin is enable, it will be trigged to automatically fill the template,
+                        // supposed that the "Trigger Templater on new file creation" setting is enabled in the Templater plugin settings
                         await app.vault.create(`${folder}/${fname}`, content)
                         await app.workspace.openLinkText(fname, fname, true)
                     }
