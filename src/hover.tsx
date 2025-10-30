@@ -88,44 +88,60 @@ class UploadPdfModal extends Modal {
  * @param folder - The folder where the file should be located or created.
  * @param app - The Obsidian App instance for interacting with the vault and workspace.
  */
-const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: string, folder: string, app: App}) => {
+const LinkedFileButton = ({ label, fname, folder, app, plugin }: { label: string, fname: string, folder: string, app: App, plugin: BibtexScholar }) => {
     const exist = app.metadataCache.getFirstLinkpathDest(fname, '')
-    const cls = (exist)?('bibtex-file-exist'):('bibtex-file-not-exist')
+    const cls = (exist) ? ('bibtex-file-exist') : ('bibtex-file-not-exist')
 
     return (
-    <a 
-        className={cls}
-        onMouseOver={ (event) => {
-            app.workspace.trigger("hover-link", {
-                event,
-                source: "preview",
-                hoverParent: { hoverPopover: null },
-                targetEl: event.currentTarget,
-                linktext: fname,
-                sourcePath: fname,
-            })
-        }}
-        onClick={ async (event) => {
-            if (exist) {
-                app.workspace.openLinkText(fname, fname, true)
-            } else {
-                if (fname.endsWith('.pdf')) {
-                    new UploadPdfModal(app, folder, fname).open()
-                } else if (fname.endsWith('.md')) {
-                    // ensure the folder exists
-                    if (!await app.vault.getFolderByPath(folder)) {
-                        await app.vault.createFolder(folder)
-                    }
+        <a
+            className={cls}
+            onMouseOver={(event) => {
+                app.workspace.trigger("hover-link", {
+                    event,
+                    source: "preview",
+                    hoverParent: { hoverPopover: null },
+                    targetEl: event.currentTarget,
+                    linktext: fname,
+                    sourcePath: fname,
+                })
+            }}
+            onClick={async (event) => {
+                if (exist) {
+                    app.workspace.openLinkText(fname, fname, true)
+                } else {
+                    if (fname.endsWith('.pdf')) {
+                        new UploadPdfModal(app, folder, fname).open()
+                    } else if (fname.endsWith('.md')) {
+                        // ensure the folder exists
+                        if (!await app.vault.getFolderByPath(folder)) {
+                            await app.vault.createFolder(folder)
+                        }
 
-                    // create the file
-                    await app.vault.create(`${folder}/${fname}`, `---\naliases:\n  - \n---\n\`[${fname.replace('.md', '')}]\`\n\n---\n\n`)
-                    await app.workspace.openLinkText(fname, fname, true)
+                        // Load custom template if provided
+                        let content = ''
+                        const templatePath = plugin.cache.template_path
+                        if (templatePath && await app.vault.adapter.exists(templatePath)) {
+                            try {
+                                content = await app.vault.adapter.read(templatePath)
+                            } catch (e) {
+                                console.error('Failed to read custom template:', e)
+                                new Notice('Failed to load custom template, using default.')
+                            }
+                        }
+
+                        // If no template found, use default
+                        if (!content) {
+                            content = `${folder}/${fname}`, `---\naliases:\n  - \n---\n\`[${fname.replace('.md', '')}]\`\n\n---\n\n`
+                        }
+
+                        await app.vault.create(`${folder}/${fname}`, content)
+                        await app.workspace.openLinkText(fname, fname, true)
+                    }
                 }
-            }
-        }}
-    >
-        <button>{label}</button>
-    </a>
+            }}
+        >
+            <button>{label}</button>
+        </a>
     )
 }
 
@@ -137,7 +153,7 @@ const LinkedFileButton = ({label, fname, folder, app}: {label: string, fname: st
  * @param expand - If true, the popup is expanded by default; otherwise, it appears on hover.
  * The popup provides quick actions such as copying the entry's ID, BibTeX, markdown/LaTeX citations, and links to associated note, PDF, and BibTeX source files. It also allows searching for mentions of the entry and uncaching the entry from the plugin's cache. Entry fields are rendered with markdown and math support.
  */
-const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean }) => {
+const HoverPopup = ({ bibtex, plugin, app, expand = false }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean }) => {
     const paper_id = bibtex.fields.id
 
     // handlers for mouse enter and leave
@@ -163,96 +179,102 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexEleme
             {/* This is the popup that appears on hover */}
             {/* {( */}
             {is_hovered && (
-            <span
-                onMouseEnter={handle_mouse_enter}
-                onMouseLeave={handle_mouse_leave}
+                <span
+                    onMouseEnter={handle_mouse_enter}
+                    onMouseLeave={handle_mouse_leave}
                 >
-                <div className='bibtex-hover-button-bar'>
-                    {/* copy id */}
-                    <button onClick={() => copy_to_clipboard(paper_id)}>
-                        <code>id</code>
-                    </button>
-                    {/* copy bibtex */}
-                    <button onClick={() => copy_to_clipboard(make_bibtex(bibtex.fields, false))}>
-                    {/* <button onClick={() => copy_to_clipboard(bibtex.source)}> */}
-                        <code>bibtex</code>
-                    </button>
-                    {/* md cite */}
-                    <button onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)}>
-                        <code>{'`{}`'}</code>
-                    </button>
-                    <button onClick={() => copy_to_clipboard(`\`[${paper_id}]\``)}>
-                        <code>{'`[]`'}</code>
-                    </button>
-                    {/* latex cite */}
-                    <button onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)}>
-                        <code>{'\\autocite{}'}</code>
-                    </button>
-                    <code>{'+'}</code>
-                    {/* linked note */}
-                    <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app}/>
-                    {/* linked pdf */}
-                    <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app}/>
-                    {/* linked bibtex source */}
-                    <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app}/>
-                    {/* mentions query */}
-                    <button
-                        onClick={async () => {
-                            const query = mentions_search_query(paper_id)
+                    <div className='bibtex-hover-button-bar'>
+                        {/* copy id */}
+                        <button onClick={() => copy_to_clipboard(paper_id)}>
+                            <code>id</code>
+                        </button>
+                        {/* copy bibtex */}
+                        <button onClick={() => copy_to_clipboard(make_bibtex(bibtex.fields, false))}>
+                            {/* <button onClick={() => copy_to_clipboard(bibtex.source)}> */}
+                            <code>bibtex</code>
+                        </button>
+                        {/* md cite */}
+                        <button onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)}>
+                            <code>{'`{}`'}</code>
+                        </button>
+                        <button onClick={() => copy_to_clipboard(`\`[${paper_id}]\``)}>
+                            <code>{'`[]`'}</code>
+                        </button>
+                        {/* latex cite */}
+                        <button onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)}>
+                            <code>{'\\autocite{}'}</code>
+                        </button>
+                        <code>{'+'}</code>
+                        {/* linked note */}
+                        {/* <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} /> */}
+                        {/* linked pdf */}
+                        {/* <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} /> */}
+                        {/* linked bibtex source */}
+                        {/* <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app} /> */}
 
-                            // check if a search leaf exists
-                            // if no search leaf exists, create one
-                            let search_leaf = app.workspace.getLeavesOfType('search')[0]
-                            
-                            if (!search_leaf) {
-                                const leaf = app.workspace.getLeftLeaf(false)
-                                if (leaf) {
-                                    leaf.setViewState({ type: 'search', active: true })
-                                    search_leaf = app.workspace.getLeavesOfType('search')[0]
+                        <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} plugin={plugin} />
+                        <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} plugin={plugin} />
+                        <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app} plugin={plugin} />
+
+
+                        {/* mentions query */}
+                        <button
+                            onClick={async () => {
+                                const query = mentions_search_query(paper_id)
+
+                                // check if a search leaf exists
+                                // if no search leaf exists, create one
+                                let search_leaf = app.workspace.getLeavesOfType('search')[0]
+
+                                if (!search_leaf) {
+                                    const leaf = app.workspace.getLeftLeaf(false)
+                                    if (leaf) {
+                                        leaf.setViewState({ type: 'search', active: true })
+                                        search_leaf = app.workspace.getLeavesOfType('search')[0]
+                                    }
                                 }
+
+                                // set the query in the search panel
+                                if (search_leaf) {
+                                    function is_search_view(view: any): view is { setQuery: (query: string) => void } {
+                                        return typeof view?.setQuery === 'function';
+                                    }
+
+                                    await app.workspace.revealLeaf(search_leaf);
+                                    if (is_search_view(search_leaf.view)) {
+                                        search_leaf.view.setQuery(query)
+                                    }
+                                    app.workspace.setActiveLeaf(search_leaf)
+                                }
+                            }}
+                        >
+                            mentions
+                        </button>
+                        <code>{'+'}</code>
+                        {/* tool */}
+                        <button onClick={() => {
+                            delete plugin.cache.bibtex_dict[paper_id]
+                            plugin.save_cache()
+                            new Notice(`Uncached ${paper_id}`)
+                            if (window.confirm('Are you sure?')) {
+                                plugin.uncache_bibtex_with_id(paper_id)
                             }
-                            
-                            // set the query in the search panel
-                            if (search_leaf) {
-                                function is_search_view(view: any): view is { setQuery: (query: string) => void } {
-                                    return typeof view?.setQuery === 'function';
-                                }
-                                
-                                await app.workspace.revealLeaf(search_leaf);
-                                if (is_search_view(search_leaf.view)) {
-                                    search_leaf.view.setQuery(query)
-                                }
-                                app.workspace.setActiveLeaf(search_leaf)
-                            }
-                        }}
-                    >
-                        mentions
-                    </button>
-                    <code>{'+'}</code>
-                    {/* tool */}
-                    <button onClick={() => {
-                        delete plugin.cache.bibtex_dict[paper_id]
-                        plugin.save_cache()
-                        new Notice(`Uncached ${paper_id}`)
-                        if (window.confirm('Are you sure?')) {
-							plugin.uncache_bibtex_with_id(paper_id)
-						}
-                    }}>
-                        uncache
-                    </button>
-                </div>
-                {Object.entries(bibtex.fields).map(([key, value]) => {
-                    if (key == 'id') {
-                        return
-                    }
-                    if (key.includes('url')) {
-                        value = `[${value}](${value})`
-                    }
-                    return (<div key={key} className='bibtex-markdown-rendered'>
-                        <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{`**\`${key}\`** ${value}`}</Markdown>
-                    </div>)
-                })}
-            </span>
+                        }}>
+                            uncache
+                        </button>
+                    </div>
+                    {Object.entries(bibtex.fields).map(([key, value]) => {
+                        if (key == 'id') {
+                            return
+                        }
+                        if (key.includes('url')) {
+                            value = `[${value}](${value})`
+                        }
+                        return (<div key={key} className='bibtex-markdown-rendered'>
+                            <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{`**\`${key}\`** ${value}`}</Markdown>
+                        </div>)
+                    })}
+                </span>
             )}
         </span>
     )
@@ -267,10 +289,10 @@ const HoverPopup = ({ bibtex, plugin, app, expand=false }: { bibtex: BibtexEleme
  * @param app The Obsidian app instance
  * @param expand Whether to expand the hover pop up
  */
-export const render_hover = async ( el: HTMLElement, bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false ) => {
+export const render_hover = async (el: HTMLElement, bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false) => {
     createRoot(el).render(
         <StrictMode>
-            <HoverPopup bibtex={bibtex} plugin={plugin} app={app} expand={expand}/>
+            <HoverPopup bibtex={bibtex} plugin={plugin} app={app} expand={expand} />
         </StrictMode>
     )
 }
@@ -303,7 +325,7 @@ export class HoverWidget extends WidgetType {
         const span = document.createElement("span")
         createRoot(span).render(
             <StrictMode>
-                <HoverPopup bibtex={this.bibtex} plugin={this.plugin} app={this.app} expand={this.expand}/>
+                <HoverPopup bibtex={this.bibtex} plugin={this.plugin} app={this.app} expand={this.expand} />
                 {/* <button>test</button> */}
             </StrictMode>
         )

@@ -26,14 +26,14 @@ export class EditorPrompt extends EditorSuggest<string> {
         const line = editor.getLine(cursor.line)
         const regex = /(`)([{\[])([^}\]`\ ]*)([}\]]?)(`?)/g
         let match
-        
+
         while ((match = regex.exec(line)) !== null) {
             // example: match = ('`{test}`', '`', '{', 'test', '}', '`')
             // console.log(match)
             const query = match[3]
             const content_start = match.index + 2 // position after `{` or `[`
             const content_end = content_start + query.length
-            
+
             // Check if cursor is within the content area
             // if (cursor.ch >= content_start && cursor.ch == content_end) {
             if (cursor.ch == content_end) {
@@ -79,7 +79,7 @@ export class EditorPrompt extends EditorSuggest<string> {
         const bibtex = this.bibtex_dict[id]
         let str = bibtex.fields.id
         if (this.bracket_end === '') {
-            str += (this.bracket_start === '{')?('}'):(']')
+            str += (this.bracket_start === '{') ? ('}') : (']')
         }
         if (this.code_end === '') {
             str += '`'
@@ -108,7 +108,7 @@ export class FolderSuggest extends AbstractInputSuggest<string> {
 
     getSuggestions(inputStr: string): string[] {
         const inputLower = inputStr.toLowerCase();
-        return this.folders.filter(folder => 
+        return this.folders.filter(folder =>
             folder.toLowerCase().includes(inputLower)
         );
     }
@@ -120,6 +120,36 @@ export class FolderSuggest extends AbstractInputSuggest<string> {
     selectSuggestion(folder: string): void {
         // @ts-ignore
         this.textInputEl.value = folder;
+        const event = new Event('input');
+        // @ts-ignore
+        this.textInputEl.dispatchEvent(event);
+        this.close();
+    }
+}
+
+export class FileSuggest extends AbstractInputSuggest<string> {
+    private files: string[];
+
+    constructor(app: App, inputEl: HTMLInputElement) {
+        super(app, inputEl);
+        // collect all files
+        this.files = this.app.vault.getFiles().filter(f => f.extension === 'md').map(f => f.path);
+    }
+
+    getSuggestions(inputStr: string): string[] {
+        const inputLower = inputStr.toLowerCase();
+        return this.files.filter(file =>
+            file.toLowerCase().includes(inputLower)
+        );
+    }
+
+    renderSuggestion(file: string, el: HTMLElement): void {
+        el.createEl("div", { text: file });
+    }
+
+    selectSuggestion(file: string): void {
+        // @ts-ignore
+        this.textInputEl.value = file;
         const event = new Event('input');
         // @ts-ignore
         this.textInputEl.dispatchEvent(event);

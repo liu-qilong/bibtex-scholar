@@ -1,7 +1,7 @@
 import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
 import { parse_bibtex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
-import { EditorPrompt, FolderSuggest } from 'src/prompt'
+import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 import { createHoverWidgetPlugin } from 'src/editor'
 
@@ -9,6 +9,7 @@ interface BibtexScholarCache {
 	bibtex_dict: BibtexDict,
 	note_folder: string,
 	pdf_folder: string,
+	template_path: string,
 	fetch_mode: string,
 }
 
@@ -16,6 +17,7 @@ const DEFAULT_SETTINGS: BibtexScholarCache = {
 	bibtex_dict: {},
 	note_folder: 'note',
 	pdf_folder: 'pdf',
+	template_path: '',
 	fetch_mode: 'doi',
 }
 
@@ -93,7 +95,7 @@ export default class BibtexScholar extends Plugin {
 		this.addCommand({
 			id: 'uncache-file-bibtex',
 			name: 'Uncache BibTeX entries from current file',
-			checkCallback: (checking: boolean) => {				
+			checkCallback: (checking: boolean) => {
 				const current_file = this.app.workspace.getActiveFile()
 				if (checking) return Boolean(current_file) // return true if active file exists
 				if (current_file) {
@@ -103,7 +105,7 @@ export default class BibtexScholar extends Plugin {
 				}
 			},
 		})
-		
+
 		// events for rename and delete file
 		this.registerEvent(this.app.vault.on('rename', (file, old_path) => {
 			this.update_bibtex_source_path(old_path, file.path)
@@ -181,7 +183,7 @@ export default class BibtexScholar extends Plugin {
 	async bibtex_codeblock_processor(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
 		// parse bibtex
 		const fields_ls = await parse_bibtex(source)
-		fields_ls.forEach( async (fields) => {
+		fields_ls.forEach(async (fields) => {
 			const id = fields.id
 			const bibtex_source = make_bibtex(fields)
 			const duplicate = check_duplicate_id(
@@ -189,7 +191,7 @@ export default class BibtexScholar extends Plugin {
 				ctx.sourcePath,
 				String(ctx.getSectionInfo(el)?.text)
 			)
-	
+
 			if (duplicate) {
 				// if duplicated, prompt warning
 				new Notice(`Warning: BibTeX ID has been used\n${id}`, 10e3)
@@ -206,10 +208,10 @@ export default class BibtexScholar extends Plugin {
 					await this.save_cache()
 				}
 			}
-	
+
 			// render paper element
 			const paper_bar = el.createEl('span', {
-				cls: (duplicate)?('bibtex-hover-duplicate-id'):('bibtex-entry'),
+				cls: (duplicate) ? ('bibtex-hover-duplicate-id') : ('bibtex-entry'),
 			})
 			render_hover(paper_bar, this.cache.bibtex_dict[id], this, this.app)
 			el.createEl('code').setText('source')
@@ -228,7 +230,7 @@ export default class BibtexScholar extends Plugin {
 
 		for (let codeblock of codeblocks) {
 			const text = codeblock.innerText.trim()
-			
+
 			if ((text[0] === '{' || text[0] === '[') && (text[text.length - 1] === '}' || text[text.length - 1] === ']')) {
 				// `{<id>}` -> collapsed inline reference
 				// `[<id>]` -> collapsed inline reference
@@ -253,11 +255,11 @@ export default class BibtexScholar extends Plugin {
 	cp_bibtex() {
 		let bibtex = ''
 		const current_file = this.app.workspace.getActiveFile()
-		
+
 		for (const id in this.cache.bibtex_dict) {
 			bibtex += make_bibtex(this.cache.bibtex_dict[id].fields, false) + '\n'
 		}
-		
+
 		navigator.clipboard.writeText(bibtex)
 		new Notice('Copied BibTeX entries to clipboard')
 	}
@@ -275,7 +277,7 @@ export default class BibtexScholar extends Plugin {
 				const fields = this.cache.bibtex_dict[id]?.fields
 				if (fields.url) {
 					return `[${id}](${fields.url})`
-				} else if  (fields.doi){
+				} else if (fields.doi) {
 					return `[${id}](http://dx.doi.org/${fields.doi})`
 				} else {
 					return `[${id}](data:text/plain,${encodeURIComponent(this.cache.bibtex_dict[id].source)})`
@@ -321,7 +323,7 @@ export default class BibtexScholar extends Plugin {
 		await this.save_cache()
 		new Notice(`Uncached ${paper_id}`)
 	}
-	
+
 	/**
 	 * Uncache all BibTeX entry from a path
 	 * @param path - The path to uncache papers from
@@ -405,7 +407,7 @@ class BibtexScholarSetting extends PluginSettingTab {
 	}
 
 	display(): void {
-		const {containerEl} = this
+		const { containerEl } = this
 
 		containerEl.empty()
 
@@ -435,6 +437,21 @@ class BibtexScholarSetting extends PluginSettingTab {
 					});
 				// attach folder suggestion prompt
 				new FolderSuggest(this.app, search.inputEl);
+			});
+
+		new Setting(containerEl)
+			.setName('Custom note template path')
+			.setDesc('Path to a template file used when creating notes from BibTeX entries. Leave empty to use the default.')
+			.addSearch(search => {
+				search
+					.setPlaceholder('templates/bibtex-note.md')
+					.setValue(this.plugin.cache.template_path || '')
+					.onChange(async (value) => {
+						this.plugin.cache.template_path = normalizePath(value);
+						await this.plugin.save_cache();
+					});
+				// attach file suggestion prompt
+				new FileSuggest(this.app, search.inputEl);
 			});
 
 		new Setting(containerEl)
