@@ -34,7 +34,7 @@ export class EditorPrompt extends EditorSuggest<string> {
             const content_start = match.index + 2 // position after `{` or `[`
             const content_end = content_start + query.length
             
-            // Check if cursor is within the content area
+            // check if cursor is within the content area
             // if (cursor.ch >= content_start && cursor.ch == content_end) {
             if (cursor.ch == content_end) {
                 this.bracket_start = match[2]
