@@ -139,6 +139,14 @@ As you can see here, following the title are the utility buttons and paper detai
   - _P.S. The paper will be removed from the database. However, its source BibTeX code and all mentions won't be removed automatically_
   - **P.S. If you reopen the note containing the paper's BibTeX code, it will be re-added to the database**
 
+#### Custom template for paper notes
+
+The **note** button creates/opens the associated paper note. If you want, you can overwrite the default template for the paper note: plugin settings > *Custom note template path*. When filled, the plugin uses the template to create the next note in the folder specified as *Default paper note folder*.
+
+You can also use [Templater](https://github.com/SilentVoid13/Templater) plugin for more advanced functionality and customizability. Please make sure that [Templater](https://github.com/SilentVoid13/Templater) plugin is installed and enabled, and the setting *Trigger Templater on new file creation* is enabled in the Templater plugin settings.
+
+Example template: [paper-note-template.md](/gallery/paper-note-template.md)
+
 ### Copy all BibTeX
 
 When writing LaTeX manuscript, it's very convenient to copy all BibTeX entries at once and place it to your `.bib` file. Just click the button ![img](/gallery/scroll-text.jpeg) on the left ribbon.
@@ -151,12 +159,6 @@ You can click ![img](/gallery/scan-search.jpeg) on the left ribbon to open the p
 - You can filter specific fields: e.g. `author:John;year:2020`
 
 You can open multiple paper panels and draw them to the place you want.
-
-### Custom template for `.md` notes
-
-If you want, you can overload the default template for the creation of `.md` note from the bibtex citation. You can choose the template in the settings under *Custom note template path*. When filled, the plugin uses the template to create the next note in the folder specified as *Default paper note folder*.
-
-You can also use Templater plugin functionality: see [New bibtex.md](gallery/New%20bibtex.md).
 
 ## Future plan 🤖
 
