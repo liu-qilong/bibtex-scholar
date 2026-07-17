@@ -41,6 +41,90 @@ export type ClashReason = 'DOI' | 'citeKey'
 export type ClashHit = { id: string, path: string, line: number, doi?: string }
 export type Clash = { reasons: ClashReason[], members: ClashHit[] }
 
+/** Backticked inline cites: `{id}` or `[id]` (same as cp_std_md). */
+export const INLINE_CITE_RE = /`(\{|\[)([^\}\]]+)(\}|\])`/g
+
+export function same_paper(a: BibtexField, b: BibtexField): boolean {
+    if (a.doi && b.doi) {
+        return a.doi === b.doi
+    }
+    const n = (s?: string) => (s || '').trim().toLowerCase()
+    return n(a.title) === n(b.title)
+        && n(a.author) === n(b.author)
+        && n(a.year) === n(b.year)
+}
+
+/** Replace `{old}` / `[old]` outside ```bibtex fences. */
+export function replace_inline_citekey(content: string, old_id: string, new_id: string): string {
+    const fence = /```bibtex[^\n]*\n[\s\S]*?```/g
+    let out = ''
+    let last = 0
+    let m: RegExpExecArray | null
+    while ((m = fence.exec(content)) !== null) {
+        out += replace_cites_chunk(content.slice(last, m.index), old_id, new_id)
+        out += m[0]
+        last = m.index + m[0].length
+    }
+    out += replace_cites_chunk(content.slice(last), old_id, new_id)
+    return out
+}
+
+function replace_cites_chunk(text: string, old_id: string, new_id: string): string {
+    return text.replace(/`(\{|\[)([^\}\]]+)(\}|\])`/g, (match, open, id, close) =>
+        id === old_id ? `\`${open}${new_id}${close}\`` : match
+    )
+}
+
+export type CiteHit = { path: string, count: number }
+
+export class RenameCitekeyModal extends Modal {
+    old_id: string
+    new_id: string
+    hits: CiteHit[]
+    on_apply: () => Promise<void>
+
+    constructor(app: App, old_id: string, new_id: string, hits: CiteHit[], on_apply: () => Promise<void>) {
+        super(app)
+        this.old_id = old_id
+        this.new_id = new_id
+        this.hits = hits
+        this.on_apply = on_apply
+    }
+
+    onOpen() {
+        const { contentEl } = this
+        const total = this.hits.reduce((s, h) => s + h.count, 0)
+
+        contentEl.createEl('h4', { text: 'Rename citekey' })
+        contentEl.createEl('p', { text: `${this.old_id} → ${this.new_id}` })
+        contentEl.createEl('p', {
+            text: `${total} inline citation(s) in ${this.hits.length} file(s)`,
+        })
+
+        const list = contentEl.createEl('ul')
+        for (const h of this.hits.slice(0, 10)) {
+            list.createEl('li', { text: `${h.path} (${h.count})` })
+        }
+        if (this.hits.length > 10) {
+            contentEl.createEl('p', { text: `…and ${this.hits.length - 10} more` })
+        }
+
+        new Setting(contentEl)
+            .addButton((btn) => btn.setButtonText('Cancel').onClick(() => this.close()))
+            .addButton((btn) => btn
+                .setButtonText('Apply')
+                .setCta()
+                .onClick(async () => {
+                    await this.on_apply()
+                    this.close()
+                }))
+    }
+
+    onClose() {
+        this.contentEl.empty()
+    }
+}
+
 /**
  * Parses a BibTeX string and extracts its fields.
  * @param {string} bibtex_source - The BibTeX source string to parse. P.S. it could contains multiple BibTeX entries.

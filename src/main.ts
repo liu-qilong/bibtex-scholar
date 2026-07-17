@@ -1,5 +1,5 @@
 import { App, Notice, Plugin, Setting, PluginSettingTab, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, FetchBibtexOnline, type BibtexDict, type BibtexField, type Clash, type ClashHit } from 'src/bibtex'
+import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, INLINE_CITE_RE, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashHit, type CiteHit } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
@@ -23,6 +23,8 @@ const DEFAULT_SETTINGS: BibtexScholarCache = {
 
 export default class BibtexScholar extends Plugin {
 	cache: BibtexScholarCache
+	renaming = false
+	rename_timers = new Map<string, number>()
 
 	async onload() {
 		await this.load_cache()
@@ -114,6 +116,29 @@ export default class BibtexScholar extends Plugin {
 		this.registerEvent(this.app.vault.on('delete', (file) => {
 			this.uncache_bibtex_from_path(file.path)
 		}))
+
+		// citekey rename: only runs on file modify (debounced), not on idle
+		this.registerEvent(this.app.vault.on('modify', (file) => {
+			if (this.renaming) return
+			if (!(file instanceof TFile) || file.extension !== 'md') return
+			const prev = this.rename_timers.get(file.path)
+			if (prev) window.clearTimeout(prev)
+			const t = window.setTimeout(() => {
+				this.rename_timers.delete(file.path)
+				this.on_file_modified(file)
+			}, 400)
+			this.rename_timers.set(file.path, t)
+		}))
+
+		this.addCommand({
+			id: 'propagate-key-change',
+			name: 'Propagate citekey rename',
+			checkCallback: (checking: boolean) => {
+				const file = this.app.workspace.getActiveFile()
+				if (checking) return Boolean(file)
+				if (file) this.on_file_modified(file, true)
+			},
+		})
 
 		// commands for fetch bibtex online
 		this.addRibbonIcon(
@@ -432,6 +457,124 @@ export default class BibtexScholar extends Plugin {
 			this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit)
 			?? this.app.workspace.getLeaf(true)
 		await leaf.openFile(file, { eState: { line } })
+	}
+
+	async on_file_modified(file: TFile, from_command = false) {
+		const renames = await this.detect_citekey_renames(file)
+		if (renames.length === 0) {
+			if (from_command) new Notice('No citekey rename detected in this file')
+			return
+		}
+		// one at a time
+		const { old_id, new_id } = renames[0]
+		await this.offer_rename(old_id, new_id)
+	}
+
+	async detect_citekey_renames(file: TFile): Promise<{ old_id: string, new_id: string }[]> {
+		const text = await this.app.vault.read(file)
+		const current: BibtexField[] = []
+		const block_re = /```bibtex[^\n]*\n([\s\S]*?)```/g
+		let match: RegExpExecArray | null
+		while ((match = block_re.exec(text)) !== null) {
+			current.push(...await parse_bibtex(match[1]))
+		}
+
+		const current_ids = new Set(current.map((f) => f.id))
+		const cached = Object.entries(this.cache.bibtex_dict)
+			.filter(([, e]) => e.source_path === file.path)
+
+		const used_new = new Set<string>()
+		const out: { old_id: string, new_id: string }[] = []
+
+		for (const [old_id, entry] of cached) {
+			if (current_ids.has(old_id)) continue
+			for (const fields of current) {
+				if (fields.id === old_id || used_new.has(fields.id)) continue
+				if (!same_paper(entry.fields, fields)) continue
+				const other = this.cache.bibtex_dict[fields.id]
+				if (other && other.source_path !== file.path) continue
+				out.push({ old_id, new_id: fields.id })
+				used_new.add(fields.id)
+				break
+			}
+		}
+		return out
+	}
+
+	async scan_inline_cites(old_id: string): Promise<CiteHit[]> {
+		const hits: CiteHit[] = []
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const text = await this.app.vault.read(file)
+			const body = text.replace(/```bibtex[\s\S]*?```/g, '')
+			let count = 0
+			INLINE_CITE_RE.lastIndex = 0
+			let m: RegExpExecArray | null
+			const re = new RegExp(INLINE_CITE_RE.source, 'g')
+			while ((m = re.exec(body)) !== null) {
+				if (m[2] === old_id) count++
+			}
+			if (count > 0) hits.push({ path: file.path, count })
+		}
+		return hits
+	}
+
+	async offer_rename(old_id: string, new_id: string) {
+		const old = this.cache.bibtex_dict[old_id]
+		if (!old) return
+
+		const existing = this.cache.bibtex_dict[new_id]
+		if (existing && existing.source_path !== old.source_path) {
+			new Notice(`Citekey already used: ${new_id}`)
+			return
+		}
+
+		const hits = await this.scan_inline_cites(old_id)
+		new RenameCitekeyModal(this.app, old_id, new_id, hits, async () => {
+			await this.rename_citekey(old_id, new_id)
+		}).open()
+	}
+
+	async rename_citekey(old_id: string, new_id: string) {
+		const old = this.cache.bibtex_dict[old_id]
+		if (!old) {
+			new Notice(`Unknown citekey: ${old_id}`)
+			return
+		}
+		const existing = this.cache.bibtex_dict[new_id]
+		if (existing && existing.source_path !== old.source_path) {
+			new Notice(`Citekey already used: ${new_id}`)
+			return
+		}
+
+		this.renaming = true
+		try {
+			const hits = await this.scan_inline_cites(old_id)
+			let files_changed = 0
+			for (const { path } of hits) {
+				const file = this.app.vault.getAbstractFileByPath(path)
+				if (!(file instanceof TFile)) continue
+				const text = await this.app.vault.read(file)
+				const next = replace_inline_citekey(text, old_id, new_id)
+				if (next !== text) {
+					await this.app.vault.modify(file, next)
+					files_changed++
+				}
+			}
+
+			const fields = { ...old.fields, id: new_id }
+			this.cache.bibtex_dict[new_id] = {
+				fields,
+				source: make_bibtex(fields),
+				source_path: old.source_path,
+			}
+			delete this.cache.bibtex_dict[old_id]
+			await this.save_cache()
+
+			const total = hits.reduce((s, h) => s + h.count, 0)
+			new Notice(`Renamed ${old_id} → ${new_id} (${total} cite(s) in ${files_changed} file(s))`)
+		} finally {
+			this.renaming = false
+		}
 	}
 
 	/**
