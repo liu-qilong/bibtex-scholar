@@ -426,12 +426,29 @@ export default class BibtexScholar extends Plugin {
 			new Notice(`File not found: ${path}`)
 			return
 		}
-		const leaf = this.app.workspace.getLeaf(false)
-		await leaf.openFile(file)
+
+		// Prefer an existing leaf for this file so we do not thrash focus
+		let leaf = this.app.workspace.getLeavesOfType('markdown').find((l) => {
+			const v = l.view
+			return v instanceof MarkdownView && v.file?.path === path
+		})
+		if (!leaf) {
+			leaf = this.app.workspace.getMostRecentLeaf() ?? this.app.workspace.getLeaf(false)
+		}
+		if (!leaf) return
+
+		// eState + focus: setCursor alone breaks vim's cursor drawing after a panel click
+		await leaf.openFile(file, { active: true, eState: { line } })
+		this.app.workspace.setActiveLeaf(leaf, { focus: true })
+
 		const view = leaf.view
 		if (view instanceof MarkdownView) {
-			view.editor.setCursor({ line, ch: 0 })
-			view.editor.scrollIntoView({ from: { line, ch: 0 }, to: { line, ch: 0 } }, true)
+			view.editor.focus()
+			// only scroll; position came from eState (vim-safe)
+			view.editor.scrollIntoView(
+				{ from: { line, ch: 0 }, to: { line, ch: 0 } },
+				true
+			)
 		}
 	}
 
