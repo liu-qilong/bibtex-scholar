@@ -54,7 +54,10 @@ export class PaperPanelView extends ItemView {
 
         this.clash_btn = query_row.createEl('button', {
             cls: 'bibtex-panel-clash-btn',
-            attr: { 'aria-label': 'Clashing', title: 'Clashing' },
+            attr: {
+                'aria-label': 'Recache and collect collisions',
+                title: 'Recache and collect collisions',
+            },
         })
         setIcon(this.clash_btn, 'git-compare')
         this.clash_btn.addEventListener('click', () => this.on_clash_click())

@@ -108,6 +108,15 @@ export default class BibtexScholar extends Plugin {
 			},
 		})
 
+		// full vault recache from ```bibtex blocks (no confirm; reports clash count)
+		this.addCommand({
+			id: 'recache-vault-bibtex',
+			name: 'Recache all BibTeX entries from vault',
+			callback: () => {
+				void this.recache_vault_command()
+			},
+		})
+
 		// events for rename and delete file
 		this.registerEvent(this.app.vault.on('rename', (file, old_path) => {
 			this.update_bibtex_source_path(old_path, file.path)
@@ -396,6 +405,24 @@ export default class BibtexScholar extends Plugin {
 
 		await this.save_cache()
 		new Notice('Uncached all BibTeX entries')
+	}
+
+	/**
+	 * Command-palette entry: silent vault rescan, then notice with clash count.
+	 * If clashes exist, points the user at the paper panel collision view.
+	 */
+	async recache_vault_command() {
+		new Notice('Recaching BibTeX from vault…')
+		const clashes = await this.rescan_vault()
+		const n = Object.keys(this.cache.bibtex_dict).length
+		if (clashes.length > 0) {
+			new Notice(
+				`Recached ${n} BibTeX entr${n === 1 ? 'y' : 'ies'}: ${clashes.length} collision group${clashes.length === 1 ? '' : 's'} found. Open the Paper panel and use Recache and collect collisions to review them.`,
+				10e3
+			)
+		} else {
+			new Notice(`Recached ${n} BibTeX entr${n === 1 ? 'y' : 'ies'}: no collisions found.`)
+		}
 	}
 
 	/** Scan ```bibtex blocks, rebuild cache (first id + DOI wins), return undirected clashes. */
