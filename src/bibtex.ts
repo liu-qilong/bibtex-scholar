@@ -37,6 +37,10 @@ export interface BibtexDict {
 	[key: string]: BibtexElement
 }
 
+export type ClashReason = 'DOI' | 'citeKey'
+export type ClashHit = { id: string, path: string, line: number, doi?: string }
+export type Clash = { reasons: ClashReason[], members: ClashHit[] }
+
 /**
  * Parses a BibTeX string and extracts its fields.
  * @param {string} bibtex_source - The BibTeX source string to parse. P.S. it could contains multiple BibTeX entries.
@@ -210,6 +214,47 @@ export function check_duplicate_doi(bibtex_dict: BibtexDict, doi: string | undef
     }
 
     return false
+}
+
+function hit_key(h: ClashHit): string {
+    return `${h.path}\0${h.line}\0${h.id}`
+}
+
+function cmp_hit(a: ClashHit, b: ClashHit): number {
+    return a.id.localeCompare(b.id) || a.path.localeCompare(b.path) || a.line - b.line
+}
+
+/** Undirected clashes: same citekey or same DOI. One result per member set. */
+export function find_clashes(hits: ClashHit[]): Clash[] {
+    const groups = new Map<string, { members: ClashHit[], reasons: Set<ClashReason> }>()
+
+    function add(group: ClashHit[], reason: ClashReason) {
+        if (group.length < 2) return
+        const members = group.slice().sort(cmp_hit)
+        const key = members.map(hit_key).join('\n')
+        if (!groups.has(key)) groups.set(key, { members, reasons: new Set() })
+        groups.get(key)!.reasons.add(reason)
+    }
+
+    const by_id = new Map<string, ClashHit[]>()
+    const by_doi = new Map<string, ClashHit[]>()
+    for (const h of hits) {
+        if (!by_id.has(h.id)) by_id.set(h.id, [])
+        by_id.get(h.id)!.push(h)
+        if (h.doi) {
+            if (!by_doi.has(h.doi)) by_doi.set(h.doi, [])
+            by_doi.get(h.doi)!.push(h)
+        }
+    }
+    for (const g of by_id.values()) add(g, 'citeKey')
+    for (const g of by_doi.values()) add(g, 'DOI')
+
+    return Array.from(groups.values())
+        .map(({ members, reasons }) => ({
+            members,
+            reasons: Array.from(reasons).sort(),
+        }))
+        .sort((a, b) => cmp_hit(a.members[0], b.members[0]))
 }
 
 /**

@@ -1,5 +1,5 @@
-import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, FetchBibtexOnline, type BibtexDict } from 'src/bibtex'
+import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, MarkdownRenderChild, MarkdownView, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
+import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, FetchBibtexOnline, type BibtexDict, type BibtexField, type Clash, type ClashHit } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
@@ -371,6 +371,68 @@ export default class BibtexScholar extends Plugin {
 
 		await this.save_cache()
 		new Notice('Uncached all BibTeX entries')
+	}
+
+	/** Scan ```bibtex blocks, rebuild cache (first id + DOI wins), return undirected clashes. */
+	async rescan_vault(): Promise<Clash[]> {
+		type ScanHit = ClashHit & { fields: BibtexField }
+		const hits: ScanHit[] = []
+		const files = this.app.vault.getMarkdownFiles().sort((a, b) => a.path.localeCompare(b.path))
+
+		for (const file of files) {
+			const text = await this.app.vault.read(file)
+			const block_re = /```bibtex[^\n]*\n([\s\S]*?)```/g
+			let match: RegExpExecArray | null
+
+			while ((match = block_re.exec(text)) !== null) {
+				const line = text.slice(0, match.index).split('\n').length - 1
+				for (const fields of await parse_bibtex(match[1])) {
+					hits.push({
+						id: fields.id,
+						doi: fields.doi,
+						path: file.path,
+						line,
+						fields,
+					})
+				}
+			}
+		}
+
+		hits.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
+
+		for (const id in this.cache.bibtex_dict) {
+			delete this.cache.bibtex_dict[id]
+		}
+
+		const used_dois = new Set<string>()
+		for (const h of hits) {
+			if (h.id in this.cache.bibtex_dict) continue
+			if (h.doi && used_dois.has(h.doi)) continue
+			this.cache.bibtex_dict[h.id] = {
+				fields: h.fields,
+				source: make_bibtex(h.fields),
+				source_path: h.path,
+			}
+			if (h.doi) used_dois.add(h.doi)
+		}
+
+		await this.save_cache()
+		return find_clashes(hits)
+	}
+
+	async open_line(path: string, line: number) {
+		const file = this.app.vault.getAbstractFileByPath(path)
+		if (!(file instanceof TFile)) {
+			new Notice(`File not found: ${path}`)
+			return
+		}
+		const leaf = this.app.workspace.getLeaf(false)
+		await leaf.openFile(file)
+		const view = leaf.view
+		if (view instanceof MarkdownView) {
+			view.editor.setCursor({ line, ch: 0 })
+			view.editor.scrollIntoView({ from: { line, ch: 0 }, to: { line, ch: 0 } }, true)
+		}
 	}
 
 	/**

@@ -59,6 +59,82 @@ If your plugin does not need CSS, delete this file.
 
 /* bibtex paper panel */
 
+.bibtex-panel-query-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+}
+
+.bibtex-panel-search {
+    flex: 1;
+    min-width: 0;
+}
+
+.bibtex-panel-clash-btn {
+    flex: 0 0 var(--input-height);
+    width: var(--input-height);
+    height: var(--input-height);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: var(--cursor);
+    background-color: crimson;
+    color: var(--text-on-accent, #fff);
+    border: 1px solid crimson;
+    border-radius: var(--radius-s);
+}
+
+.bibtex-panel-clash-btn.is-active {
+    outline: 2px solid var(--text-on-accent, #fff);
+    outline-offset: 1px;
+}
+
+.bibtex-panel-clash-btn[disabled] {
+    opacity: 0.6;
+}
+
+.bibtex-panel-clash-empty {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    padding: var(--size-4-2);
+}
+
+.bibtex-panel-clash-card {
+    padding: var(--size-4-2) 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: var(--font-ui-small);
+}
+
+.bibtex-panel-clash-reason {
+    color: crimson;
+    font-weight: var(--font-semibold, 600);
+    margin-bottom: var(--size-2-1);
+}
+
+.bibtex-panel-clash-member {
+    line-height: 1.5;
+    padding-left: var(--size-4-2);
+}
+
+.bibtex-panel-clash-num {
+    color: var(--text-faint);
+}
+
+.bibtex-panel-clash-link {
+    cursor: var(--cursor);
+    color: var(--text-accent);
+    font-family: var(--font-monospace);
+}
+
+.bibtex-panel-clash-link.is-path {
+    color: var(--text-muted);
+}
+
+.bibtex-panel-clash-link:hover {
+    text-decoration: underline;
+}
+
 .bibtex-panel-query .setting-item-control, 
 .bibtex-panel-query .search-input-container {
     width: 100% !important;
@@ -66,6 +142,8 @@ If your plugin does not need CSS, delete this file.
 
 .bibtex-panel-query .setting-item {
     display: block;
+    border: none;
+    padding: 0;
 }
 
 .bibtex-panel-query .search-input-container input {
