@@ -1,4 +1,4 @@
-import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, MarkdownRenderChild, MarkdownView, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
+import { App, Notice, Plugin, Setting, PluginSettingTab, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
 import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, FetchBibtexOnline, type BibtexDict, type BibtexField, type Clash, type ClashHit } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
@@ -426,30 +426,12 @@ export default class BibtexScholar extends Plugin {
 			new Notice(`File not found: ${path}`)
 			return
 		}
-
-		// Prefer an existing leaf for this file so we do not thrash focus
-		let leaf = this.app.workspace.getLeavesOfType('markdown').find((l) => {
-			const v = l.view
-			return v instanceof MarkdownView && v.file?.path === path
-		})
-		if (!leaf) {
-			leaf = this.app.workspace.getMostRecentLeaf() ?? this.app.workspace.getLeaf(false)
-		}
-		if (!leaf) return
-
-		// eState + focus: setCursor alone breaks vim's cursor drawing after a panel click
-		await leaf.openFile(file, { active: true, eState: { line } })
-		this.app.workspace.setActiveLeaf(leaf, { focus: true })
-
-		const view = leaf.view
-		if (view instanceof MarkdownView) {
-			view.editor.focus()
-			// only scroll; position came from eState (vim-safe)
-			view.editor.scrollIntoView(
-				{ from: { line, ch: 0 }, to: { line, ch: 0 } },
-				true
-			)
-		}
+		// Open in the main split only. getLeaf(false) after a panel click can
+		// target the side panel and replace the paper panel itself.
+		const leaf =
+			this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit)
+			?? this.app.workspace.getLeaf(true)
+		await leaf.openFile(file, { eState: { line } })
 	}
 
 	/**
