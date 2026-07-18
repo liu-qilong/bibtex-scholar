@@ -9,17 +9,20 @@ export const PAPER_PANEL_VIEW_TYPE = 'paper-panel-view'
  * Represents the paper panel view in the Obsidian app.
  */
 export class PaperPanelView extends ItemView {
-    bibtex_dict: BibtexDict
     plugin: BibtexScholar
     clash_mode = false
     clashes: Clash[] = []
     list_el: HTMLElement
     clash_btn: HTMLElement
 
-    constructor(leaf: WorkspaceLeaf, bibtex_dict: BibtexDict, plugin: BibtexScholar) {
+    constructor(leaf: WorkspaceLeaf, plugin: BibtexScholar) {
         super(leaf)
-        this.bibtex_dict = bibtex_dict
         this.plugin = plugin
+    }
+
+    /** Always read the live plugin dict (rescan/uncache must be visible). */
+    private get bibtex_dict(): BibtexDict {
+        return this.plugin.cache.bibtex_dict
     }
 
     getViewType() {
@@ -93,7 +96,6 @@ export class PaperPanelView extends ItemView {
         this.clash_btn.setAttr('disabled', 'true')
         try {
             this.clashes = await this.plugin.rescan_vault()
-            this.bibtex_dict = this.plugin.cache.bibtex_dict
             this.clash_mode = true
             this.clash_btn.classList.add('is-active')
             this.show_clashes()

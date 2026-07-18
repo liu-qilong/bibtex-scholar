@@ -1,5 +1,5 @@
 /**
- * Shared citation popup open/close controller (Phases 1–4).
+ * Shared citation popup open/close controller.
  *
  * Spec: docs/true-popup-phase0.md
  * - Open debounce 250ms (compact `{id}` hover)
@@ -7,15 +7,20 @@
  * - `[id]` open on mount via open_for_expand
  * - One global open popup
  * - ESC dismisses and suppresses reopen until full leave of chip+card
- * - Phase 4: click-outside closes; chip click toggles (immediate open)
+ * - Click-outside closes; chip click toggles (immediate open)
  *
- * Card rendering is owned by HoverPopup (portal + fixed position).
+ * Injectable clock supports unit tests without real timers.
  */
 
 export const OPEN_DEBOUNCE_MS = 250
 export const CLOSE_GRACE_MS = 150
 
 export type CitationPopupListener = (open: boolean) => void
+
+export type PopupClock = {
+	setTimeout: (fn: () => void, ms: number) => number
+	clearTimeout: (id: number) => void
+}
 
 let next_instance_id = 0
 
@@ -25,21 +30,34 @@ export function create_citation_popup_id(): string {
 	return `bibtex-cite-popup-${next_instance_id}`
 }
 
-class CitationPopupController {
+/** Reset id counter (tests only). */
+export function __reset_citation_popup_ids_for_tests(): void {
+	next_instance_id = 0
+}
+
+const default_clock: PopupClock = {
+	setTimeout: (fn, ms) => window.setTimeout(fn, ms) as unknown as number,
+	clearTimeout: (id) => window.clearTimeout(id),
+}
+
+export class CitationPopupController {
 	private listeners = new Map<string, CitationPopupListener>()
 	private active_id: string | null = null
 	private pending_open_id: string | null = null
 	private open_timer: number | null = null
 	private close_timer: number | null = null
-	/** Suppressed until pointer fully leaves chip+card for that instance. */
 	private dismissed = new Set<string>()
 	private over_trigger = new Set<string>()
 	private over_card = new Set<string>()
 	private esc_bound = false
+	private readonly clock: PopupClock
+	private readonly doc: Document | null
 
-	/**
-	 * Register an open-state listener. Returns unregister (call on unmount).
-	 */
+	constructor(opts?: { clock?: PopupClock, document?: Document | null }) {
+		this.clock = opts?.clock ?? default_clock
+		this.doc = opts?.document !== undefined ? opts.document : (typeof document !== 'undefined' ? document : null)
+	}
+
 	register(id: string, listener: CitationPopupListener): () => void {
 		this.listeners.set(id, listener)
 		if (this.active_id === id) {
@@ -61,11 +79,6 @@ class CitationPopupController {
 		}
 	}
 
-	/**
-	 * Open without debounce and without marking the pointer over the chip.
-	 * Used for `` `[id]` `` open-on-mount so ESC dismiss is not stuck
-	 * (no synthetic hover that never receives a leave).
-	 */
 	open_for_expand(id: string) {
 		if (this.dismissed.has(id)) {
 			return
@@ -76,10 +89,6 @@ class CitationPopupController {
 		this.open_now(id)
 	}
 
-	/**
-	 * Pointer entered the cite chip. Opens after {@link OPEN_DEBOUNCE_MS}
-	 * unless dismissed for this interaction.
-	 */
 	enter_trigger(id: string) {
 		this.over_trigger.add(id)
 		this.clear_close_timer_for(id)
@@ -93,7 +102,7 @@ class CitationPopupController {
 
 		this.clear_open_timer()
 		this.pending_open_id = id
-		this.open_timer = window.setTimeout(() => {
+		this.open_timer = this.clock.setTimeout(() => {
 			this.open_timer = null
 			this.pending_open_id = null
 			if (!this.over_trigger.has(id) && !this.over_card.has(id)) {
@@ -124,10 +133,6 @@ class CitationPopupController {
 		this.schedule_close_if_idle(id)
 	}
 
-	/**
-	 * Chip click / keyboard activate (Phase 4).
-	 * Immediate open (no debounce); second activate closes with dismiss suppress while still over chip.
-	 */
 	toggle_trigger(id: string) {
 		if (this.active_id === id) {
 			this.dismiss()
@@ -139,10 +144,6 @@ class CitationPopupController {
 		this.open_now(id)
 	}
 
-	/**
-	 * Pointer down outside chip and card (Phase 4).
-	 * Closes without hover-suppress so the next intentional hover/click can open again.
-	 */
 	close_outside() {
 		const id = this.active_id
 		if (!id) {
@@ -154,7 +155,6 @@ class CitationPopupController {
 		this.dismissed.delete(id)
 	}
 
-	/** ESC: close immediately; suppress reopen only while pointer still over chip/card. */
 	dismiss() {
 		const id = this.active_id
 		if (!id) {
@@ -176,6 +176,22 @@ class CitationPopupController {
 		return this.active_id
 	}
 
+	/** Clear timers, ESC listener, and state (plugin unload / tests). */
+	dispose() {
+		this.clear_open_timer()
+		this.clear_close_timer()
+		if (this.active_id) {
+			const id = this.active_id
+			this.active_id = null
+			this.notify(id, false)
+		}
+		this.listeners.clear()
+		this.dismissed.clear()
+		this.over_trigger.clear()
+		this.over_card.clear()
+		this.unbind_esc()
+	}
+
 	private schedule_close_if_idle(id: string) {
 		if (this.over_trigger.has(id) || this.over_card.has(id)) {
 			return
@@ -187,7 +203,7 @@ class CitationPopupController {
 		}
 
 		this.clear_close_timer()
-		this.close_timer = window.setTimeout(() => {
+		this.close_timer = this.clock.setTimeout(() => {
 			this.close_timer = null
 			if (this.over_trigger.has(id) || this.over_card.has(id)) {
 				return
@@ -242,24 +258,24 @@ class CitationPopupController {
 	}
 
 	private bind_esc() {
-		if (this.esc_bound) {
+		if (this.esc_bound || !this.doc) {
 			return
 		}
-		document.addEventListener('keydown', this.on_esc, true)
+		this.doc.addEventListener('keydown', this.on_esc, true)
 		this.esc_bound = true
 	}
 
 	private unbind_esc() {
-		if (!this.esc_bound) {
+		if (!this.esc_bound || !this.doc) {
 			return
 		}
-		document.removeEventListener('keydown', this.on_esc, true)
+		this.doc.removeEventListener('keydown', this.on_esc, true)
 		this.esc_bound = false
 	}
 
 	private clear_open_timer() {
 		if (this.open_timer != null) {
-			window.clearTimeout(this.open_timer)
+			this.clock.clearTimeout(this.open_timer)
 			this.open_timer = null
 		}
 		this.pending_open_id = null
@@ -267,7 +283,7 @@ class CitationPopupController {
 
 	private clear_close_timer() {
 		if (this.close_timer != null) {
-			window.clearTimeout(this.close_timer)
+			this.clock.clearTimeout(this.close_timer)
 			this.close_timer = null
 		}
 	}

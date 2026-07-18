@@ -1,33 +1,40 @@
 import { App, Notice, Plugin, Setting, PluginSettingTab, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
 import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, INLINE_CITE_RE, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashHit, type CiteHit } from 'src/bibtex'
+import {
+	audit_bibtex_dict,
+	entry_count,
+	normalize_plugin_cache,
+	rebuild_dict_from_hits,
+	remove_entries_for_path,
+	retarget_source_paths,
+	upsert_entry,
+	type PluginCacheShape,
+	type ScanHit,
+} from 'src/cache-ops'
+import { text_may_contain_bibtex_block } from 'src/cite-span'
+import { citation_popup } from 'src/citation-popup'
 import { HoverRenderChild } from 'src/hover'
 import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 import { createHoverWidgetPlugin } from 'src/editor'
+import { SaveCoalescer } from 'src/save-coalesce'
 
-interface BibtexScholarCache {
-	bibtex_dict: BibtexDict,
-	note_folder: string,
-	pdf_folder: string,
-	template_path: string,
-	fetch_mode: string,
-}
-
-const DEFAULT_SETTINGS: BibtexScholarCache = {
-	bibtex_dict: {},
-	note_folder: 'note',
-	pdf_folder: 'pdf',
-	template_path: '',
-	fetch_mode: 'doi',
-}
+type BibtexScholarCache = PluginCacheShape
 
 export default class BibtexScholar extends Plugin {
 	cache: BibtexScholarCache
 	renaming = false
 	rename_timers = new Map<string, number>()
+	private save_coalescer: SaveCoalescer | null = null
 
 	async onload() {
 		await this.load_cache()
+		this.save_coalescer = new SaveCoalescer({
+			delay_ms: 80,
+			persist: async () => {
+				await this.saveData(this.cache)
+			},
+		})
 
 		// setting tab
 		this.addSettingTab(new BibtexScholarSetting(this.app, this))
@@ -126,7 +133,7 @@ export default class BibtexScholar extends Plugin {
 			this.uncache_bibtex_from_path(file.path)
 		}))
 
-		// citekey rename: only runs on file modify (debounced), not on idle
+		// citekey rename: debounced modify only; skip files without ```bibtex (idle typing elsewhere)
 		this.registerEvent(this.app.vault.on('modify', (file) => {
 			if (this.renaming) return
 			if (!(file instanceof TFile) || file.extension !== 'md') return
@@ -134,7 +141,7 @@ export default class BibtexScholar extends Plugin {
 			if (prev) window.clearTimeout(prev)
 			const t = window.setTimeout(() => {
 				this.rename_timers.delete(file.path)
-				this.on_file_modified(file)
+				void this.on_file_modified(file)
 			}, 400)
 			this.rename_timers.set(file.path, t)
 		}))
@@ -145,7 +152,7 @@ export default class BibtexScholar extends Plugin {
 			checkCallback: (checking: boolean) => {
 				const file = this.app.workspace.getActiveFile()
 				if (checking) return Boolean(file)
-				if (file) this.on_file_modified(file, true)
+				if (file) void this.on_file_modified(file, true)
 			},
 		})
 
@@ -164,13 +171,13 @@ export default class BibtexScholar extends Plugin {
 			},
 		})
 
-		// cite paper editor prompt
-		this.registerEditorSuggest(new EditorPrompt(this.app, this.cache.bibtex_dict))
+		// cite paper editor prompt — live dict getter (survives rescan/uncache)
+		this.registerEditorSuggest(new EditorPrompt(this.app, () => this.cache.bibtex_dict))
 
-		// paper panel
+		// paper panel — view reads plugin.cache live; pass plugin only for dict identity at open
 		this.registerView(
 			PAPER_PANEL_VIEW_TYPE,
-			(leaf) => new PaperPanelView(leaf, this.cache.bibtex_dict, this)
+			(leaf) => new PaperPanelView(leaf, this)
 		)
 
 		this.addRibbonIcon('scan-search', 'Paper panel', () => {
@@ -187,24 +194,46 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	async onunload() {
-
+		// Flush durable state and drop idle work so disable/reload is clean.
+		for (const t of this.rename_timers.values()) {
+			window.clearTimeout(t)
+		}
+		this.rename_timers.clear()
+		citation_popup.dispose()
+		if (this.save_coalescer) {
+			await this.save_coalescer.flush()
+			this.save_coalescer.cancel()
+		}
 	}
 
 	/**
 	 * Loads the plugin cache from storage.
-	 * P.S. The BibTeX entries is also loaded from the cache: this.cache.bibtex_dict
+	 * Normalizes corrupt/partial data so bibtex_dict is always a plain object.
 	 */
 	async load_cache() {
-		this.cache = Object.assign({}, DEFAULT_SETTINGS, await this.loadData())
+		this.cache = normalize_plugin_cache(await this.loadData())
 	}
 
 	/**
-	 * Saves the plugin cache to storage.
-	 * P.S. The BibTeX entries are also saved to the cache: this.cache.bibtex_dict
+	 * Schedule a coalesced durable write (hot paths: codeblock paint, many upserts).
+	 * Prefer {@link save_cache} when the caller must wait for disk.
+	 */
+	schedule_save_cache() {
+		this.save_coalescer?.schedule()
+	}
+
+	/**
+	 * Flush pending coalesced writes and wait for disk.
+	 * P.S. The BibTeX entries are saved from this.cache.bibtex_dict
 	 */
 	async save_cache() {
-		// console.log('export bibtex cache')
-		await this.saveData(this.cache)
+		if (!this.save_coalescer) {
+			await this.saveData(this.cache)
+			return
+		}
+		// Ensure at least one write of current state.
+		this.save_coalescer.schedule()
+		await this.save_coalescer.flush()
 	}
 
 	/**
@@ -215,15 +244,18 @@ export default class BibtexScholar extends Plugin {
 	 * @param {MarkdownPostProcessorContext} ctx - The Markdown post-processing context.
 	 */
 	async bibtex_codeblock_processor(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
-		// parse bibtex
+		// Sequential: avoid forEach(async) races that interleave dict mutations + disk writes.
 		const fields_ls = await parse_bibtex(source)
-		fields_ls.forEach(async (fields) => {
+		let dirty = false
+		const section_text = String(ctx.getSectionInfo(el)?.text ?? source)
+
+		for (const fields of fields_ls) {
 			const id = fields.id
 			const bibtex_source = make_bibtex(fields)
 			const id_duplicate = check_duplicate_id(
 				this.cache.bibtex_dict, id,
 				ctx.sourcePath,
-				String(ctx.getSectionInfo(el)?.text)
+				section_text,
 			)
 			const doi_duplicate = check_duplicate_doi(
 				this.cache.bibtex_dict, fields.doi, id, ctx.sourcePath
@@ -231,29 +263,17 @@ export default class BibtexScholar extends Plugin {
 			const duplicate = id_duplicate || doi_duplicate
 
 			if (duplicate) {
-				// if duplicated, prompt warning
 				if (id_duplicate) {
 					new Notice(`Warning: BibTeX ID has been used\n${id}`, 10e3)
 				}
 				if (doi_duplicate) {
 					new Notice(`Warning: BibTeX DOI has been used\n${fields.doi}`, 10e3)
 				}
-			} else {
-				// if not duplicated, check if the id exists
-				// if exists, only cache bibtex code that is updated
-				// if not exists, cache the bibtex entry
-				if (!this.cache.bibtex_dict[id] || this.cache.bibtex_dict[id].source != bibtex_source) {
-					this.cache.bibtex_dict[id] = {
-						fields: fields,
-						source: bibtex_source,
-						source_path: ctx.sourcePath,
-					}
-					await this.save_cache()
-				}
+			} else if (upsert_entry(this.cache.bibtex_dict, id, fields, bibtex_source, ctx.sourcePath)) {
+				dirty = true
 			}
 
 			// render paper element (HoverRenderChild unmounts React when the section is discarded)
-			// if doi-clash rejected a new id, fall back to the local fields so it still paints
 			const paper_bar = el.createEl('span', {
 				cls: (duplicate) ? ('bibtex-hover-duplicate-id') : ('bibtex-entry'),
 			})
@@ -264,7 +284,12 @@ export default class BibtexScholar extends Plugin {
 			}
 			ctx.addChild(new HoverRenderChild(paper_bar, entry, this, this.app, false))
 			el.createEl('code').setText('source')
-		})
+		}
+
+		// One coalesced write per codeblock paint, not per entry.
+		if (dirty) {
+			this.schedule_save_cache()
+		}
 	}
 
 	/**
@@ -384,17 +409,8 @@ export default class BibtexScholar extends Plugin {
 	 * @param path - The path to uncache papers from
 	 */
 	async uncache_bibtex_from_path(path: string) {
-		// batch uncache
-		let update = false
-
-		for (const id in this.cache.bibtex_dict) {
-			if (this.cache.bibtex_dict[id].source_path == path) {
-				delete this.cache.bibtex_dict[id]
-				update = true
-			}
-		}
-
-		if (update) {
+		const n = remove_entries_for_path(this.cache.bibtex_dict, path)
+		if (n > 0) {
 			await this.save_cache()
 			new Notice(`Uncached BibTeX entries from ${path}`)
 		}
@@ -404,11 +420,7 @@ export default class BibtexScholar extends Plugin {
 	 * Uncache all BibTeX entry
 	 */
 	async uncache_bibtex_all() {
-		// batch uncache
-		for (const id in this.cache.bibtex_dict) {
-			delete this.cache.bibtex_dict[id]
-		}
-
+		this.cache.bibtex_dict = {}
 		await this.save_cache()
 		new Notice('Uncached all BibTeX entries')
 	}
@@ -420,7 +432,7 @@ export default class BibtexScholar extends Plugin {
 	async recache_vault_command() {
 		new Notice('Recaching BibTeX from vault…')
 		const clashes = await this.rescan_vault()
-		const n = Object.keys(this.cache.bibtex_dict).length
+		const n = entry_count(this.cache.bibtex_dict)
 		if (clashes.length > 0) {
 			new Notice(
 				`Recached ${n} BibTeX entr${n === 1 ? 'y' : 'ies'}: ${clashes.length} collision group${clashes.length === 1 ? '' : 's'} found. Open the Paper panel and use Recache and collect collisions to review them.`,
@@ -433,12 +445,12 @@ export default class BibtexScholar extends Plugin {
 
 	/** Scan ```bibtex blocks, rebuild cache (first id + DOI wins), return undirected clashes. */
 	async rescan_vault(): Promise<Clash[]> {
-		type ScanHit = ClashHit & { fields: BibtexField }
 		const hits: ScanHit[] = []
 		const files = this.app.vault.getMarkdownFiles().sort((a, b) => a.path.localeCompare(b.path))
 
 		for (const file of files) {
 			const text = await this.app.vault.read(file)
+			if (!text_may_contain_bibtex_block(text)) continue
 			const block_re = /```bibtex[^\n]*\n([\s\S]*?)```/g
 			let match: RegExpExecArray | null
 
@@ -456,24 +468,8 @@ export default class BibtexScholar extends Plugin {
 			}
 		}
 
-		hits.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
-
-		for (const id in this.cache.bibtex_dict) {
-			delete this.cache.bibtex_dict[id]
-		}
-
-		const used_dois = new Set<string>()
-		for (const h of hits) {
-			if (h.id in this.cache.bibtex_dict) continue
-			if (h.doi && used_dois.has(h.doi)) continue
-			this.cache.bibtex_dict[h.id] = {
-				fields: h.fields,
-				source: make_bibtex(h.fields),
-				source_path: h.path,
-			}
-			if (h.doi) used_dois.add(h.doi)
-		}
-
+		// Replace dict atomically so live getters never see a half-cleared map.
+		this.cache.bibtex_dict = rebuild_dict_from_hits(hits)
 		await this.save_cache()
 		return find_clashes(hits)
 	}
@@ -493,7 +489,12 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	async on_file_modified(file: TFile, from_command = false) {
-		const renames = await this.detect_citekey_renames(file)
+		const text = await this.app.vault.read(file)
+		// Idle typing in notes without BibTeX: no parse, no vault-wide work.
+		if (!from_command && !text_may_contain_bibtex_block(text)) {
+			return
+		}
+		const renames = await this.detect_citekey_renames(file, text)
 		if (renames.length === 0) {
 			if (from_command) new Notice('No citekey rename detected in this file')
 			return
@@ -503,12 +504,12 @@ export default class BibtexScholar extends Plugin {
 		await this.offer_rename(old_id, new_id)
 	}
 
-	async detect_citekey_renames(file: TFile): Promise<{ old_id: string, new_id: string }[]> {
-		const text = await this.app.vault.read(file)
+	async detect_citekey_renames(file: TFile, text?: string): Promise<{ old_id: string, new_id: string }[]> {
+		const body = text ?? await this.app.vault.read(file)
 		const current: BibtexField[] = []
 		const block_re = /```bibtex[^\n]*\n([\s\S]*?)```/g
 		let match: RegExpExecArray | null
-		while ((match = block_re.exec(text)) !== null) {
+		while ((match = block_re.exec(body)) !== null) {
 			current.push(...await parse_bibtex(match[1]))
 		}
 
@@ -617,21 +618,17 @@ export default class BibtexScholar extends Plugin {
 	 * @param new_path - The new source path
 	 */
 	async update_bibtex_source_path(old_path: string, new_path: string) {
-		let update = false
-
-		// update bibtex entries
-		for (const id in this.cache.bibtex_dict) {
-			if (this.cache.bibtex_dict[id].source_path == old_path) {
-				// if source_path is not empty, update bibtex entries from the current file
-				this.cache.bibtex_dict[id].source_path = new_path
-				update = true
-			}
-		}
-
-		if (update) {
+		if (retarget_source_paths(this.cache.bibtex_dict, old_path, new_path)) {
 			await this.save_cache()
 			new Notice('Updated BibTeX entry paths')
 		}
+	}
+
+	/**
+	 * Dev/support: list structural problems in the in-memory dict (empty = healthy).
+	 */
+	audit_cache(): string[] {
+		return audit_bibtex_dict(this.cache.bibtex_dict)
 	}
 
 	/**

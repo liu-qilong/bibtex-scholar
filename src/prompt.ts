@@ -8,16 +8,21 @@ import { BibtexElement, match_query, type BibtexDict } from 'src/bibtex'
  * P.S. Since Obsidian auto-completes ``, we are actually matching `{<cursor>` or `[<cursor>`
  */
 export class EditorPrompt extends EditorSuggest<string> {
-    bibtex_dict: BibtexDict
+    /** Live getter — never snapshot the dict at construct time (rescan/uncache would stale). */
+    private get_dict: () => BibtexDict
     editor: Editor
     bracket_start: string
     bracket_end: string
     code_end: string
     trigger_info: EditorSuggestTriggerInfo
 
-    constructor(app: App, bibtex_dict: BibtexDict) {
+    constructor(app: App, get_dict: () => BibtexDict) {
         super(app)
-        this.bibtex_dict = bibtex_dict
+        this.get_dict = get_dict
+    }
+
+    private get bibtex_dict(): BibtexDict {
+        return this.get_dict()
     }
 
     onTrigger(cursor: EditorPosition, editor: Editor, file: TFile): EditorSuggestTriggerInfo | null {

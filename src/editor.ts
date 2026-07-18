@@ -9,43 +9,35 @@ import {
     ViewUpdate,
 } from '@codemirror/view'
 import { App } from 'obsidian'
+import {
+    cite_span_key_at_offset,
+    cursor_inside_span,
+    find_cite_spans_in_line,
+    selection_requires_decoration_rebuild,
+} from 'src/cite-span'
 import { HoverWidget } from 'src/hover'
 import BibtexScholar from 'src/main'
 
-/** Inline cite forms: `{id}` or `[id]` inside backticks. */
-const CITE_PATTERN = /\`[\{\[][^\}\]]+[\}\]]\`/g
-
 /**
  * If `pos` sits inside a cite match on its line, return a stable key `from:to`.
- * Used to detect enter/leave of cite spans without rebuilding all decorations.
+ * Thin wrapper over pure helpers (kept for editor-local call sites / tests).
  */
-function cite_span_key_at(view: EditorView, pos: number): string | null {
+export function cite_span_key_at(view: EditorView, pos: number): string | null {
     if (pos < 0 || pos > view.state.doc.length) {
         return null
     }
     const line = view.state.doc.lineAt(pos)
-    CITE_PATTERN.lastIndex = 0
-    let m: RegExpExecArray | null
-    while ((m = CITE_PATTERN.exec(line.text)) !== null) {
-        const match_from = line.from + m.index
-        const match_to = match_from + m[0].length
-        if (pos >= match_from && pos <= match_to) {
-            return `${match_from}:${match_to}`
-        }
-    }
-    return null
+    return cite_span_key_at_offset(line.text, line.from, pos)
 }
 
 /**
  * Creates an editor plugin for BibTeX citation chips in editing mode (source + live preview).
  *
- * When the cursor is outside a match (`` `{id}` `` / `` `[id]` ``), a {@link HoverWidget}
- * replace decoration shows the chip; when the cursor is inside, raw text is editable.
- *
- * Phase 3: decorations rebuild on doc/viewport changes always, but on selection only when
- * the caret enters or leaves a cite span — so arrowing past citations does not remount
- * React chips or thrash the floating popup. {@link HoverWidget.eq} keeps DOM when the set
- * is rebuilt with the same cite id + expand mode.
+ * Cursor policy:
+ * - Outside a cite span → replace decoration (chip widget)
+ * - Inside a cite span → raw text for editing
+ * - Selection-only updates rebuild decorations only when the caret enters/leaves a cite
+ *   (or jumps between different cites) — avoids idle remount thrash
  */
 export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
     class HoverWidgetPlugin implements PluginValue {
@@ -62,11 +54,13 @@ export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
             }
 
             if (update.selectionSet) {
-                // Doc is unchanged; only rebuild when caret enter/leave of a cite span changes
-                // which widgets should exist. Pure motion outside cites keeps widgets mounted.
                 const old_head = update.startState.selection.main.head
                 const new_head = update.state.selection.main.head
-                if (cite_span_key_at(update.view, old_head) !== cite_span_key_at(update.view, new_head)) {
+                // Doc unchanged on pure selection updates — keys are comparable in the same doc.
+                if (selection_requires_decoration_rebuild(
+                    cite_span_key_at(update.view, old_head),
+                    cite_span_key_at(update.view, new_head),
+                )) {
                     this.decorations = this.buildDecorations(update.view)
                 }
             }
@@ -77,36 +71,30 @@ export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
         buildDecorations(view: EditorView): DecorationSet {
             const builder = new RangeSetBuilder<Decoration>()
             const cursor_pos = view.state.selection.main.head
+            // Live dict lookup — never snapshot at plugin construct time.
+            const dict = plugin.cache.bibtex_dict
 
-            for (const { from, to } of view.visibleRanges) {
-                const start_line = view.state.doc.lineAt(from).number
-                const end_line = view.state.doc.lineAt(to).number
+            for (const vr of view.visibleRanges) {
+                const start_line = view.state.doc.lineAt(vr.from).number
+                const end_line = view.state.doc.lineAt(vr.to).number
 
                 for (let ln = start_line; ln <= end_line; ln++) {
                     const line = view.state.doc.line(ln)
-                    const text = line.text
-                    CITE_PATTERN.lastIndex = 0
-                    let m: RegExpExecArray | null
-                    while ((m = CITE_PATTERN.exec(text)) !== null) {
-                        const match_from = line.from + m.index
-                        const match_to = match_from + m[0].length
-                        const cursor_inside = cursor_pos >= match_from && cursor_pos <= match_to
-
-                        if (!cursor_inside) {
-                            const bibtex_id = m[0].slice(2, -2)
-                            const expand = m[0][1] === '['
-                            const bibtex = plugin.cache.bibtex_dict[bibtex_id]
-
-                            if (bibtex) {
-                                builder.add(
-                                    match_from,
-                                    match_to,
-                                    Decoration.replace({
-                                        widget: new HoverWidget(bibtex, plugin, app, expand),
-                                    }),
-                                )
-                            }
+                    for (const span of find_cite_spans_in_line(line.text, line.from)) {
+                        if (cursor_inside_span(cursor_pos, span.from, span.to)) {
+                            continue
                         }
+                        const bibtex = dict[span.id]
+                        if (!bibtex) {
+                            continue
+                        }
+                        builder.add(
+                            span.from,
+                            span.to,
+                            Decoration.replace({
+                                widget: new HoverWidget(bibtex, plugin, app, span.expand),
+                            }),
+                        )
                     }
                 }
             }
