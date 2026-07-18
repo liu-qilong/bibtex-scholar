@@ -16,7 +16,7 @@
 	"devDependencies": {
 		"@codemirror/state": "^6.7.1",
 		"@codemirror/view": "^6.43.6",
-		"@types/node": "^16.11.6",
+		"@types/node": "^20.19.0",
 		"@types/react": "^19.0.2",
 		"@types/react-dom": "^19.0.2",
 		"@typescript-eslint/eslint-plugin": "5.29.0",
