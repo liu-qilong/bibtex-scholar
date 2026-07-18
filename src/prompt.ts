@@ -94,9 +94,10 @@ export class EditorPrompt extends EditorSuggest<string> {
             this.trigger_info.start,
             this.trigger_info.end,
         )
+        // Caret after whatever we actually inserted (id only, or id + closers).
         this.editor.setCursor(
             this.trigger_info.start.line,
-            this.trigger_info.start.ch + bibtex.fields.id.length + 2,
+            this.trigger_info.start.ch + str.length,
         )
     }
 }

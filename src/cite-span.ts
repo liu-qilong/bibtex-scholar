@@ -41,11 +41,11 @@ export function find_cite_spans_in_line(line_text: string, line_from: number = 0
 
 /**
  * If `pos` sits inside a cite match on this line, return stable key `from:to`.
- * Inclusive on both ends to match historical editor behavior (cursor on fence counts as inside).
+ * Half-open [from, to): caret on the exclusive end is outside the span (CodeMirror-aligned).
  */
 export function cite_span_key_at_offset(line_text: string, line_from: number, pos: number): string | null {
 	for (const s of find_cite_spans_in_line(line_text, line_from)) {
-		if (pos >= s.from && pos <= s.to) {
+		if (cursor_inside_span(pos, s.from, s.to)) {
 			return `${s.from}:${s.to}`
 		}
 	}
@@ -64,11 +64,11 @@ export function selection_requires_decoration_rebuild(
 }
 
 /**
- * Whether the caret is inside a span (inclusive ends).
- * Used when building replace decorations — inside → show raw text for editing.
+ * Whether the caret is inside a span [from, to) — half-open, same as CM decoration ranges.
+ * Inside → show raw text for editing; at `to` the chip may replace again.
  */
 export function cursor_inside_span(pos: number, from: number, to: number): boolean {
-	return pos >= from && pos <= to
+	return pos >= from && pos < to
 }
 
 /**

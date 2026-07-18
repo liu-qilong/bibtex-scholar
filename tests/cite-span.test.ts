@@ -17,13 +17,14 @@ describe('cite-span / cursor management', () => {
 		expect(spans[0].to - spans[0].from).toBe('`{Alpha2020}`'.length)
 	})
 
-	it('returns span key only when caret is inside (inclusive ends)', () => {
+	it('returns span key only when caret is inside [from, to)', () => {
 		const line = 'x`{A}`y'
-		// offsets: 0=x, 1=`, 2={, 3=A, 4=}, 5=`, 6=y
+		// offsets: 0=x, 1=`, 2={, 3=A, 4=}, 5=`, 6=y  — span is [1, 6)
 		expect(cite_span_key_at_offset(line, 0, 0)).toBeNull()
 		expect(cite_span_key_at_offset(line, 0, 1)).toBe('1:6')
 		expect(cite_span_key_at_offset(line, 0, 3)).toBe('1:6')
-		expect(cite_span_key_at_offset(line, 0, 6)).toBe('1:6') // exclusive end index is 6; inclusive uses pos <= to
+		expect(cite_span_key_at_offset(line, 0, 5)).toBe('1:6')
+		expect(cite_span_key_at_offset(line, 0, 6)).toBeNull() // exclusive end = outside
 		expect(cite_span_key_at_offset(line, 0, 7)).toBeNull()
 	})
 
@@ -38,9 +39,10 @@ describe('cite-span / cursor management', () => {
 		expect(selection_requires_decoration_rebuild('10:20', '10:20')).toBe(false)
 	})
 
-	it('cursor_inside_span matches decoration policy', () => {
+	it('cursor_inside_span is half-open [from, to)', () => {
 		expect(cursor_inside_span(5, 5, 10)).toBe(true)
-		expect(cursor_inside_span(10, 5, 10)).toBe(true)
+		expect(cursor_inside_span(9, 5, 10)).toBe(true)
+		expect(cursor_inside_span(10, 5, 10)).toBe(false) // exclusive end
 		expect(cursor_inside_span(4, 5, 10)).toBe(false)
 		expect(cursor_inside_span(11, 5, 10)).toBe(false)
 	})
