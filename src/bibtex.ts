@@ -276,20 +276,38 @@ export function check_duplicate_id(bibtex_dict: BibtexDict, id: string, file_pat
 
 /**
  * Check if a BibTeX DOI is already used by another cached entry.
+ * Prefer passing `doi_index` (O(1)); without it falls back to a linear scan.
  * @param bibtex_dict - The dictionary of BibTeX entries.
  * @param doi - The DOI to check.
  * @param id - The ID of the entry being checked (same id + path is not a clash).
  * @param file_path - The path of the file to check.
+ * @param doi_index - Optional doi → citekey map from {@link build_doi_index}.
  * @returns True if the DOI is duplicated, false otherwise.
  */
-export function check_duplicate_doi(bibtex_dict: BibtexDict, doi: string | undefined, id: string, file_path: string): boolean {
-    // no doi to enforce
+export function check_duplicate_doi(
+    bibtex_dict: BibtexDict,
+    doi: string | undefined,
+    id: string,
+    file_path: string,
+    doi_index?: Map<string, string>,
+): boolean {
     if (!doi) {
         return false
     }
 
-    // if another entry already has this doi, it's a clash
-    // (the same entry re-rendered from the same file is fine)
+    if (doi_index) {
+        const owner = doi_index.get(doi)
+        if (!owner) {
+            return false
+        }
+        if (owner === id) {
+            const entry = bibtex_dict[id]
+            return !(entry && entry.source_path == file_path)
+        }
+        return true
+    }
+
+    // Linear fallback (tests / callers without an index).
     for (const cached_id in bibtex_dict) {
         const entry = bibtex_dict[cached_id]
         if (entry.fields.doi === doi && !(cached_id === id && entry.source_path == file_path)) {

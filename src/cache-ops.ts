@@ -4,6 +4,12 @@
  */
 
 import { make_bibtex, type BibtexDict, type BibtexElement, type BibtexField, type ClashHit } from 'src/bibtex'
+import {
+	type DoiIndex,
+	doi_index_on_delete,
+	doi_index_on_remove_path,
+	doi_index_on_upsert,
+} from 'src/doi-index'
 
 export type ScanHit = ClashHit & { fields: BibtexField }
 
@@ -96,8 +102,12 @@ export function retarget_source_paths(dict: BibtexDict, old_path: string, new_pa
 
 /**
  * Remove all entries whose source_path equals `path`. Mutates dict; returns count removed.
+ * When `doi_index` is provided it is kept in sync.
  */
-export function remove_entries_for_path(dict: BibtexDict, path: string): number {
+export function remove_entries_for_path(dict: BibtexDict, path: string, doi_index?: DoiIndex): number {
+	if (doi_index) {
+		doi_index_on_remove_path(doi_index, dict, path)
+	}
 	let n = 0
 	for (const id of Object.keys(dict)) {
 		if (dict[id].source_path === path) {
@@ -111,6 +121,7 @@ export function remove_entries_for_path(dict: BibtexDict, path: string): number 
 /**
  * Insert or update a non-duplicate entry. Returns true if the dict was mutated.
  * Caller is responsible for duplicate checks before calling.
+ * When `doi_index` is provided it is kept in sync.
  */
 export function upsert_entry(
 	dict: BibtexDict,
@@ -118,12 +129,27 @@ export function upsert_entry(
 	fields: BibtexField,
 	source: string,
 	source_path: string,
+	doi_index?: DoiIndex,
 ): boolean {
 	const prev = dict[id]
 	if (prev && prev.source === source && prev.source_path === source_path) {
 		return false
 	}
+	if (doi_index) {
+		doi_index_on_upsert(doi_index, id, prev, fields.doi)
+	}
 	dict[id] = { fields, source, source_path }
+	return true
+}
+
+/** Delete a single entry and sync DOI index. */
+export function delete_entry(dict: BibtexDict, id: string, doi_index?: DoiIndex): boolean {
+	const prev = dict[id]
+	if (!prev) return false
+	if (doi_index) {
+		doi_index_on_delete(doi_index, id, prev)
+	}
+	delete dict[id]
 	return true
 }
 

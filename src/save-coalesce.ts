@@ -15,6 +15,10 @@ export type SaveCoalesceOptions = {
 	clock?: SaveCoalesceClock
 	/** Actual persist implementation (e.g. plugin.saveData). */
 	persist: () => Promise<void>
+	/** Invoked after each successful persist (for perf counters). */
+	on_flush?: () => void
+	/** Invoked on each schedule() (for perf counters). */
+	on_schedule?: () => void
 }
 
 /**
@@ -25,6 +29,8 @@ export class SaveCoalescer {
 	private readonly delay_ms: number
 	private readonly clock: SaveCoalesceClock
 	private readonly persist: () => Promise<void>
+	private readonly on_flush?: () => void
+	private readonly on_schedule?: () => void
 
 	private timer: number | null = null
 	private dirty = false
@@ -37,11 +43,14 @@ export class SaveCoalescer {
 			clearTimeout: (id) => window.clearTimeout(id),
 		}
 		this.persist = opts.persist
+		this.on_flush = opts.on_flush
+		this.on_schedule = opts.on_schedule
 	}
 
 	/** Mark dirty and schedule a write soon. Does not wait for disk. */
 	schedule(): void {
 		this.dirty = true
+		this.on_schedule?.()
 		if (this.timer != null) return
 		this.timer = this.clock.setTimeout(() => {
 			this.timer = null
@@ -68,6 +77,7 @@ export class SaveCoalescer {
 		this.inflight = run
 		try {
 			await run
+			this.on_flush?.()
 		} finally {
 			this.inflight = null
 		}

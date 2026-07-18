@@ -1,7 +1,8 @@
 import { App, Notice, Plugin, Setting, PluginSettingTab, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, INLINE_CITE_RE, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashHit, type CiteHit } from 'src/bibtex'
+import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashHit, type CiteHit } from 'src/bibtex'
 import {
 	audit_bibtex_dict,
+	delete_entry,
 	entry_count,
 	normalize_plugin_cache,
 	rebuild_dict_from_hits,
@@ -13,19 +14,34 @@ import {
 } from 'src/cache-ops'
 import { text_may_contain_bibtex_block } from 'src/cite-span'
 import { citation_popup } from 'src/citation-popup'
+import { build_doi_index, type DoiIndex } from 'src/doi-index'
+import {
+	audit_idle_after_unload,
+	create_perf_counters,
+	is_plugin_idle,
+	type IdleSnapshot,
+	type PerfCounters,
+} from 'src/idle-audit'
 import { HoverRenderChild } from 'src/hover'
 import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 import { createHoverWidgetPlugin } from 'src/editor'
 import { SaveCoalescer } from 'src/save-coalesce'
+import { scan_inline_cites_chunked } from 'src/vault-scan'
 
 type BibtexScholarCache = PluginCacheShape
 
 export default class BibtexScholar extends Plugin {
 	cache: BibtexScholarCache
+	/** O(1) DOI ownership map — rebuilt on load/rescan, maintained on mutations. */
+	doi_index: DoiIndex = new Map()
 	renaming = false
 	rename_timers = new Map<string, number>()
+	/** Set true to abort an in-flight vault cite scan (best-effort). */
+	private rename_scan_cancel = false
 	private save_coalescer: SaveCoalescer | null = null
+	/** Lightweight counters for idle / scale trust checks (Phase C). */
+	perf: PerfCounters = create_perf_counters()
 
 	async onload() {
 		await this.load_cache()
@@ -34,6 +50,8 @@ export default class BibtexScholar extends Plugin {
 			persist: async () => {
 				await this.saveData(this.cache)
 			},
+			on_schedule: () => { this.perf.save_schedules++ },
+			on_flush: () => { this.perf.save_flushes++ },
 		})
 
 		// setting tab
@@ -135,8 +153,10 @@ export default class BibtexScholar extends Plugin {
 
 		// citekey rename: debounced modify only; skip files without ```bibtex (idle typing elsewhere)
 		this.registerEvent(this.app.vault.on('modify', (file) => {
-			if (this.renaming) return
-			if (!(file instanceof TFile) || file.extension !== 'md') return
+			if (this.renaming || !(file instanceof TFile) || file.extension !== 'md') {
+				this.perf.modify_early_exits++
+				return
+			}
 			const prev = this.rename_timers.get(file.path)
 			if (prev) window.clearTimeout(prev)
 			const t = window.setTimeout(() => {
@@ -144,6 +164,7 @@ export default class BibtexScholar extends Plugin {
 				void this.on_file_modified(file)
 			}, 400)
 			this.rename_timers.set(file.path, t)
+			this.perf.modify_scheduled++
 		}))
 
 		this.addCommand({
@@ -195,6 +216,7 @@ export default class BibtexScholar extends Plugin {
 
 	async onunload() {
 		// Flush durable state and drop idle work so disable/reload is clean.
+		this.rename_scan_cancel = true
 		for (const t of this.rename_timers.values()) {
 			window.clearTimeout(t)
 		}
@@ -212,6 +234,26 @@ export default class BibtexScholar extends Plugin {
 	 */
 	async load_cache() {
 		this.cache = normalize_plugin_cache(await this.loadData())
+		this.doi_index = build_doi_index(this.cache.bibtex_dict)
+	}
+
+	/** Snapshot for idle trust checks (tests / debug). */
+	idle_snapshot(): IdleSnapshot {
+		return {
+			popup_active: citation_popup.get_active_id() != null,
+			save_dirty: this.save_coalescer?.is_dirty() ?? false,
+			rename_timer_count: this.rename_timers.size,
+			counters: { ...this.perf },
+		}
+	}
+
+	is_idle(): boolean {
+		return is_plugin_idle(this.idle_snapshot())
+	}
+
+	/** After unload-style cleanup: empty array means healthy idle. */
+	audit_idle(): string[] {
+		return audit_idle_after_unload(this.idle_snapshot())
 	}
 
 	/**
@@ -258,7 +300,7 @@ export default class BibtexScholar extends Plugin {
 				section_text,
 			)
 			const doi_duplicate = check_duplicate_doi(
-				this.cache.bibtex_dict, fields.doi, id, ctx.sourcePath
+				this.cache.bibtex_dict, fields.doi, id, ctx.sourcePath, this.doi_index,
 			)
 			const duplicate = id_duplicate || doi_duplicate
 
@@ -269,7 +311,7 @@ export default class BibtexScholar extends Plugin {
 				if (doi_duplicate) {
 					new Notice(`Warning: BibTeX DOI has been used\n${fields.doi}`, 10e3)
 				}
-			} else if (upsert_entry(this.cache.bibtex_dict, id, fields, bibtex_source, ctx.sourcePath)) {
+			} else if (upsert_entry(this.cache.bibtex_dict, id, fields, bibtex_source, ctx.sourcePath, this.doi_index)) {
 				dirty = true
 			}
 
@@ -398,10 +440,10 @@ export default class BibtexScholar extends Plugin {
 	 * @param paper_id - The ID of the paper to uncache
 	 */
 	async uncache_bibtex_with_id(paper_id: string) {
-		// uncache single bibtex
-		delete this.cache.bibtex_dict[paper_id]
-		await this.save_cache()
-		new Notice(`Uncached ${paper_id}`)
+		if (delete_entry(this.cache.bibtex_dict, paper_id, this.doi_index)) {
+			await this.save_cache()
+			new Notice(`Uncached ${paper_id}`)
+		}
 	}
 
 	/**
@@ -409,7 +451,7 @@ export default class BibtexScholar extends Plugin {
 	 * @param path - The path to uncache papers from
 	 */
 	async uncache_bibtex_from_path(path: string) {
-		const n = remove_entries_for_path(this.cache.bibtex_dict, path)
+		const n = remove_entries_for_path(this.cache.bibtex_dict, path, this.doi_index)
 		if (n > 0) {
 			await this.save_cache()
 			new Notice(`Uncached BibTeX entries from ${path}`)
@@ -421,6 +463,7 @@ export default class BibtexScholar extends Plugin {
 	 */
 	async uncache_bibtex_all() {
 		this.cache.bibtex_dict = {}
+		this.doi_index = new Map()
 		await this.save_cache()
 		new Notice('Uncached all BibTeX entries')
 	}
@@ -470,6 +513,7 @@ export default class BibtexScholar extends Plugin {
 
 		// Replace dict atomically so live getters never see a half-cleared map.
 		this.cache.bibtex_dict = rebuild_dict_from_hits(hits)
+		this.doi_index = build_doi_index(this.cache.bibtex_dict)
 		await this.save_cache()
 		return find_clashes(hits)
 	}
@@ -492,6 +536,7 @@ export default class BibtexScholar extends Plugin {
 		const text = await this.app.vault.read(file)
 		// Idle typing in notes without BibTeX: no parse, no vault-wide work.
 		if (!from_command && !text_may_contain_bibtex_block(text)) {
+			this.perf.modify_early_exits++
 			return
 		}
 		const renames = await this.detect_citekey_renames(file, text)
@@ -535,21 +580,40 @@ export default class BibtexScholar extends Plugin {
 		return out
 	}
 
+	/**
+	 * Bounded vault scan for inline cites (Phase B):
+	 * priority open/active files first, chunked reads, progress notice, cheap reject.
+	 */
 	async scan_inline_cites(old_id: string): Promise<CiteHit[]> {
-		const hits: CiteHit[] = []
-		for (const file of this.app.vault.getMarkdownFiles()) {
-			const text = await this.app.vault.read(file)
-			const body = text.replace(/```bibtex[\s\S]*?```/g, '')
-			let count = 0
-			INLINE_CITE_RE.lastIndex = 0
-			let m: RegExpExecArray | null
-			const re = new RegExp(INLINE_CITE_RE.source, 'g')
-			while ((m = re.exec(body)) !== null) {
-				if (m[2] === old_id) count++
-			}
-			if (count > 0) hits.push({ path: file.path, count })
+		this.rename_scan_cancel = false
+		const files = this.app.vault.getMarkdownFiles()
+		const paths = files.map((f) => f.path)
+		const active = this.app.workspace.getActiveFile()?.path
+		const priority = active ? [active] : []
+
+		const notice = new Notice(`Scanning vault for \`${old_id}\`… 0/${paths.length}`, 0)
+		const result = await scan_inline_cites_chunked({
+			old_id,
+			paths,
+			priority_paths: priority,
+			read: async (path) => {
+				const af = this.app.vault.getAbstractFileByPath(path)
+				if (!(af instanceof TFile)) return ''
+				return this.app.vault.read(af)
+			},
+			chunk_size: 32,
+			yield_ms: 0,
+			should_cancel: () => this.rename_scan_cancel,
+			on_progress: (done, total) => {
+				notice.setMessage(`Scanning vault for \`${old_id}\`… ${done}/${total}`)
+			},
+		})
+		this.perf.rename_scan_files_read += result.files_read
+		notice.hide()
+		if (result.cancelled) {
+			new Notice('Cite scan cancelled')
 		}
-		return hits
+		return result.hits
 	}
 
 	async offer_rename(old_id: string, new_id: string) {
@@ -596,12 +660,16 @@ export default class BibtexScholar extends Plugin {
 			}
 
 			const fields = { ...old.fields, id: new_id }
-			this.cache.bibtex_dict[new_id] = {
+			// Move map entry + keep DOI index ownership on the new key.
+			delete_entry(this.cache.bibtex_dict, old_id, this.doi_index)
+			upsert_entry(
+				this.cache.bibtex_dict,
+				new_id,
 				fields,
-				source: make_bibtex(fields),
-				source_path: old.source_path,
-			}
-			delete this.cache.bibtex_dict[old_id]
+				make_bibtex(fields),
+				old.source_path,
+				this.doi_index,
+			)
 			await this.save_cache()
 
 			const total = hits.reduce((s, h) => s + h.count, 0)

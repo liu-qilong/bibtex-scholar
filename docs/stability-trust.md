@@ -1,6 +1,6 @@
 # Stability & performance trust checks
 
-Focus areas: **cursor management**, **cache durability**, **data integrity**, **idle work**.
+Focus areas: **cursor management**, **cache durability**, **data integrity**, **idle work**, **scale**.
 
 ## Guarantees (with automated tests)
 
@@ -14,17 +14,20 @@ Focus areas: **cursor management**, **cache durability**, **data integrity**, **
 | Frequent saves coalesce (not one write per codeblock entry) | `src/save-coalesce.ts` | `tests/save-coalesce.test.ts` |
 | Popup debounce / grace / single open / ESC suppress / dispose | `src/citation-popup.ts` | `tests/citation-popup.test.ts` |
 | Clash grouping undirected + reason merge | `find_clashes` | `tests/find-clashes.test.ts` |
+| **A** DOI clash checks O(1) via `doi_index` | `src/doi-index.ts` | `tests/doi-index.test.ts` |
+| **B** Rename vault scan is chunked, prioritised, cancelable | `src/vault-scan.ts` | `tests/vault-scan.test.ts` |
+| **C** Idle = no popup + no dirty save + no rename timers | `src/idle-audit.ts` | `tests/idle-audit.test.ts` |
 
 ## Runtime patches (main plugin)
 
-1. **Codeblock processor** — sequential loop (no `forEach(async)` races); one coalesced save per paint.
-2. **`save_cache` / `schedule_save_cache`** — `SaveCoalescer` (80 ms); flush on unload.
-3. **`load_cache`** — `normalize_plugin_cache` instead of shallow assign only.
-4. **`rescan_vault`** — atomic `bibtex_dict = rebuild_dict_from_hits(hits)`; skip files without ```` ```bibtex ````.
-5. **Modify handler** — early exit without ```` ```bibtex ```` (command path still forces scan).
-6. **EditorPrompt / PaperPanel** — live dict getters (no stale snapshot after rescan/uncache).
-7. **Editor decorations** — pure cite-span helpers; live `plugin.cache.bibtex_dict` lookup.
-8. **`onunload`** — clear rename timers, `citation_popup.dispose()`, flush coalescer.
+1. **Codeblock processor** — sequential loop; one coalesced save per paint; DOI check uses `doi_index`.
+2. **`save_cache` / `schedule_save_cache`** — `SaveCoalescer` (80 ms); flush on unload; flush/schedule counters.
+3. **`load_cache` / `rescan_vault`** — normalize + rebuild DOI index.
+4. **Modify handler** — early-exit counter; fence gate before parse.
+5. **EditorPrompt / PaperPanel** — live dict getters.
+6. **`scan_inline_cites`** — chunked (32), active file first, progress Notice, substring reject, cancel flag.
+7. **`onunload`** — cancel scan, clear rename timers, dispose popup, flush save.
+8. **`idle_snapshot` / `audit_idle` / `is_idle`** — expose Phase C invariants.
 
 ## Run
 
@@ -33,8 +36,8 @@ npm test          # vitest trust suite
 npm run build     # tsc + esbuild production
 ```
 
-## Remaining risks (not yet automated)
+## Remaining risks
 
-- Vault-wide `scan_inline_cites` on rename still O(files) — intentional for correctness.
-- `check_duplicate_doi` remains O(n) per paint entry — acceptable for typical library sizes.
+- Rename scan is still O(files) for correctness, but **chunked + progress + yield** so the UI can breathe.
 - CodeMirror widget `eq` does not detect field content updates without id/expand change.
+- No reverse cite→files index yet (would shrink rename scan further).
