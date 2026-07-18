@@ -118,11 +118,18 @@ _P.S. I personally don't like to add all papers from those conferences, as each 
 ### Inline citation
 
 - Use `` `{ID}` `` for a compact, hoverable reference
-- Use `` `[ID]` `` for always-expanded details
+- Use `` `[ID]` `` to open the details card when the cite is shown
 
 ![img](/gallery/bibtex-hover.png)
 
-As you can see here, following the title are the utility buttons and paper details. There are 3 groups of utilities:
+Citation details open in a **floating card** (not inline in the paragraph), so the note layout does not jump:
+
+- **Hover** a chip for ~250 ms to open (or **click** the chip for immediate open / toggle)
+- Move onto the card to keep it open; leave chip and card to close
+- Press **Esc** to dismiss without losing focus for typing (stays dismissed until you leave the chip)
+- Click **outside** the card to close
+
+The card has 3 groups of utilities:
 
 - Copyable:
   - `id`: Copy paper's ID

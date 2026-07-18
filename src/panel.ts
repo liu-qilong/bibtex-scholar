@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, Setting, setIcon, type IconName } from 'obsidian'
 import { match_query, type BibtexDict, type BibtexElement, type Clash, type ClashHit } from 'src/bibtex'
-import { render_hover } from 'src/hover'
+import { render_hover, unmount_hover_hosts } from 'src/hover'
 import BibtexScholar from 'src/main'
 
 export const PAPER_PANEL_VIEW_TYPE = 'paper-panel-view'
@@ -45,7 +45,7 @@ export class PaperPanelView extends ItemView {
         new Setting(search_wrap)
             .addSearch((text) => text.onChange((query) => {
                 if (this.clash_mode) return
-                this.list_el.empty()
+                this.clear_list()
                 this.get_papers(query).forEach((id) => {
                     const paper_bar = this.list_el.createEl('span')
                     render_hover(paper_bar, this.bibtex_dict[id], this.plugin, this.app)
@@ -67,7 +67,15 @@ export class PaperPanelView extends ItemView {
     }
 
     async onClose() {
+        if (this.list_el) {
+            this.clear_list()
+        }
+    }
 
+    /** Unmount React hover hosts before wiping list DOM (avoids leaked roots). */
+    clear_list() {
+        unmount_hover_hosts(this.list_el)
+        this.list_el.empty()
     }
 
     async on_clash_click() {
@@ -95,7 +103,7 @@ export class PaperPanelView extends ItemView {
     }
 
     show_papers() {
-        this.list_el.empty()
+        this.clear_list()
         for (const id in this.bibtex_dict) {
             const paper_bar = this.list_el.createEl('span')
             render_hover(paper_bar, this.bibtex_dict[id], this.plugin, this.app)
@@ -103,7 +111,7 @@ export class PaperPanelView extends ItemView {
     }
 
     show_clashes() {
-        this.list_el.empty()
+        this.clear_list()
         if (this.clashes.length === 0) {
             this.list_el.createEl('div', { cls: 'bibtex-panel-clash-empty', text: 'No clashes found.' })
             return

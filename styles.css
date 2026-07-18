@@ -7,8 +7,9 @@ If your plugin does not need CSS, delete this file.
 
 */
 
-/* bibtex entry & hover */
-.bibtex-hover button {
+/* bibtex entry & hover (chip + floating card share button chrome) */
+.bibtex-hover button,
+.bibtex-hover-card button {
     --o-border: 1px solid var(--background-modifier-border);
     display: inline-flex;
     align-items: center;
@@ -36,6 +37,34 @@ If your plugin does not need CSS, delete this file.
 
 .bibtex-hover-button-bar button {
     font-size: small;
+}
+
+.bibtex-hover-chip {
+    display: inline;
+}
+
+/* Phase 2: portaled card — out of text flow */
+.bibtex-hover-card.is-floating {
+    position: fixed;
+    z-index: var(--layer-popover, 30);
+    top: 0;
+    left: 0;
+    /* Hide until JS places it (avoids 0,0 flash) */
+    visibility: hidden;
+    box-sizing: border-box;
+    max-width: min(480px, 90vw);
+    max-height: min(60vh, 480px);
+    overflow: auto;
+    padding: var(--size-4-2);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    box-shadow: var(--shadow-s, 0 2px 12px rgba(0, 0, 0, 0.2));
+}
+
+.bibtex-hover-card.is-floating.is-positioned {
+    visibility: visible;
 }
 
 .bibtex-markdown-rendered p {

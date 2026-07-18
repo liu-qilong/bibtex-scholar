@@ -1,13 +1,51 @@
-import { App, Notice, Modal } from 'obsidian'
-import { useState, StrictMode } from "react"
-import { createRoot } from 'react-dom/client'
+import { App, Notice, Modal, MarkdownRenderChild } from 'obsidian'
+import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type MouseEvent as ReactMouseEvent } from "react"
+import { createPortal } from 'react-dom'
+import { createRoot, type Root } from 'react-dom/client'
 import Markdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
+import { citation_popup, create_citation_popup_id } from 'src/citation-popup'
 import BibtexScholar from 'src/main'
+
+/** Gap between chip and floating card (px). */
+const CARD_GAP_PX = 4
+/** Viewport edge padding when clamping (px). */
+const VIEWPORT_PAD_PX = 8
+
+/**
+ * Place a fixed-position card near an anchor chip.
+ * Prefer below; flip above when there is more room; clamp to the viewport.
+ */
+function position_floating_card(anchor: HTMLElement, card: HTMLElement) {
+    const ar = anchor.getBoundingClientRect()
+    const cr = card.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+
+    const space_below = vh - ar.bottom - VIEWPORT_PAD_PX
+    const space_above = ar.top - VIEWPORT_PAD_PX
+    const prefer_above = space_below < cr.height + CARD_GAP_PX && space_above > space_below
+
+    let top = prefer_above
+        ? ar.top - cr.height - CARD_GAP_PX
+        : ar.bottom + CARD_GAP_PX
+    let left = ar.left
+
+    left = Math.max(VIEWPORT_PAD_PX, Math.min(left, vw - cr.width - VIEWPORT_PAD_PX))
+    top = Math.max(VIEWPORT_PAD_PX, Math.min(top, vh - cr.height - VIEWPORT_PAD_PX))
+
+    card.style.top = `${Math.round(top)}px`
+    card.style.left = `${Math.round(left)}px`
+}
+
+/** Workspace chrome root for portaled citation cards (Phase 0 / 2). */
+function citation_portal_root(app: App): HTMLElement {
+    return app.workspace.containerEl
+}
 
 /**
  * Copy the given text to the clipboard.
@@ -149,172 +187,345 @@ const LinkedFileButton = ({ label, fname, folder, app, plugin }: { label: string
 }
 
 /**
- * HoverPopup component displays a hoverable popup for a given BibTeX entry.
- * @param bibtex - The BibtexElement object containing the entry's fields and metadata.
- * @param plugin - The BibtexScholar plugin instance, used for accessing cache and plugin methods.
- * @param app - The Obsidian App instance, used for workspace and UI interactions.
- * @param expand - If true, the popup is expanded by default; otherwise, it appears on hover.
- * The popup provides quick actions such as copying the entry's ID, BibTeX, markdown/LaTeX citations, and links to associated note, PDF, and BibTeX source files. It also allows searching for mentions of the entry and uncaching the entry from the plugin's cache. Entry fields are rendered with markdown and math support.
+ * Body of the citation card (actions + fields). Shared by the floating shell.
+ */
+const CitationCardBody = ({ bibtex, plugin, app }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App }) => {
+    const paper_id = bibtex.fields.id
+
+    return (
+        <>
+            <div className='bibtex-hover-button-bar'>
+                <button type="button" onClick={() => copy_to_clipboard(paper_id)}>
+                    <code>id</code>
+                </button>
+                <button type="button" onClick={() => copy_to_clipboard(make_bibtex(bibtex.fields, false))}>
+                    <code>bibtex</code>
+                </button>
+                <button type="button" onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)}>
+                    <code>{'`{}`'}</code>
+                </button>
+                <button type="button" onClick={() => copy_to_clipboard(`\`[${paper_id}]\``)}>
+                    <code>{'`[]`'}</code>
+                </button>
+                <button type="button" onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)}>
+                    <code>{'\\autocite{}'}</code>
+                </button>
+                <code>{'+'}</code>
+
+                <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} plugin={plugin} />
+                <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} plugin={plugin} />
+                <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app} plugin={plugin} />
+
+                <button
+                    type="button"
+                    onClick={async () => {
+                        const query = mentions_search_query(paper_id)
+
+                        let search_leaf = app.workspace.getLeavesOfType('search')[0]
+
+                        if (!search_leaf) {
+                            const leaf = app.workspace.getLeftLeaf(false)
+                            if (leaf) {
+                                leaf.setViewState({ type: 'search', active: true })
+                                search_leaf = app.workspace.getLeavesOfType('search')[0]
+                            }
+                        }
+
+                        if (search_leaf) {
+                            function is_search_view(view: any): view is { setQuery: (query: string) => void } {
+                                return typeof view?.setQuery === 'function';
+                            }
+
+                            await app.workspace.revealLeaf(search_leaf);
+                            if (is_search_view(search_leaf.view)) {
+                                search_leaf.view.setQuery(query)
+                            }
+                            app.workspace.setActiveLeaf(search_leaf)
+                        }
+                    }}
+                >
+                    mentions
+                </button>
+                <code>{'+'}</code>
+                <button type="button" onClick={() => {
+                    if (window.confirm(`Uncache ${paper_id}?`)) {
+                        plugin.uncache_bibtex_with_id(paper_id)
+                    }
+                }}>
+                    uncache
+                </button>
+            </div>
+            {Object.entries(bibtex.fields).map(([key, value]) => {
+                if (key == 'id') {
+                    return
+                }
+                if (key.includes('url')) {
+                    value = `[${value}](${value})`
+                }
+                return (<div key={key} className='bibtex-markdown-rendered'>
+                    <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{`**\`${key}\`** ${value}`}</Markdown>
+                </div>)
+            })}
+        </>
+    )
+}
+
+/**
+ * HoverPopup: cite chip in text flow + floating card (portaled).
+ *
+ * Phases 1–4: {@link citation_popup} open/close; portal under workspace container;
+ * click-outside close; chip click/keyboard toggle; a11y attrs without focus steal.
+ *
+ * @param expand - If true (`[id]`), open on mount with no debounce.
  */
 const HoverPopup = ({ bibtex, plugin, app, expand = false }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean }) => {
     const paper_id = bibtex.fields.id
 
-    // handlers for mouse enter and leave
-    const [is_hovered, set_is_hovered] = useState(expand)
+    const instance_id_ref = useRef<string | null>(null)
+    if (instance_id_ref.current === null) {
+        instance_id_ref.current = create_citation_popup_id()
+    }
+    const instance_id = instance_id_ref.current
+    const card_dom_id = `bibtex-cite-card-${instance_id}`
 
-    const handle_mouse_enter = () => {
-        set_is_hovered(true)
+    const chip_ref = useRef<HTMLSpanElement | null>(null)
+    const card_ref = useRef<HTMLDivElement | null>(null)
+
+    const [is_open, set_is_open] = useState(false)
+
+    useEffect(() => {
+        return citation_popup.register(instance_id, set_is_open)
+    }, [instance_id])
+
+    // `[id]`: open immediately on mount (no debounce). Compact `{id}` waits for hover.
+    useEffect(() => {
+        if (expand) {
+            citation_popup.open_for_expand(instance_id)
+        }
+    }, [expand, instance_id])
+
+    // Phase 4: pointer down outside chip+card closes (no hover-suppress).
+    // Deferred one tick so the same gesture that opened via click does not immediately close.
+    useEffect(() => {
+        if (!is_open) {
+            return
+        }
+
+        const on_pointer_down = (e: PointerEvent) => {
+            const t = e.target
+            if (!(t instanceof Node)) {
+                return
+            }
+            if (chip_ref.current?.contains(t)) {
+                return
+            }
+            if (card_ref.current?.contains(t)) {
+                return
+            }
+            citation_popup.close_outside()
+        }
+
+        const bind_timer = window.setTimeout(() => {
+            document.addEventListener('pointerdown', on_pointer_down, true)
+        }, 0)
+
+        return () => {
+            window.clearTimeout(bind_timer)
+            document.removeEventListener('pointerdown', on_pointer_down, true)
+        }
+    }, [is_open])
+
+    // Position floating card near chip; keep it attached on scroll/resize/content size.
+    useLayoutEffect(() => {
+        if (!is_open) {
+            return
+        }
+
+        const update = () => {
+            const anchor = chip_ref.current
+            const card = card_ref.current
+            if (!anchor || !card) {
+                return
+            }
+            position_floating_card(anchor, card)
+            card.classList.add('is-positioned')
+        }
+
+        update()
+        const raf = window.requestAnimationFrame(update)
+
+        window.addEventListener('resize', update)
+        window.addEventListener('scroll', update, true)
+
+        const card_el = card_ref.current
+        let ro: ResizeObserver | null = null
+        if (card_el && typeof ResizeObserver !== 'undefined') {
+            ro = new ResizeObserver(() => update())
+            ro.observe(card_el)
+        }
+
+        return () => {
+            window.cancelAnimationFrame(raf)
+            window.removeEventListener('resize', update)
+            window.removeEventListener('scroll', update, true)
+            ro?.disconnect()
+        }
+    }, [is_open, paper_id])
+
+    const on_chip_click = (e: ReactMouseEvent) => {
+        // Intentional activate: open immediately / toggle closed (touch + keyboard).
+        e.preventDefault()
+        e.stopPropagation()
+        citation_popup.toggle_trigger(instance_id)
     }
 
-    const handle_mouse_leave = () => {
-        set_is_hovered(expand)
-    }
+    const card = is_open ? createPortal(
+        <div
+            ref={card_ref}
+            id={card_dom_id}
+            className='bibtex-hover-card is-floating'
+            role='dialog'
+            aria-label={`Citation ${paper_id}`}
+            aria-modal={false}
+            // Not autoFocused — keep editor focus for typing (Phase 4).
+            onMouseEnter={() => citation_popup.enter_card(instance_id)}
+            onMouseLeave={() => citation_popup.leave_card(instance_id)}
+        >
+            <CitationCardBody bibtex={bibtex} plugin={plugin} app={app} />
+        </div>,
+        citation_portal_root(app),
+    ) : null
 
     return (
         <span className='bibtex-hover'>
-            {/* This is the element to hover */}
             <span
-                onMouseEnter={handle_mouse_enter}
-                onMouseLeave={handle_mouse_leave}
+                ref={chip_ref}
+                className='bibtex-hover-chip'
+                onMouseEnter={() => citation_popup.enter_trigger(instance_id)}
+                onMouseLeave={() => citation_popup.leave_trigger(instance_id)}
             >
-                <button>{paper_id}</button>
-            </span>
-            {/* This is the popup that appears on hover */}
-            {/* {( */}
-            {is_hovered && (
-                <span
-                    onMouseEnter={handle_mouse_enter}
-                    onMouseLeave={handle_mouse_leave}
+                <button
+                    type="button"
+                    aria-expanded={is_open}
+                    aria-haspopup="dialog"
+                    aria-controls={is_open ? card_dom_id : undefined}
+                    aria-label={`Citation ${paper_id}`}
+                    title={`Citation ${paper_id} — hover or click for details, Esc to dismiss`}
+                    onClick={on_chip_click}
                 >
-                    <div className='bibtex-hover-button-bar'>
-                        {/* copy id */}
-                        <button onClick={() => copy_to_clipboard(paper_id)}>
-                            <code>id</code>
-                        </button>
-                        {/* copy bibtex */}
-                        <button onClick={() => copy_to_clipboard(make_bibtex(bibtex.fields, false))}>
-                            {/* <button onClick={() => copy_to_clipboard(bibtex.source)}> */}
-                            <code>bibtex</code>
-                        </button>
-                        {/* md cite */}
-                        <button onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)}>
-                            <code>{'`{}`'}</code>
-                        </button>
-                        <button onClick={() => copy_to_clipboard(`\`[${paper_id}]\``)}>
-                            <code>{'`[]`'}</code>
-                        </button>
-                        {/* latex cite */}
-                        <button onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)}>
-                            <code>{'\\autocite{}'}</code>
-                        </button>
-                        <code>{'+'}</code>
-                        {/* linked note */}
-                        {/* <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} /> */}
-                        {/* linked pdf */}
-                        {/* <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} /> */}
-                        {/* linked bibtex source */}
-                        {/* <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app} /> */}
-
-                        <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} plugin={plugin} />
-                        <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} plugin={plugin} />
-                        <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app} plugin={plugin} />
-
-
-                        {/* mentions query */}
-                        <button
-                            onClick={async () => {
-                                const query = mentions_search_query(paper_id)
-
-                                // check if a search leaf exists
-                                // if no search leaf exists, create one
-                                let search_leaf = app.workspace.getLeavesOfType('search')[0]
-
-                                if (!search_leaf) {
-                                    const leaf = app.workspace.getLeftLeaf(false)
-                                    if (leaf) {
-                                        leaf.setViewState({ type: 'search', active: true })
-                                        search_leaf = app.workspace.getLeavesOfType('search')[0]
-                                    }
-                                }
-
-                                // set the query in the search panel
-                                if (search_leaf) {
-                                    function is_search_view(view: any): view is { setQuery: (query: string) => void } {
-                                        return typeof view?.setQuery === 'function';
-                                    }
-
-                                    await app.workspace.revealLeaf(search_leaf);
-                                    if (is_search_view(search_leaf.view)) {
-                                        search_leaf.view.setQuery(query)
-                                    }
-                                    app.workspace.setActiveLeaf(search_leaf)
-                                }
-                            }}
-                        >
-                            mentions
-                        </button>
-                        <code>{'+'}</code>
-                        {/* tool */}
-                        <button onClick={() => {
-                            delete plugin.cache.bibtex_dict[paper_id]
-                            plugin.save_cache()
-                            new Notice(`Uncached ${paper_id}`)
-                            if (window.confirm('Are you sure?')) {
-                                plugin.uncache_bibtex_with_id(paper_id)
-                            }
-                        }}>
-                            uncache
-                        </button>
-                    </div>
-                    {Object.entries(bibtex.fields).map(([key, value]) => {
-                        if (key == 'id') {
-                            return
-                        }
-                        if (key.includes('url')) {
-                            value = `[${value}](${value})`
-                        }
-                        return (<div key={key} className='bibtex-markdown-rendered'>
-                            <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{`**\`${key}\`** ${value}`}</Markdown>
-                        </div>)
-                    })}
-                </span>
-            )}
+                    {paper_id}
+                </button>
+            </span>
+            {card}
         </span>
     )
 }
 
 
-/**
- * Functions to render a paper element with hover pop up
- * @param el The HTML element to render the pop up in
- * @param bibtex The BibtexElement to render
- * @param plugin The BibtexScholar plugin instance
- * @param app The Obsidian app instance
- * @param expand Whether to expand the hover pop up
- */
-export const render_hover = async (el: HTMLElement, bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false) => {
-    createRoot(el).render(
+/** Host attribute so callers can find and unmount hover roots before emptying DOM. */
+export const HOVER_HOST_ATTR = 'data-bibtex-hover-host'
+
+const hover_roots = new WeakMap<HTMLElement, Root>()
+
+function mount_hover_tree(
+    el: HTMLElement,
+    bibtex: BibtexElement,
+    plugin: BibtexScholar,
+    app: App,
+    expand: boolean,
+): Root {
+    el.setAttribute(HOVER_HOST_ATTR, '')
+    let root = hover_roots.get(el)
+    if (!root) {
+        root = createRoot(el)
+        hover_roots.set(el, root)
+    }
+    root.render(
         <StrictMode>
             <HoverPopup bibtex={bibtex} plugin={plugin} app={app} expand={expand} />
         </StrictMode>
     )
+    return root
 }
 
+/**
+ * Unmount React for a hover host (and unregister citation_popup instance).
+ * Safe to call if nothing was mounted.
+ */
+export function unmount_hover(el: HTMLElement) {
+    const root = hover_roots.get(el)
+    if (!root) {
+        return
+    }
+    hover_roots.delete(el)
+    el.removeAttribute(HOVER_HOST_ATTR)
+    queueMicrotask(() => {
+        try {
+            root.unmount()
+        } catch {
+            // already unmounted
+        }
+    })
+}
 
 /**
- * HoverWidget class for displaying BibTeX entry hover popups in the editor.
- * Extends the WidgetType from CodeMirror to create a custom widget.
- * 
- * @param bibtex - The BibtexElement object containing the entry's fields and metadata.
- * @param plugin - The BibtexScholar plugin instance, used for accessing cache and plugin methods.
- * @param app - The Obsidian App instance, used for workspace and UI interactions.
- * @param expand - If true, the popup is expanded by default; otherwise, it appears on hover.
+ * Unmount every hover host under `root` (e.g. before `list_el.empty()`).
+ */
+export function unmount_hover_hosts(root: HTMLElement) {
+    root.querySelectorAll(`[${HOVER_HOST_ATTR}]`).forEach((node) => {
+        unmount_hover(node as HTMLElement)
+    })
+}
+
+/**
+ * Mount a citation chip + floating card into `el`.
+ * Reuses an existing React root on the same element when re-rendered.
+ * Prefer {@link HoverRenderChild} in markdown post-processors so unload unmounts cleanly.
+ */
+export function render_hover(
+    el: HTMLElement,
+    bibtex: BibtexElement,
+    plugin: BibtexScholar,
+    app: App,
+    expand: boolean = false,
+) {
+    mount_hover_tree(el, bibtex, plugin, app, expand)
+}
+
+/**
+ * Markdown section lifecycle wrapper: unmounts React when Obsidian discards the section.
+ */
+export class HoverRenderChild extends MarkdownRenderChild {
+    constructor(
+        el: HTMLElement,
+        private readonly bibtex: BibtexElement,
+        private readonly plugin: BibtexScholar,
+        private readonly app: App,
+        private readonly expand: boolean = false,
+    ) {
+        super(el)
+    }
+
+    onload() {
+        render_hover(this.containerEl, this.bibtex, this.plugin, this.app, this.expand)
+    }
+
+    onunload() {
+        unmount_hover(this.containerEl)
+    }
+}
+
+/**
+ * CodeMirror replace-widget for a citation chip (card is portaled separately).
+ *
+ * {@link eq} reuses DOM across decoration rebuilds; {@link destroy} unmounts React.
  */
 export class HoverWidget extends WidgetType {
     bibtex: BibtexElement
     plugin: BibtexScholar
     app: App
     expand: boolean
+    private host: HTMLElement | null = null
 
     constructor(bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false) {
         super()
@@ -325,21 +536,34 @@ export class HoverWidget extends WidgetType {
     }
 
     toDOM() {
-        const span = document.createElement("span")
-        createRoot(span).render(
-            <StrictMode>
-                <HoverPopup bibtex={this.bibtex} plugin={this.plugin} app={this.app} expand={this.expand} />
-                {/* <button>test</button> */}
-            </StrictMode>
-        )
+        const span = document.createElement('span')
+        span.className = 'bibtex-cm-widget'
+        this.host = span
+        mount_hover_tree(span, this.bibtex, this.plugin, this.app, this.expand)
         return span
     }
 
     eq(other: HoverWidget) {
-        return this.bibtex.fields.id === other.bibtex.fields.id
+        return (
+            other instanceof HoverWidget
+            && this.bibtex.fields.id === other.bibtex.fields.id
+            && this.expand === other.expand
+        )
+    }
+
+    /**
+     * When CM reuses this widget via {@link eq}, destroy is not called.
+     * When the decoration is removed, unmount React.
+     */
+    destroy() {
+        if (this.host) {
+            unmount_hover(this.host)
+            this.host = null
+        }
     }
 
     ignoreEvent() {
+        // Let React handle pointer events on the chip; CM should not steal them.
         return true
     }
 }

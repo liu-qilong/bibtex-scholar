@@ -1,6 +1,6 @@
 import { App, Notice, Plugin, Setting, PluginSettingTab, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
 import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, INLINE_CITE_RE, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashHit, type CiteHit } from 'src/bibtex'
-import { render_hover } from 'src/hover'
+import { HoverRenderChild } from 'src/hover'
 import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 import { createHoverWidgetPlugin } from 'src/editor'
@@ -252,7 +252,7 @@ export default class BibtexScholar extends Plugin {
 				}
 			}
 
-			// render paper element
+			// render paper element (HoverRenderChild unmounts React when the section is discarded)
 			// if doi-clash rejected a new id, fall back to the local fields so it still paints
 			const paper_bar = el.createEl('span', {
 				cls: (duplicate) ? ('bibtex-hover-duplicate-id') : ('bibtex-entry'),
@@ -262,7 +262,7 @@ export default class BibtexScholar extends Plugin {
 				source: bibtex_source,
 				source_path: ctx.sourcePath,
 			}
-			render_hover(paper_bar, entry, this, this.app)
+			ctx.addChild(new HoverRenderChild(paper_bar, entry, this, this.app, false))
 			el.createEl('code').setText('source')
 		})
 	}
@@ -290,8 +290,14 @@ export default class BibtexScholar extends Plugin {
 					continue
 				} else {
 					const paper_bar = codeblock.createSpan()
-					render_hover(paper_bar, this.cache.bibtex_dict[paper_id], this, this.app, text[0] === '[')
 					codeblock.replaceWith(paper_bar)
+					ctx.addChild(new HoverRenderChild(
+						paper_bar,
+						this.cache.bibtex_dict[paper_id],
+						this,
+						this.app,
+						text[0] === '[',
+					))
 				}
 			}
 		}
