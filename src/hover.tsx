@@ -1,46 +1,36 @@
-import { App, Notice, Modal, MarkdownRenderChild } from 'obsidian'
+import { App, Component, MarkdownRenderer, Notice, Modal, MarkdownRenderChild } from 'obsidian'
 import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type MouseEvent as ReactMouseEvent } from "react"
 import { createPortal } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
-import Markdown from 'react-markdown'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
 import { WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
 import { normalize_card_font_size } from 'src/cache-ops'
+import {
+    compute_card_placement,
+    compute_card_position,
+    header_edge_for_placement,
+} from 'src/citation-card-layout'
 import { citation_popup, create_citation_popup_id } from 'src/citation-popup'
-import BibtexScholar from 'src/main'
-
-/** Gap between chip and floating card (px). */
-const CARD_GAP_PX = 4
-/** Viewport edge padding when clamping (px). */
-const VIEWPORT_PAD_PX = 8
+import type BibtexScholar from 'src/main'
 
 /**
- * Place a fixed-position card near an anchor chip.
- * Prefer below; flip above when there is more room; clamp to the viewport.
+ * Place a fixed-position card near an anchor chip (prefer below; flip above
+ * when there is more room; clamp to the viewport). Also flips which end of
+ * the card holds the header + action toolbar, so those controls land closest
+ * to the cursor that spawned the card regardless of placement.
  */
 function position_floating_card(anchor: HTMLElement, card: HTMLElement) {
     const ar = anchor.getBoundingClientRect()
     const cr = card.getBoundingClientRect()
-    const vw = window.innerWidth
-    const vh = window.innerHeight
+    const viewport = { width: window.innerWidth, height: window.innerHeight }
 
-    const space_below = vh - ar.bottom - VIEWPORT_PAD_PX
-    const space_above = ar.top - VIEWPORT_PAD_PX
-    const prefer_above = space_below < cr.height + CARD_GAP_PX && space_above > space_below
+    const placement = compute_card_placement(ar, cr, viewport)
+    const { top, left } = compute_card_position(ar, cr, viewport, placement)
 
-    let top = prefer_above
-        ? ar.top - cr.height - CARD_GAP_PX
-        : ar.bottom + CARD_GAP_PX
-    let left = ar.left
-
-    left = Math.max(VIEWPORT_PAD_PX, Math.min(left, vw - cr.width - VIEWPORT_PAD_PX))
-    top = Math.max(VIEWPORT_PAD_PX, Math.min(top, vh - cr.height - VIEWPORT_PAD_PX))
-
-    card.style.top = `${Math.round(top)}px`
-    card.style.left = `${Math.round(left)}px`
+    card.style.top = `${top}px`
+    card.style.left = `${left}px`
+    card.classList.toggle('is-flipped', header_edge_for_placement(placement) === 'end')
 }
 
 /** Workspace chrome root for portaled citation cards (Phase 0 / 2). */
@@ -229,6 +219,37 @@ const CardBtn = ({
 )
 
 /**
+ * One field value rendered through Obsidian's own MarkdownRenderer — reuses the
+ * vault's math/link rendering instead of bundling a second markdown+katex pipeline.
+ * `owner` is unloaded by the caller when the card closes, tearing down anything
+ * MarkdownRenderer registered (internal link handlers, etc).
+ */
+const MarkdownField = ({
+    app,
+    text,
+    source_path,
+    owner,
+}: {
+    app: App
+    text: string
+    source_path: string
+    owner: Component
+}) => {
+    const el_ref = useRef<HTMLDivElement | null>(null)
+
+    useEffect(() => {
+        const el = el_ref.current
+        if (!el) {
+            return
+        }
+        el.replaceChildren()
+        void MarkdownRenderer.render(app, text, el, source_path, owner)
+    }, [app, text, source_path, owner])
+
+    return <div ref={el_ref} />
+}
+
+/**
  * Body of the citation card: header, grouped actions, denser field list.
  */
 const CitationCardBody = ({
@@ -240,6 +261,17 @@ const CitationCardBody = ({
     plugin: BibtexScholar
     app: App
 }) => {
+    // Owns the lifecycle of MarkdownRenderer.render() calls for this card instance.
+    const owner_ref = useRef<Component | null>(null)
+    if (owner_ref.current === null) {
+        owner_ref.current = new Component()
+    }
+
+    useEffect(() => {
+        const owner = owner_ref.current!
+        owner.load()
+        return () => owner.unload()
+    }, [])
     const paper_id = bibtex.fields.id
     const title = bibtex.fields.title || paper_id
     const year = bibtex.fields.year
@@ -339,9 +371,12 @@ const CitationCardBody = ({
                         <div key={key} className={`bibtex-card-field${dense}`}>
                             <div className='bibtex-card-field-key'>{key}</div>
                             <div className='bibtex-markdown-rendered bibtex-card-field-val'>
-                                <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                                    {display}
-                                </Markdown>
+                                <MarkdownField
+                                    app={app}
+                                    text={display}
+                                    source_path={String(bibtex.source_path)}
+                                    owner={owner_ref.current!}
+                                />
                             </div>
                         </div>
                     )

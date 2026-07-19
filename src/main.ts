@@ -399,17 +399,18 @@ export default class BibtexScholar extends Plugin {
 			let content = await this.app.vault.read(current_file)
 			content = content.replace(/```bibtex[\s\S]*?```/g, '')
 			content = content.replace(/\`(\{|\[)([^\}\]]+)(\}|\])\`/g, (match, p1, id, p3) => {
-				const fields = this.cache.bibtex_dict[id]?.fields
+				const entry = this.cache.bibtex_dict[id]
+				if (!entry) {
+					return match
+				}
+				const fields = entry.fields
 				if (fields.url) {
 					return `[${id}](${fields.url})`
 				} else if (fields.doi) {
 					return `[${id}](http://dx.doi.org/${fields.doi})`
 				} else {
-					return `[${id}](data:text/plain,${encodeURIComponent(this.cache.bibtex_dict[id].source)})`
+					return `[${id}](data:text/plain,${encodeURIComponent(entry.source)})`
 				}
-
-				// encode entire bibtex in the link (abandoned)
-				// return `[${id}](data:text/plain,${encodeURIComponent(this.cache.bibtex_dict[id].source)})`
 			})
 			navigator.clipboard.writeText(content)
 			new Notice('Copied standard markdown to clipboard')
@@ -428,7 +429,6 @@ export default class BibtexScholar extends Plugin {
 			let content = await this.app.vault.read(current_file)
 			content = content.replace(/```bibtex[\s\S]*?```/g, '')
 			content = content.replace(/\`(\{|\[)([^\}\]]+)(\}|\])\`/g, (match, p1, id, p3) => {
-				const fields = this.cache.bibtex_dict[id]?.fields
 				return `\\autocite{${id}}`
 			})
 			navigator.clipboard.writeText(content)

@@ -16,7 +16,7 @@ import {
     selection_requires_decoration_rebuild,
 } from 'src/cite-span'
 import { HoverWidget } from 'src/hover'
-import BibtexScholar from 'src/main'
+import type BibtexScholar from 'src/main'
 
 /**
  * If `pos` sits inside a cite match on its line, return a stable key `from:to`.

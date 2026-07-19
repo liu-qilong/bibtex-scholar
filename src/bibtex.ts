@@ -1,5 +1,5 @@
 import { App, Modal, ButtonComponent, Setting, Notice, requestUrl } from 'obsidian'
-import BibtexScholar from 'src/main'
+import type BibtexScholar from 'src/main'
 import { copy_to_clipboard } from 'src/hover'
 
 /**

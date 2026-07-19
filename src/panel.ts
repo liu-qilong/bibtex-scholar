@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf, Setting, setIcon, type IconName } from 'obsidian'
 import { match_query, type BibtexDict, type BibtexElement, type Clash, type ClashHit } from 'src/bibtex'
 import { render_hover, unmount_hover_hosts } from 'src/hover'
-import BibtexScholar from 'src/main'
+import type BibtexScholar from 'src/main'
 
 export const PAPER_PANEL_VIEW_TYPE = 'paper-panel-view'
 
