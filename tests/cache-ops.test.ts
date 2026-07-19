@@ -4,6 +4,7 @@ import {
 	CARD_FONT_SIZE_MAX,
 	CARD_FONT_SIZE_MIN,
 	entry_count,
+	missing_pdf_ids,
 	normalize_card_font_size,
 	normalize_plugin_cache,
 	rebuild_dict_from_hits,
@@ -58,6 +59,27 @@ describe('cache-ops / data integrity', () => {
 	it('normalize_plugin_cache preserves card_wide toggle', () => {
 		expect(normalize_plugin_cache({ card_wide: true }).card_wide).toBe(true)
 		expect(normalize_plugin_cache({ card_wide: 'yes' } as unknown).card_wide).toBe(false)
+	})
+
+	it('normalize_plugin_cache defaults missing_pdf_enabled to off, preserves true', () => {
+		expect(normalize_plugin_cache(undefined).missing_pdf_enabled).toBe(false)
+		expect(normalize_plugin_cache({ missing_pdf_enabled: true }).missing_pdf_enabled).toBe(true)
+		expect(normalize_plugin_cache({ missing_pdf_enabled: 'yes' } as unknown).missing_pdf_enabled).toBe(false)
+	})
+
+	it('missing_pdf_ids filters by the injected predicate and sorts the result', () => {
+		const dict = rebuild_dict_from_hits([
+			hit({ id: 'Zed', path: 'z.md', line: 0 }),
+			hit({ id: 'Alpha', path: 'a.md', line: 0 }),
+			hit({ id: 'HasPdf', path: 'h.md', line: 0 }),
+		])
+		const has_pdf = (id: string) => id === 'HasPdf'
+		expect(missing_pdf_ids(dict, has_pdf)).toEqual(['Alpha', 'Zed'])
+	})
+
+	it('missing_pdf_ids is empty when every entry has a PDF', () => {
+		const dict = rebuild_dict_from_hits([hit({ id: 'A', path: 'a.md', line: 0 })])
+		expect(missing_pdf_ids(dict, () => true)).toEqual([])
 	})
 
 	it('rebuild_dict_from_hits: first path+line wins for id and doi', () => {

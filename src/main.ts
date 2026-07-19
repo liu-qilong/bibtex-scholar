@@ -819,5 +819,21 @@ class BibtexScholarSetting extends PluginSettingTab {
 						await this.plugin.save_cache()
 					})
 			})
+
+		new Setting(containerEl)
+			.setName('Missing PDF panel')
+			.setDesc(
+				'Show a toggle button in the paper panel, beside the clash button, that lists cached ' +
+				'references with no matching PDF file. Off by default since it is an occasional-use check, ' +
+				'not something you need on every open. Reopen the paper panel after changing this.',
+			)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(Boolean(this.plugin.cache.missing_pdf_enabled))
+					.onChange(async (value) => {
+						this.plugin.cache.missing_pdf_enabled = value
+						await this.plugin.save_cache()
+					})
+			})
 	}
 }

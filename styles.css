@@ -375,6 +375,33 @@ If your plugin does not need CSS, delete this file.
     opacity: 0.6;
 }
 
+/* Missing-PDF toggle — same chrome as the clash button, ochre instead of crimson */
+.bibtex-panel-missing-pdf-btn {
+    flex: 0 0 var(--input-height);
+    width: var(--input-height);
+    height: var(--input-height);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: var(--cursor);
+    background-color: #d4a017;
+    color: var(--text-on-accent, #fff);
+    border: 1px solid #d4a017;
+    border-radius: var(--radius-s);
+}
+
+.bibtex-panel-missing-pdf-btn.is-active {
+    outline: 2px solid var(--text-on-accent, #fff);
+    outline-offset: 1px;
+}
+
+/* id link stays ochre; the more-specific .is-path rule below keeps the title/path link muted */
+.bibtex-panel-missing-pdf-list .bibtex-panel-clash-link,
+.bibtex-panel-missing-pdf-list .bibtex-panel-clash-num {
+    color: #d4a017;
+}
+
 .bibtex-panel-clash-empty {
     color: var(--text-muted);
     font-size: var(--font-ui-small);

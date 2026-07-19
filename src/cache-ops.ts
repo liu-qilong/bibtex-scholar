@@ -23,6 +23,8 @@ export type PluginCacheShape = {
 	card_font_size: number
 	/** When true, floating citation cards use a wider max width. */
 	card_wide: boolean
+	/** When true, the paper panel offers a toggle listing entries with no matching PDF. */
+	missing_pdf_enabled: boolean
 }
 
 export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
@@ -33,6 +35,7 @@ export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
 	fetch_mode: 'doi',
 	card_font_size: 13,
 	card_wide: false,
+	missing_pdf_enabled: false,
 }
 
 /** Allowed range for citation card font size (px). */
@@ -61,6 +64,7 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		fetch_mode: DEFAULT_PLUGIN_CACHE.fetch_mode,
 		card_font_size: DEFAULT_PLUGIN_CACHE.card_font_size,
 		card_wide: DEFAULT_PLUGIN_CACHE.card_wide,
+		missing_pdf_enabled: DEFAULT_PLUGIN_CACHE.missing_pdf_enabled,
 	}
 
 	if (!raw || typeof raw !== 'object') {
@@ -84,6 +88,7 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 			o.card_font_size !== undefined ? o.card_font_size : base.card_font_size,
 		),
 		card_wide: typeof o.card_wide === 'boolean' ? o.card_wide : base.card_wide,
+		missing_pdf_enabled: typeof o.missing_pdf_enabled === 'boolean' ? o.missing_pdf_enabled : base.missing_pdf_enabled,
 	}
 }
 
@@ -181,6 +186,17 @@ export function delete_entry(dict: BibtexDict, id: string, doi_index?: DoiIndex)
 /** Count entries — useful for notices and invariants. */
 export function entry_count(dict: BibtexDict): number {
 	return Object.keys(dict).length
+}
+
+/**
+ * Citekeys with no matching PDF, sorted for a stable worklist.
+ * `has_pdf` is injected (real callers check `app.metadataCache.getFirstLinkpathDest`,
+ * the same lookup {@link LinkedFileButton} in src/hover.tsx uses) so this stays pure/testable.
+ */
+export function missing_pdf_ids(dict: BibtexDict, has_pdf: (id: string) => boolean): string[] {
+	return Object.keys(dict)
+		.filter((id) => !has_pdf(id))
+		.sort((a, b) => a.localeCompare(b))
 }
 
 /**

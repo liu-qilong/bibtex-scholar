@@ -167,6 +167,10 @@ You can click ![img](/gallery/scan-search.jpeg) on the left ribbon to open the p
 
 You can open multiple paper panels and draw them to the place you want.
 
+The compare-icon button in the panel recaches from the vault and lists citekey/DOI collisions.
+Enabling **Missing PDF panel** in settings adds a second toggle beside it that lists cached
+references with no matching PDF file — an occasional cleanup check, off by default.
+
 ## Future plan 🤖
 
 AI-powered features and more workflow enhancements are on the way!
