@@ -8,7 +8,7 @@ import {
     ViewPlugin,
     ViewUpdate,
 } from '@codemirror/view'
-import { App } from 'obsidian'
+import { App, editorLivePreviewField } from 'obsidian'
 import {
     cite_span_key_at_offset,
     cursor_inside_span,
@@ -31,13 +31,27 @@ export function cite_span_key_at(view: EditorView, pos: number): string | null {
 }
 
 /**
- * Creates an editor plugin for BibTeX citation chips in editing mode (source + live preview).
+ * Cite chips/cards belong in Live Preview and Reading view only — never pure Source mode.
+ * (Reading uses markdown post-processors; this flag gates the CM editor extension.)
+ */
+export function should_render_cite_widgets(live_preview: boolean): boolean {
+    return live_preview === true
+}
+
+function is_live_preview(view: EditorView): boolean {
+    return should_render_cite_widgets(view.state.field(editorLivePreviewField))
+}
+
+/**
+ * Creates an editor plugin for BibTeX citation chips in **Live Preview** only.
  *
- * Cursor policy:
+ * Pure Source mode: no decorations — raw `` `{id}` `` / `` `[id]` `` text.
+ * Reading view: unchanged (markdown post-processors, not this plugin).
+ *
+ * Cursor policy (live preview):
  * - Outside a cite span → replace decoration (chip widget)
  * - Inside a cite span → raw text for editing
  * - Selection-only updates rebuild decorations only when the caret enters/leaves a cite
- *   (or jumps between different cites) — avoids idle remount thrash
  */
 export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
     class HoverWidgetPlugin implements PluginValue {
@@ -48,6 +62,23 @@ export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
         }
 
         update(update: ViewUpdate) {
+            const was_lp = update.startState.field(editorLivePreviewField)
+            const is_lp = update.state.field(editorLivePreviewField)
+
+            // Toggle Source ↔ Live Preview: drop or rebuild chips immediately.
+            if (was_lp !== is_lp) {
+                this.decorations = this.buildDecorations(update.view)
+                return
+            }
+
+            if (!is_lp) {
+                // Stay decoration-free in pure source mode.
+                if (this.decorations.size > 0) {
+                    this.decorations = Decoration.none
+                }
+                return
+            }
+
             if (update.docChanged || update.viewportChanged) {
                 this.decorations = this.buildDecorations(update.view)
                 return
@@ -56,7 +87,6 @@ export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
             if (update.selectionSet) {
                 const old_head = update.startState.selection.main.head
                 const new_head = update.state.selection.main.head
-                // Doc unchanged on pure selection updates — keys are comparable in the same doc.
                 if (selection_requires_decoration_rebuild(
                     cite_span_key_at(update.view, old_head),
                     cite_span_key_at(update.view, new_head),
@@ -69,9 +99,12 @@ export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
         destroy() {}
 
         buildDecorations(view: EditorView): DecorationSet {
+            if (!is_live_preview(view)) {
+                return Decoration.none
+            }
+
             const builder = new RangeSetBuilder<Decoration>()
             const cursor_pos = view.state.selection.main.head
-            // Live dict lookup — never snapshot at plugin construct time.
             const dict = plugin.cache.bibtex_dict
 
             for (const vr of view.visibleRanges) {

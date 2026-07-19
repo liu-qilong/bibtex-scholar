@@ -6,6 +6,7 @@ import {
 	selection_requires_decoration_rebuild,
 	text_may_contain_bibtex_block,
 } from 'src/cite-span'
+import { should_render_cite_widgets } from 'src/editor'
 
 describe('cite-span / cursor management', () => {
 	it('finds compact and expanded cite spans on a line', () => {
@@ -50,5 +51,10 @@ describe('cite-span / cursor management', () => {
 	it('gates idle rename work on bibtex fence presence', () => {
 		expect(text_may_contain_bibtex_block('hello world')).toBe(false)
 		expect(text_may_contain_bibtex_block('```bibtex\n@a{b,\n}\n```')).toBe(true)
+	})
+
+	it('cite widgets only in live preview — not pure source mode', () => {
+		expect(should_render_cite_widgets(true)).toBe(true)
+		expect(should_render_cite_widgets(false)).toBe(false)
 	})
 })

@@ -8,6 +8,7 @@ import rehypeKatex from 'rehype-katex'
 import { WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
+import { normalize_card_font_size } from 'src/cache-ops'
 import { citation_popup, create_citation_popup_id } from 'src/citation-popup'
 import BibtexScholar from 'src/main'
 
@@ -186,86 +187,166 @@ const LinkedFileButton = ({ label, fname, folder, app, plugin }: { label: string
     )
 }
 
+/** Prefer common bibliographic fields first in the card body. */
+const FIELD_ORDER = [
+    'title', 'author', 'year', 'journal', 'booktitle', 'volume', 'number',
+    'pages', 'publisher', 'doi', 'url', 'abstract', 'keywords',
+]
+
+function ordered_field_entries(fields: BibtexElement['fields']): [string, string][] {
+    const keys = Object.keys(fields).filter((k) => k !== 'id' && k !== 'type')
+    keys.sort((a, b) => {
+        const ia = FIELD_ORDER.indexOf(a.toLowerCase())
+        const ib = FIELD_ORDER.indexOf(b.toLowerCase())
+        if (ia === -1 && ib === -1) return a.localeCompare(b)
+        if (ia === -1) return 1
+        if (ib === -1) return -1
+        return ia - ib
+    })
+    return keys.map((k) => [k, String(fields[k])])
+}
+
+const CardBtn = ({
+    label,
+    title,
+    onClick,
+    danger,
+}: {
+    label: string
+    title: string
+    onClick: () => void
+    danger?: boolean
+}) => (
+    <button
+        type="button"
+        className={danger ? 'bibtex-card-btn is-danger' : 'bibtex-card-btn'}
+        title={title}
+        aria-label={title}
+        onClick={onClick}
+    >
+        {label}
+    </button>
+)
+
 /**
- * Body of the citation card (actions + fields). Shared by the floating shell.
+ * Body of the citation card: header, grouped actions, denser field list.
  */
-const CitationCardBody = ({ bibtex, plugin, app }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App }) => {
+const CitationCardBody = ({
+    bibtex,
+    plugin,
+    app,
+}: {
+    bibtex: BibtexElement
+    plugin: BibtexScholar
+    app: App
+}) => {
     const paper_id = bibtex.fields.id
+    const title = bibtex.fields.title || paper_id
+    const year = bibtex.fields.year
+
+    const open_mentions = async () => {
+        const query = mentions_search_query(paper_id)
+        let search_leaf = app.workspace.getLeavesOfType('search')[0]
+        if (!search_leaf) {
+            const leaf = app.workspace.getLeftLeaf(false)
+            if (leaf) {
+                leaf.setViewState({ type: 'search', active: true })
+                search_leaf = app.workspace.getLeavesOfType('search')[0]
+            }
+        }
+        if (search_leaf) {
+            function is_search_view(view: any): view is { setQuery: (query: string) => void } {
+                return typeof view?.setQuery === 'function'
+            }
+            await app.workspace.revealLeaf(search_leaf)
+            if (is_search_view(search_leaf.view)) {
+                search_leaf.view.setQuery(query)
+            }
+            app.workspace.setActiveLeaf(search_leaf)
+        }
+    }
 
     return (
         <>
-            <div className='bibtex-hover-button-bar'>
-                <button type="button" onClick={() => copy_to_clipboard(paper_id)}>
-                    <code>id</code>
-                </button>
-                <button type="button" onClick={() => copy_to_clipboard(make_bibtex(bibtex.fields, false))}>
-                    <code>bibtex</code>
-                </button>
-                <button type="button" onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)}>
-                    <code>{'`{}`'}</code>
-                </button>
-                <button type="button" onClick={() => copy_to_clipboard(`\`[${paper_id}]\``)}>
-                    <code>{'`[]`'}</code>
-                </button>
-                <button type="button" onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)}>
-                    <code>{'\\autocite{}'}</code>
-                </button>
-                <code>{'+'}</code>
-
-                <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} plugin={plugin} />
-                <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} plugin={plugin} />
-                <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app} plugin={plugin} />
-
+            <header className='bibtex-card-header'>
+                <div className='bibtex-card-header-text'>
+                    <div className='bibtex-card-title' title={title}>{title}</div>
+                    <div className='bibtex-card-meta'>
+                        <code className='bibtex-card-id'>{paper_id}</code>
+                        {year ? <span className='bibtex-card-year'>{year}</span> : null}
+                        {bibtex.fields.type ? (
+                            <span className='bibtex-card-type'>{bibtex.fields.type}</span>
+                        ) : null}
+                    </div>
+                </div>
                 <button
                     type="button"
-                    onClick={async () => {
-                        const query = mentions_search_query(paper_id)
-
-                        let search_leaf = app.workspace.getLeavesOfType('search')[0]
-
-                        if (!search_leaf) {
-                            const leaf = app.workspace.getLeftLeaf(false)
-                            if (leaf) {
-                                leaf.setViewState({ type: 'search', active: true })
-                                search_leaf = app.workspace.getLeavesOfType('search')[0]
-                            }
-                        }
-
-                        if (search_leaf) {
-                            function is_search_view(view: any): view is { setQuery: (query: string) => void } {
-                                return typeof view?.setQuery === 'function';
-                            }
-
-                            await app.workspace.revealLeaf(search_leaf);
-                            if (is_search_view(search_leaf.view)) {
-                                search_leaf.view.setQuery(query)
-                            }
-                            app.workspace.setActiveLeaf(search_leaf)
-                        }
-                    }}
+                    className='bibtex-card-close'
+                    title='Dismiss (Esc)'
+                    aria-label='Dismiss citation card'
+                    onClick={() => citation_popup.dismiss()}
                 >
-                    mentions
+                    ×
                 </button>
-                <code>{'+'}</code>
-                <button type="button" onClick={() => {
-                    if (window.confirm(`Uncache ${paper_id}?`)) {
-                        plugin.uncache_bibtex_with_id(paper_id)
-                    }
-                }}>
-                    uncache
-                </button>
+            </header>
+
+            <div className='bibtex-hover-button-bar' role='toolbar' aria-label='Citation actions'>
+                <div className='bibtex-card-btn-group' role='group' aria-label='Copy'>
+                    <CardBtn label='id' title='Copy citation key' onClick={() => copy_to_clipboard(paper_id)} />
+                    <CardBtn label='bibtex' title='Copy BibTeX (no abstract)' onClick={() => copy_to_clipboard(make_bibtex(bibtex.fields, false))} />
+                    <CardBtn label='{ }' title='Copy compact cite `{id}`' onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)} />
+                    <CardBtn label='[ ]' title='Copy expanded cite `[id]`' onClick={() => copy_to_clipboard(`\`[${paper_id}]\``)} />
+                    <CardBtn label='cite' title='Copy LaTeX \\autocite{id}' onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)} />
+                </div>
+                <div className='bibtex-card-btn-group' role='group' aria-label='Open'>
+                    <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} plugin={plugin} />
+                    <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} plugin={plugin} />
+                    <CardBtn
+                        label='source'
+                        title={`Jump to BibTeX source (${bibtex.source_path})`}
+                        onClick={() => {
+                            void plugin.open_line(String(bibtex.source_path), 0)
+                        }}
+                    />
+                    <CardBtn label='mentions' title='Search mentions of this paper' onClick={() => { void open_mentions() }} />
+                </div>
+                <div className='bibtex-card-btn-group' role='group' aria-label='Cache'>
+                    <CardBtn
+                        label='uncache'
+                        title='Remove from plugin cache'
+                        danger
+                        onClick={() => {
+                            if (window.confirm(`Uncache ${paper_id}?`)) {
+                                void plugin.uncache_bibtex_with_id(paper_id)
+                                citation_popup.dismiss()
+                            }
+                        }}
+                    />
+                </div>
             </div>
-            {Object.entries(bibtex.fields).map(([key, value]) => {
-                if (key == 'id') {
-                    return
-                }
-                if (key.includes('url')) {
-                    value = `[${value}](${value})`
-                }
-                return (<div key={key} className='bibtex-markdown-rendered'>
-                    <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{`**\`${key}\`** ${value}`}</Markdown>
-                </div>)
-            })}
+
+            <div className='bibtex-card-fields'>
+                {ordered_field_entries(bibtex.fields).map(([key, value]) => {
+                    let display = value
+                    if (key.toLowerCase().includes('url') || key.toLowerCase() === 'doi') {
+                        const href = key.toLowerCase() === 'doi' && !value.startsWith('http')
+                            ? `https://doi.org/${value}`
+                            : value
+                        display = `[${value}](${href})`
+                    }
+                    const dense = key.toLowerCase() === 'abstract' ? ' is-abstract' : ''
+                    return (
+                        <div key={key} className={`bibtex-card-field${dense}`}>
+                            <div className='bibtex-card-field-key'>{key}</div>
+                            <div className='bibtex-markdown-rendered bibtex-card-field-val'>
+                                <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                    {display}
+                                </Markdown>
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
         </>
     )
 }
@@ -379,17 +460,32 @@ const HoverPopup = ({ bibtex, plugin, app, expand = false }: { bibtex: BibtexEle
         citation_popup.toggle_trigger(instance_id)
     }
 
+    const card_font_px = normalize_card_font_size(plugin.cache.card_font_size)
+    const card_wide = Boolean(plugin.cache.card_wide)
+
     const card = is_open ? createPortal(
         <div
             ref={card_ref}
             id={card_dom_id}
-            className='bibtex-hover-card is-floating'
+            className={card_wide ? 'bibtex-hover-card is-floating is-wide' : 'bibtex-hover-card is-floating'}
             role='dialog'
             aria-label={`Citation ${paper_id}`}
             aria-modal={false}
-            // Not autoFocused — keep editor focus for typing (Phase 4).
+            tabIndex={-1}
+            style={{
+                // Drives em-based type inside the card (see styles.css).
+                ['--bibtex-card-font-size' as string]: `${card_font_px}px`,
+                fontSize: `${card_font_px}px`,
+            }}
+            // Not autoFocused — keep editor focus for typing; user can Tab into controls.
             onMouseEnter={() => citation_popup.enter_card(instance_id)}
             onMouseLeave={() => citation_popup.leave_card(instance_id)}
+            onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    citation_popup.dismiss()
+                }
+            }}
         >
             <CitationCardBody bibtex={bibtex} plugin={plugin} app={app} />
         </div>,

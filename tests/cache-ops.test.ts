@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
 	audit_bibtex_dict,
+	CARD_FONT_SIZE_MAX,
+	CARD_FONT_SIZE_MIN,
 	entry_count,
+	normalize_card_font_size,
 	normalize_plugin_cache,
 	rebuild_dict_from_hits,
 	remove_entries_for_path,
@@ -40,6 +43,21 @@ describe('cache-ops / data integrity', () => {
 		})
 		expect(ok.note_folder).toBe('N')
 		expect(ok.bibtex_dict.A.fields.id).toBe('A')
+		expect(ok.card_font_size).toBe(13)
+		expect(ok.card_wide).toBe(false)
+	})
+
+	it('normalize_card_font_size clamps to allowed range', () => {
+		expect(normalize_card_font_size(undefined)).toBe(13)
+		expect(normalize_card_font_size('15')).toBe(15)
+		expect(normalize_card_font_size(3)).toBe(CARD_FONT_SIZE_MIN)
+		expect(normalize_card_font_size(99)).toBe(CARD_FONT_SIZE_MAX)
+		expect(normalize_plugin_cache({ card_font_size: 100 }).card_font_size).toBe(CARD_FONT_SIZE_MAX)
+	})
+
+	it('normalize_plugin_cache preserves card_wide toggle', () => {
+		expect(normalize_plugin_cache({ card_wide: true }).card_wide).toBe(true)
+		expect(normalize_plugin_cache({ card_wide: 'yes' } as unknown).card_wide).toBe(false)
 	})
 
 	it('rebuild_dict_from_hits: first path+line wins for id and doi', () => {

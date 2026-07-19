@@ -15,8 +15,13 @@ export class Setting {
 	addButton() { return this }
 	addDropdown() { return this }
 	addTextArea() { return this }
+	addSlider() { return this }
+	addSearch() { return this }
 }
 export async function requestUrl(_opts?: unknown): Promise<{ text: string }> {
 	return { text: '' }
 }
 export type App = unknown
+
+/** CodeMirror StateField stand-in — real value comes from EditorView.state.field. */
+export const editorLivePreviewField = Symbol('editorLivePreviewField')

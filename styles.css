@@ -7,16 +7,20 @@ If your plugin does not need CSS, delete this file.
 
 */
 
-/* bibtex entry & hover (chip + floating card share button chrome) */
-.bibtex-hover button,
-.bibtex-hover-card button {
+/* ── Cite chip (in text flow) ───────────────────────────────────────── */
+.bibtex-hover-chip {
+    display: inline;
+}
+
+.bibtex-hover button {
     --o-border: 1px solid var(--background-modifier-border);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     font-size: var(--font-ui-small);
-    padding: var(--size-4-1) var(--size-4-3);
-    height: var(--input-height);
+    padding: 0 var(--size-4-2);
+    min-height: calc(var(--input-height) * 0.85);
+    height: auto;
     font-weight: var(--input-font-weight);
     cursor: var(--cursor);
     font-family: inherit;
@@ -26,54 +30,285 @@ If your plugin does not need CSS, delete this file.
     background-color: var(--background-primary);
     color: var(--color-accent);
     border: var(--o-border);
-    border-radius: var(--ulu-radius) !important;
-    transition: .3s;
+    border-radius: var(--radius-s, 4px);
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
     box-shadow: none;
+    vertical-align: baseline;
+}
+
+.bibtex-hover button:hover,
+.bibtex-hover button:focus-visible {
+    background-color: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
 }
 
 .bibtex-hover-duplicate-id button {
-    background-color: crimson !important;
+    background-color: var(--background-modifier-error, crimson) !important;
+    color: var(--text-on-accent, #fff) !important;
+    border-color: transparent !important;
 }
 
-.bibtex-hover-button-bar button {
-    font-size: small;
-}
-
-.bibtex-hover-chip {
-    display: inline;
-}
-
-/* Phase 2: portaled card — out of text flow */
+/* ── Floating citation card ─────────────────────────────────────────── */
+/* --bibtex-card-font-size is set from plugin settings (default 13px). */
 .bibtex-hover-card.is-floating {
+    --bibtex-card-font-size: 13px;
     position: fixed;
     z-index: var(--layer-popover, 30);
     top: 0;
     left: 0;
-    /* Hide until JS places it (avoids 0,0 flash) */
     visibility: hidden;
     box-sizing: border-box;
-    max-width: min(480px, 90vw);
-    max-height: min(60vh, 480px);
-    overflow: auto;
-    padding: var(--size-4-2);
+    display: flex;
+    flex-direction: column;
+    gap: 0.55em;
+    width: min(32em, calc(100vw - 16px));
+    max-height: min(70vh, 40em);
+    padding: 0.85em;
+    font-size: var(--bibtex-card-font-size);
+    line-height: 1.35;
     background-color: var(--background-primary);
     color: var(--text-normal);
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
-    box-shadow: var(--shadow-s, 0 2px 12px rgba(0, 0, 0, 0.2));
+    border-radius: var(--radius-m, 8px);
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.04),
+        0 8px 28px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
 }
 
 .bibtex-hover-card.is-floating.is-positioned {
     visibility: visible;
+    animation: bibtex-card-in 0.12s ease-out;
 }
 
-.bibtex-markdown-rendered p {
-    font-size: small;
+/* Settings: “Wider citation cards” — more horizontal room, less wrapping/scroll */
+.bibtex-hover-card.is-floating.is-wide {
+    width: min(44em, calc(100vw - 16px));
+    max-height: min(75vh, 44em);
+}
+
+.bibtex-hover-card.is-floating.is-wide .bibtex-card-field.is-abstract .bibtex-card-field-val {
+    max-height: 12em;
+}
+
+@keyframes bibtex-card-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Header */
+.bibtex-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--size-4-2, 8px);
+    flex: 0 0 auto;
+}
+
+.bibtex-card-header-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.bibtex-card-title {
+    font-size: 1.08em;
+    font-weight: var(--font-semibold, 600);
+    line-height: 1.3;
+    color: var(--text-normal);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.bibtex-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35em 0.5em;
+    margin-top: 0.25em;
+    font-size: 0.88em;
+    color: var(--text-muted);
+}
+
+.bibtex-card-id {
+    font-size: inherit;
+    color: var(--text-accent);
+    background: var(--background-secondary);
+    padding: 0.05em 0.35em;
+    border-radius: var(--radius-s, 3px);
+}
+
+.bibtex-card-year,
+.bibtex-card-type {
+    opacity: 0.9;
+}
+
+.bibtex-card-type {
+    text-transform: lowercase;
+    font-variant: small-caps;
+}
+
+.bibtex-card-close {
+    flex: 0 0 auto;
+    width: max(var(--input-height, 2rem), 2em);
+    height: max(var(--input-height, 2rem), 2em);
+    min-height: max(var(--input-height, 2rem), 2em) !important;
+    padding: 0 !important;
     margin: 0;
+    border: 1px solid transparent !important;
+    border-radius: var(--radius-s, 6px) !important;
+    background: transparent !important;
+    color: var(--text-muted) !important;
+    font-size: 1.35em;
+    line-height: 1;
+    cursor: var(--cursor);
+}
+
+.bibtex-card-close:hover,
+.bibtex-card-close:focus-visible {
+    background: var(--background-modifier-hover) !important;
+    color: var(--text-normal) !important;
+}
+
+/* Action toolbar — chunky controls (first card-polish feel) */
+.bibtex-hover-button-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45em 0.55em;
+    align-items: center;
+    flex: 0 0 auto;
+    padding-bottom: 0.65em;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.bibtex-card-btn-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.35em;
+    align-items: center;
+}
+
+.bibtex-card-btn-group + .bibtex-card-btn-group {
+    padding-left: 0.55em;
+    margin-left: 0.15em;
+    border-left: 1px solid var(--background-modifier-border);
+}
+
+.bibtex-hover-card .bibtex-card-btn,
+.bibtex-hover-card a button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Prefer Obsidian control height; fall back to a solid em floor when scaled. */
+    min-height: max(var(--input-height, 2rem), 2.15em);
+    height: auto;
+    padding: 0.35em 0.85em;
+    font-size: 0.95em;
+    font-weight: var(--input-font-weight, 500);
+    font-family: inherit;
+    white-space: nowrap;
+    cursor: var(--cursor);
+    user-select: none;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 6px);
+    background-color: var(--background-primary);
+    color: var(--color-accent, var(--text-accent));
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+    transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.bibtex-hover-card .bibtex-card-btn:hover,
+.bibtex-hover-card .bibtex-card-btn:focus-visible,
+.bibtex-hover-card a button:hover,
+.bibtex-hover-card a button:focus-visible {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    outline: none;
+}
+
+.bibtex-hover-card .bibtex-card-btn:active,
+.bibtex-hover-card a button:active {
+    box-shadow: none;
+    transform: translateY(0.5px);
+}
+
+.bibtex-hover-card .bibtex-card-btn.is-danger {
+    color: var(--text-error, #e04646);
+    background-color: var(--background-primary);
+}
+
+.bibtex-hover-card .bibtex-card-btn.is-danger:hover,
+.bibtex-hover-card .bibtex-card-btn.is-danger:focus-visible {
+    /* Solid error fill + light label so text stays readable on red */
+    background-color: var(--background-modifier-error, var(--text-error, #e04646));
+    border-color: var(--background-modifier-error, var(--text-error, #e04646));
+    color: var(--text-on-accent, #fff);
 }
 
 .bibtex-file-not-exist button {
-    color: gray !important;
+    color: var(--text-faint) !important;
+    border-style: dashed !important;
+    box-shadow: none !important;
+}
+
+/* Fields */
+.bibtex-card-fields {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45em;
+    margin: 0 -0.15em;
+    padding: 0.1em 0.15em;
+    overscroll-behavior: contain;
+}
+
+.bibtex-card-field {
+    display: grid;
+    grid-template-columns: 5.5em minmax(0, 1fr);
+    gap: 0.35em 0.65em;
+    align-items: start;
+    font-size: 0.92em;
+    line-height: 1.4;
+}
+
+.bibtex-card-field.is-abstract {
+    grid-template-columns: 1fr;
+}
+
+.bibtex-card-field-key {
+    color: var(--text-faint);
+    font-size: 0.78em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding-top: 0.15em;
+    word-break: break-all;
+}
+
+.bibtex-card-field-val {
+    min-width: 0;
+    color: var(--text-normal);
+}
+
+.bibtex-card-field.is-abstract .bibtex-card-field-val {
+    max-height: 9em;
+    overflow: auto;
+    padding: 0.4em 0.5em;
+    background: var(--background-secondary);
+    border-radius: var(--radius-s, 4px);
+}
+
+.bibtex-markdown-rendered p {
+    font-size: inherit;
+    margin: 0;
+    line-height: inherit;
+}
+
+.bibtex-markdown-rendered a {
+    color: var(--link-color, var(--text-accent));
 }
 
 /* bibtex prompt */

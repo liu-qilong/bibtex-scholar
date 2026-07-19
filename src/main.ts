@@ -2,8 +2,11 @@ import { App, Notice, Plugin, Setting, PluginSettingTab, TFile, normalizePath, t
 import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashHit, type CiteHit } from 'src/bibtex'
 import {
 	audit_bibtex_dict,
+	CARD_FONT_SIZE_MAX,
+	CARD_FONT_SIZE_MIN,
 	delete_entry,
 	entry_count,
+	normalize_card_font_size,
 	normalize_plugin_cache,
 	rebuild_dict_from_hits,
 	remove_entries_for_path,
@@ -61,9 +64,9 @@ export default class BibtexScholar extends Plugin {
 		this.registerMarkdownCodeBlockProcessor('bibtex', async (source, el, ctx) => await this.bibtex_codeblock_processor(source, el, ctx))
 
 		// inline reference of paper
-		// reading view
+		// reading view (preview) — chips via post-processor
 		this.registerMarkdownPostProcessor((el, ctx) => this.inline_ref_processor(el, ctx))
-		// editing view (source + live preview modes)
+		// live preview only — pure source mode shows raw `{id}` / `[id]` text (no chips)
 		const hover_widget_editor_plugin = createHoverWidgetPlugin(this, this.app)
 		this.registerEditorExtension(hover_widget_editor_plugin)
 
@@ -782,5 +785,39 @@ class BibtexScholarSetting extends PluginSettingTab {
 					this.plugin.cache.fetch_mode = value
 					await this.plugin.save_cache()
 				}))
+
+		const font_size = normalize_card_font_size(this.plugin.cache.card_font_size)
+		new Setting(containerEl)
+			.setName('Citation card font size')
+			.setDesc(
+				`Base font size for the floating citation card (title, actions, and fields). ` +
+				`Range ${CARD_FONT_SIZE_MIN}–${CARD_FONT_SIZE_MAX}px. Current: ${font_size}px.`,
+			)
+			.addSlider((slider) => {
+				slider
+					.setLimits(CARD_FONT_SIZE_MIN, CARD_FONT_SIZE_MAX, 1)
+					.setValue(font_size)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.cache.card_font_size = normalize_card_font_size(value)
+						await this.plugin.save_cache()
+						// Refresh description with the live value.
+						this.display()
+					})
+			})
+
+		new Setting(containerEl)
+			.setName('Wider citation cards')
+			.setDesc(
+				'Use a slightly wider floating card so titles and abstracts wrap less and need less scrolling.',
+			)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(Boolean(this.plugin.cache.card_wide))
+					.onChange(async (value) => {
+						this.plugin.cache.card_wide = value
+						await this.plugin.save_cache()
+					})
+			})
 	}
 }

@@ -19,6 +19,10 @@ export type PluginCacheShape = {
 	pdf_folder: string
 	template_path: string
 	fetch_mode: string
+	/** Base font size (px) for the floating citation card UI. */
+	card_font_size: number
+	/** When true, floating citation cards use a wider max width. */
+	card_wide: boolean
 }
 
 export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
@@ -27,6 +31,21 @@ export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
 	pdf_folder: 'pdf',
 	template_path: '',
 	fetch_mode: 'doi',
+	card_font_size: 13,
+	card_wide: false,
+}
+
+/** Allowed range for citation card font size (px). */
+export const CARD_FONT_SIZE_MIN = 10
+export const CARD_FONT_SIZE_MAX = 20
+
+/** Clamp and coerce a raw setting value to a valid card font size. */
+export function normalize_card_font_size(raw: unknown): number {
+	const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN
+	if (!Number.isFinite(n)) {
+		return DEFAULT_PLUGIN_CACHE.card_font_size
+	}
+	return Math.min(CARD_FONT_SIZE_MAX, Math.max(CARD_FONT_SIZE_MIN, Math.round(n)))
 }
 
 /**
@@ -40,6 +59,8 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		pdf_folder: DEFAULT_PLUGIN_CACHE.pdf_folder,
 		template_path: DEFAULT_PLUGIN_CACHE.template_path,
 		fetch_mode: DEFAULT_PLUGIN_CACHE.fetch_mode,
+		card_font_size: DEFAULT_PLUGIN_CACHE.card_font_size,
+		card_wide: DEFAULT_PLUGIN_CACHE.card_wide,
 	}
 
 	if (!raw || typeof raw !== 'object') {
@@ -59,6 +80,10 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		pdf_folder: typeof o.pdf_folder === 'string' ? o.pdf_folder : base.pdf_folder,
 		template_path: typeof o.template_path === 'string' ? o.template_path : base.template_path,
 		fetch_mode: typeof o.fetch_mode === 'string' ? o.fetch_mode : base.fetch_mode,
+		card_font_size: normalize_card_font_size(
+			o.card_font_size !== undefined ? o.card_font_size : base.card_font_size,
+		),
+		card_wide: typeof o.card_wide === 'boolean' ? o.card_wide : base.card_wide,
 	}
 }
 
