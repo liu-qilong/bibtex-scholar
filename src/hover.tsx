@@ -6,19 +6,19 @@ import { WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
 import { normalize_card_font_size } from 'src/cache-ops'
-import {
-    compute_card_placement,
-    compute_card_position,
-    header_edge_for_placement,
-} from 'src/citation-card-layout'
-import { citation_popup, create_citation_popup_id } from 'src/citation-popup'
+import { compute_card_placement, compute_card_position } from 'src/citation-card-layout'
+import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
 import type BibtexScholar from 'src/main'
 
 /**
  * Place a fixed-position card near an anchor chip (prefer below; flip above
- * when there is more room; clamp to the viewport). Also flips which end of
- * the card holds the header + action toolbar, so those controls land closest
- * to the cursor that spawned the card regardless of placement.
+ * when there is more room; clamp to the viewport).
+ *
+ * `is-flipped` (see styles.css) only ever moves the scrollable field list
+ * (title/abstract/etc, "the contents") to whichever end is farthest from the
+ * chip — it never reorders header vs. action toolbar. Title → info tokens →
+ * action buttons stays the reading order in both placements; only the
+ * distance between that cluster and the chip changes.
  */
 function position_floating_card(anchor: HTMLElement, card: HTMLElement) {
     const ar = anchor.getBoundingClientRect()
@@ -30,7 +30,7 @@ function position_floating_card(anchor: HTMLElement, card: HTMLElement) {
 
     card.style.top = `${top}px`
     card.style.left = `${left}px`
-    card.classList.toggle('is-flipped', header_edge_for_placement(placement) === 'end')
+    card.classList.toggle('is-flipped', placement === 'above')
 }
 
 /** Workspace chrome root for portaled citation cards (Phase 0 / 2). */
@@ -393,8 +393,10 @@ const CitationCardBody = ({
  * click-outside close; chip click/keyboard toggle; a11y attrs without focus steal.
  *
  * @param expand - If true (`[id]`), open on mount with no debounce.
+ * @param dense - If true (paper panel's chip list), and the "Double hover
+ * debounce in paper panel" setting is on, wait 2x the open debounce.
  */
-const HoverPopup = ({ bibtex, plugin, app, expand = false }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean }) => {
+const HoverPopup = ({ bibtex, plugin, app, expand = false, dense = false }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean, dense?: boolean }) => {
     const paper_id = bibtex.fields.id
 
     const instance_id_ref = useRef<string | null>(null)
@@ -403,6 +405,9 @@ const HoverPopup = ({ bibtex, plugin, app, expand = false }: { bibtex: BibtexEle
     }
     const instance_id = instance_id_ref.current
     const card_dom_id = `bibtex-cite-card-${instance_id}`
+    const open_debounce_ms = dense && plugin.cache.panel_double_debounce_enabled
+        ? OPEN_DEBOUNCE_MS * 2
+        : OPEN_DEBOUNCE_MS
 
     const chip_ref = useRef<HTMLSpanElement | null>(null)
     const card_ref = useRef<HTMLDivElement | null>(null)
@@ -532,7 +537,7 @@ const HoverPopup = ({ bibtex, plugin, app, expand = false }: { bibtex: BibtexEle
             <span
                 ref={chip_ref}
                 className='bibtex-hover-chip'
-                onMouseEnter={() => citation_popup.enter_trigger(instance_id)}
+                onMouseEnter={() => citation_popup.enter_trigger(instance_id, open_debounce_ms)}
                 onMouseLeave={() => citation_popup.leave_trigger(instance_id)}
             >
                 <button
@@ -564,6 +569,7 @@ function mount_hover_tree(
     plugin: BibtexScholar,
     app: App,
     expand: boolean,
+    dense: boolean = false,
 ): Root {
     el.setAttribute(HOVER_HOST_ATTR, '')
     let root = hover_roots.get(el)
@@ -573,7 +579,7 @@ function mount_hover_tree(
     }
     root.render(
         <StrictMode>
-            <HoverPopup bibtex={bibtex} plugin={plugin} app={app} expand={expand} />
+            <HoverPopup bibtex={bibtex} plugin={plugin} app={app} expand={expand} dense={dense} />
         </StrictMode>
     )
     return root
@@ -612,6 +618,8 @@ export function unmount_hover_hosts(root: HTMLElement) {
  * Mount a citation chip + floating card into `el`.
  * Reuses an existing React root on the same element when re-rendered.
  * Prefer {@link HoverRenderChild} in markdown post-processors so unload unmounts cleanly.
+ * @param dense - Pass true for dense chip lists (paper panel) to opt into the
+ * "Double hover debounce in paper panel" setting.
  */
 export function render_hover(
     el: HTMLElement,
@@ -619,8 +627,9 @@ export function render_hover(
     plugin: BibtexScholar,
     app: App,
     expand: boolean = false,
+    dense: boolean = false,
 ) {
-    mount_hover_tree(el, bibtex, plugin, app, expand)
+    mount_hover_tree(el, bibtex, plugin, app, expand, dense)
 }
 
 /**
@@ -633,12 +642,13 @@ export class HoverRenderChild extends MarkdownRenderChild {
         private readonly plugin: BibtexScholar,
         private readonly app: App,
         private readonly expand: boolean = false,
+        private readonly dense: boolean = false,
     ) {
         super(el)
     }
 
     onload() {
-        render_hover(this.containerEl, this.bibtex, this.plugin, this.app, this.expand)
+        render_hover(this.containerEl, this.bibtex, this.plugin, this.app, this.expand, this.dense)
     }
 
     onunload() {

@@ -25,6 +25,8 @@ export type PluginCacheShape = {
 	card_wide: boolean
 	/** When true, the paper panel offers a toggle listing entries with no matching PDF. */
 	missing_pdf_enabled: boolean
+	/** When true, citation cards in the paper panel's dense chip list wait 2x the open debounce before a hover opens them. */
+	panel_double_debounce_enabled: boolean
 }
 
 export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
@@ -36,6 +38,7 @@ export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
 	card_font_size: 13,
 	card_wide: false,
 	missing_pdf_enabled: false,
+	panel_double_debounce_enabled: false,
 }
 
 /** Allowed range for citation card font size (px). */
@@ -65,6 +68,7 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		card_font_size: DEFAULT_PLUGIN_CACHE.card_font_size,
 		card_wide: DEFAULT_PLUGIN_CACHE.card_wide,
 		missing_pdf_enabled: DEFAULT_PLUGIN_CACHE.missing_pdf_enabled,
+		panel_double_debounce_enabled: DEFAULT_PLUGIN_CACHE.panel_double_debounce_enabled,
 	}
 
 	if (!raw || typeof raw !== 'object') {
@@ -89,6 +93,9 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		),
 		card_wide: typeof o.card_wide === 'boolean' ? o.card_wide : base.card_wide,
 		missing_pdf_enabled: typeof o.missing_pdf_enabled === 'boolean' ? o.missing_pdf_enabled : base.missing_pdf_enabled,
+		panel_double_debounce_enabled: typeof o.panel_double_debounce_enabled === 'boolean'
+			? o.panel_double_debounce_enabled
+			: base.panel_double_debounce_enabled,
 	}
 }
 

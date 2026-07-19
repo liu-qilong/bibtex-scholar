@@ -1,5 +1,5 @@
 import { App, Notice, Plugin, Setting, PluginSettingTab, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashHit, type CiteHit } from 'src/bibtex'
+import { parse_bibtex, make_bibtex, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
 import {
 	audit_bibtex_dict,
 	CARD_FONT_SIZE_MAX,
@@ -16,7 +16,7 @@ import {
 	type ScanHit,
 } from 'src/cache-ops'
 import { text_may_contain_bibtex_block } from 'src/cite-span'
-import { citation_popup } from 'src/citation-popup'
+import { citation_popup, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
 import { build_doi_index, type DoiIndex } from 'src/doi-index'
 import {
 	audit_idle_after_unload,
@@ -38,6 +38,12 @@ export default class BibtexScholar extends Plugin {
 	cache: BibtexScholarCache
 	/** O(1) DOI ownership map — rebuilt on load/rescan, maintained on mutations. */
 	doi_index: DoiIndex = new Map()
+	/**
+	 * citekey -> clash reasons, from the last "Recache and collect collisions" scan.
+	 * Unlike doi_index this is not kept live on every mutation — it's a snapshot,
+	 * only rebuilt by rescan_vault(). Empty (no clash shown) until the first rescan.
+	 */
+	clash_reasons: Map<string, ClashReason[]> = new Map()
 	renaming = false
 	rename_timers = new Map<string, number>()
 	/** Set true to abort an in-flight vault cite scan (best-effort). */
@@ -328,7 +334,19 @@ export default class BibtexScholar extends Plugin {
 				source_path: ctx.sourcePath,
 			}
 			ctx.addChild(new HoverRenderChild(paper_bar, entry, this, this.app, false))
-			el.createEl('code').setText('source')
+
+			// "source" tag: after a vault recache, shows clash reasons in red when this
+			// citekey is involved. data-citekey lets rescan patch open notes without a
+			// full preview re-render (Live Preview would not update otherwise).
+			const tag_state = source_tag_state(this.clash_reasons.get(id))
+			el.createEl('code', {
+				cls: tag_state.clashing ? 'bibtex-source-tag is-clashing' : 'bibtex-source-tag',
+				text: tag_state.text,
+				attr: {
+					'data-citekey': id,
+					...(tag_state.title ? { title: tag_state.title } : {}),
+				},
+			})
 		}
 
 		// One coalesced write per codeblock paint, not per entry.
@@ -467,7 +485,10 @@ export default class BibtexScholar extends Plugin {
 	async uncache_bibtex_all() {
 		this.cache.bibtex_dict = {}
 		this.doi_index = new Map()
+		this.clash_reasons = new Map()
 		await this.save_cache()
+		// Snapshot cleared — strip clash chrome from any still-open ```bibtex tags.
+		this.refresh_source_clash_tags()
 		new Notice('Uncached all BibTeX entries')
 	}
 
@@ -518,7 +539,35 @@ export default class BibtexScholar extends Plugin {
 		this.cache.bibtex_dict = rebuild_dict_from_hits(hits)
 		this.doi_index = build_doi_index(this.cache.bibtex_dict)
 		await this.save_cache()
-		return find_clashes(hits)
+		const clashes = find_clashes(hits)
+		this.clash_reasons = build_clash_reasons_by_id(clashes)
+		// clash_reasons is plugin state, not note text. Re-running the full
+		// codeblock processor (previewMode.rerender) only hits Reading mode, and
+		// re-fires duplicate Notices on every open loser. Patch painted tags in
+		// place instead — works for Reading and Live Preview.
+		this.refresh_source_clash_tags()
+		return clashes
+	}
+
+	/**
+	 * Update every painted ```bibtex source tag to match {@link clash_reasons}.
+	 * Tags carry data-citekey from paint; we never re-parse or re-upsert.
+	 */
+	private refresh_source_clash_tags() {
+		const nodes = this.app.workspace.containerEl.querySelectorAll('code.bibtex-source-tag[data-citekey]')
+		for (const node of Array.from(nodes)) {
+			if (!(node instanceof HTMLElement)) continue
+			const id = node.getAttribute('data-citekey')
+			if (!id) continue
+			const state = source_tag_state(this.clash_reasons.get(id))
+			node.setText(state.text)
+			node.toggleClass('is-clashing', state.clashing)
+			if (state.title) {
+				node.setAttr('title', state.title)
+			} else {
+				node.removeAttribute('title')
+			}
+		}
 	}
 
 	async open_line(path: string, line: number) {
@@ -832,6 +881,23 @@ class BibtexScholarSetting extends PluginSettingTab {
 					.setValue(Boolean(this.plugin.cache.missing_pdf_enabled))
 					.onChange(async (value) => {
 						this.plugin.cache.missing_pdf_enabled = value
+						await this.plugin.save_cache()
+					})
+			})
+
+		new Setting(containerEl)
+			.setName('Double hover debounce in paper panel')
+			.setDesc(
+				'The paper panel can show many citation chips close together. Wait twice as long ' +
+				`(${OPEN_DEBOUNCE_MS * 2}ms instead of ${OPEN_DEBOUNCE_MS}ms) before a hover opens the ` +
+				'citation card there, to reduce accidental opens while scrolling or skimming the list. ' +
+				'Only affects the paper panel — inline cites and codeblocks are unchanged.',
+			)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(Boolean(this.plugin.cache.panel_double_debounce_enabled))
+					.onChange(async (value) => {
+						this.plugin.cache.panel_double_debounce_enabled = value
 						await this.plugin.save_cache()
 					})
 			})

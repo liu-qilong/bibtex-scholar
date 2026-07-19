@@ -67,6 +67,12 @@ describe('cache-ops / data integrity', () => {
 		expect(normalize_plugin_cache({ missing_pdf_enabled: 'yes' } as unknown).missing_pdf_enabled).toBe(false)
 	})
 
+	it('normalize_plugin_cache defaults panel_double_debounce_enabled to off, preserves true', () => {
+		expect(normalize_plugin_cache(undefined).panel_double_debounce_enabled).toBe(false)
+		expect(normalize_plugin_cache({ panel_double_debounce_enabled: true }).panel_double_debounce_enabled).toBe(true)
+		expect(normalize_plugin_cache({ panel_double_debounce_enabled: 'yes' } as unknown).panel_double_debounce_enabled).toBe(false)
+	})
+
 	it('missing_pdf_ids filters by the injected predicate and sorts the result', () => {
 		const dict = rebuild_dict_from_hits([
 			hit({ id: 'Zed', path: 'z.md', line: 0 }),

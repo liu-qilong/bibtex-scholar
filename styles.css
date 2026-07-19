@@ -48,6 +48,13 @@ If your plugin does not need CSS, delete this file.
     border-color: transparent !important;
 }
 
+/* "source" tag in a ```bibtex codeblock — reads the clash reason instead, from the last recache scan.
+ * Specificity beats theme `code` color rules; data-citekey is set in the processor for post-scan patch. */
+code.bibtex-source-tag.is-clashing {
+    color: var(--text-error, crimson);
+    font-weight: var(--font-semibold, 600);
+}
+
 /* ── Floating citation card ─────────────────────────────────────────── */
 /* --bibtex-card-font-size is set from plugin settings (default 13px). */
 .bibtex-hover-card.is-floating {
@@ -92,19 +99,25 @@ If your plugin does not need CSS, delete this file.
 }
 
 /*
- * When the card opens above the chip (not enough room below), the header +
- * action toolbar move to the bottom edge — the end closest to the cursor
- * that spawned the card — while the scrollable field list stays on top.
- * See header_edge_for_placement() in src/citation-card-layout.ts.
+ * When the card opens above the chip (not enough room below), only the
+ * scrollable field list (title/abstract/etc, "the contents") moves to the
+ * far edge — header and action toolbar stay adjacent, in their normal
+ * header-then-actions order, and that whole cluster relocates as a unit to
+ * the edge closest to the cursor that spawned the card. Using `order` here
+ * (instead of reversing the whole flex container) is what keeps title →
+ * info tokens → action buttons in that reading order in both placements.
  */
-.bibtex-hover-card.is-floating.is-flipped {
-    flex-direction: column-reverse;
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-fields {
+    order: -1;
 }
 
 .bibtex-hover-card.is-floating.is-flipped .bibtex-hover-button-bar {
     border-bottom: none;
-    border-top: 1px solid var(--background-modifier-border);
     padding-bottom: 0;
+}
+
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-header {
+    border-top: 1px solid var(--background-modifier-border);
     padding-top: 0.65em;
 }
 

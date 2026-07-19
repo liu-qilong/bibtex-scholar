@@ -66,7 +66,7 @@ export class PaperPanelView extends ItemView {
                 this.clear_list()
                 this.get_papers(query).forEach((id) => {
                     const paper_bar = this.list_el.createEl('span')
-                    render_hover(paper_bar, this.bibtex_dict[id], this.plugin, this.app)
+                    render_hover(paper_bar, this.bibtex_dict[id], this.plugin, this.app, /* expand */ false, /* dense */ true)
                 })
             }))
 
@@ -150,7 +150,7 @@ export class PaperPanelView extends ItemView {
         this.clear_list()
         for (const id in this.bibtex_dict) {
             const paper_bar = this.list_el.createEl('span')
-            render_hover(paper_bar, this.bibtex_dict[id], this.plugin, this.app)
+            render_hover(paper_bar, this.bibtex_dict[id], this.plugin, this.app, /* expand */ false, /* dense */ true)
         }
     }
 

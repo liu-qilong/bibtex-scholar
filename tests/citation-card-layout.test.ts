@@ -4,7 +4,6 @@ import {
 	VIEWPORT_PAD_PX,
 	compute_card_placement,
 	compute_card_position,
-	header_edge_for_placement,
 	type Rect,
 } from 'src/citation-card-layout'
 
@@ -75,15 +74,5 @@ describe('compute_card_position', () => {
 		const card = rect({ top: 0, left: 0, width: 300, height: 200 })
 		const { left } = compute_card_position(anchor, card, VIEWPORT, 'below')
 		expect(left).toBe(VIEWPORT_PAD_PX)
-	})
-})
-
-describe('header_edge_for_placement', () => {
-	it('puts the header at the start (top) when the card is below the chip', () => {
-		expect(header_edge_for_placement('below')).toBe('start')
-	})
-
-	it('puts the header at the end (bottom) — closest to the chip — when the card is above it', () => {
-		expect(header_edge_for_placement('above')).toBe('end')
 	})
 })

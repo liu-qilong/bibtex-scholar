@@ -58,15 +58,3 @@ export function compute_card_position(
 
 	return { top: Math.round(top), left: Math.round(left) }
 }
-
-/**
- * Which end of the card should hold the header + action toolbar so it lands
- * closest to the cursor that spawned the card. The scrollable field list
- * (title/abstract/etc, "the contents") always takes the other end.
- *
- * `below` placement → chip is above the card → header at the `start` (top).
- * `above` placement → chip is below the card → header at the `end` (bottom).
- */
-export function header_edge_for_placement(placement: CardPlacement): 'start' | 'end' {
-	return placement === 'above' ? 'end' : 'start'
-}

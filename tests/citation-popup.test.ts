@@ -70,6 +70,20 @@ describe('CitationPopupController stability', () => {
 		expect(ctl.is_open('a')).toBe(false)
 	})
 
+	it('enter_trigger honors a custom open debounce (e.g. doubled for dense chip lists)', () => {
+		const { clock, advance } = fake_clock()
+		const ctl = new CitationPopupController({ clock, document: null })
+		ctl.register('a', () => {})
+
+		ctl.enter_trigger('a', OPEN_DEBOUNCE_MS * 2)
+		advance(OPEN_DEBOUNCE_MS)
+		expect(ctl.is_open('a')).toBe(false)
+		advance(OPEN_DEBOUNCE_MS - 1)
+		expect(ctl.is_open('a')).toBe(false)
+		advance(1)
+		expect(ctl.is_open('a')).toBe(true)
+	})
+
 	it('chip→card transit within grace keeps open (single interaction)', () => {
 		const { clock, advance } = fake_clock()
 		const ctl = new CitationPopupController({ clock, document: null })

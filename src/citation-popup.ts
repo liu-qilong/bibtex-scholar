@@ -89,7 +89,8 @@ export class CitationPopupController {
 		this.open_now(id)
 	}
 
-	enter_trigger(id: string) {
+	/** @param open_debounce_ms - Override the default open debounce (e.g. doubled for dense chip lists). */
+	enter_trigger(id: string, open_debounce_ms: number = OPEN_DEBOUNCE_MS) {
 		this.over_trigger.add(id)
 		this.clear_close_timer_for(id)
 
@@ -112,7 +113,7 @@ export class CitationPopupController {
 				return
 			}
 			this.open_now(id)
-		}, OPEN_DEBOUNCE_MS)
+		}, open_debounce_ms)
 	}
 
 	leave_trigger(id: string) {

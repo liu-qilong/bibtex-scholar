@@ -177,7 +177,7 @@ describe('citation popup DOM behavior', () => {
 		expect(card()).not.toBeNull()
 	})
 
-	it('flips the header to the end of the card when there is no room below', async () => {
+	it('marks the card is-flipped when there is no room below (contents move, not header/actions)', async () => {
 		const { chip_button, chip_el, card } = mount()
 
 		await act(async () => {

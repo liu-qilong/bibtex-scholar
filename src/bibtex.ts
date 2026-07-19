@@ -360,6 +360,49 @@ export function find_clashes(hits: ClashHit[]): Clash[] {
 }
 
 /**
+ * citekey -> merged, sorted reasons it's involved in a clash, from a {@link find_clashes} result.
+ * Matches purely by id (not path/line) — every occurrence sharing that citekey lights up,
+ * including whichever one currently owns the cache slot, not just the losing duplicate.
+ */
+export function build_clash_reasons_by_id(clashes: Clash[]): Map<string, ClashReason[]> {
+    const acc = new Map<string, Set<ClashReason>>()
+    for (const clash of clashes) {
+        for (const hit of clash.members) {
+            const set = acc.get(hit.id) ?? new Set<ClashReason>()
+            for (const r of clash.reasons) set.add(r)
+            acc.set(hit.id, set)
+        }
+    }
+    return new Map([...acc].map(([id, set]) => [id, Array.from(set).sort()]))
+}
+
+/** Label shown in the ```bibtex "source" tag when a citekey is in a clash group. */
+export function format_clash_reason_label(reasons: ClashReason[]): string {
+    return reasons.join(' · ')
+}
+
+/**
+ * Paint state for the ```bibtex source tag next to a codeblock chip.
+ * Pure: given the reasons from the last vault rescan (or undefined), returns
+ * text/class/title so paint and post-scan DOM refresh stay in lockstep.
+ */
+export function source_tag_state(reasons: ClashReason[] | undefined): {
+    clashing: boolean
+    text: string
+    title: string | null
+} {
+    if (reasons && reasons.length > 0) {
+        const text = format_clash_reason_label(reasons)
+        return {
+            clashing: true,
+            text,
+            title: `Clash: ${text} — from the last "Recache and collect collisions" scan`,
+        }
+    }
+    return { clashing: false, text: 'source', title: null }
+}
+
+/**
  * Check if a BibTeX entry matches a search query.
  * Format: <query>;<query>;...
  * Each query could be a string or a <key>:<value> pair. Only the paper that matches all queries will be considered a match.
