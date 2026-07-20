@@ -1,19 +1,24 @@
 import { App, Notice, Plugin, Setting, PluginSettingTab, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bibtex, make_bibtex, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
+import { parse_bibtex, make_bibtex, entry_source, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
 import {
 	audit_bibtex_dict,
 	CARD_FONT_SIZE_MAX,
 	CARD_FONT_SIZE_MIN,
+	classify_path_fingerprints,
 	delete_entry,
 	entry_count,
+	file_fingerprint,
+	hits_from_cached_entries,
+	merge_rescan_hits,
 	normalize_card_font_size,
 	normalize_plugin_cache,
 	rebuild_dict_from_hits,
 	remove_entries_for_path,
+	retarget_fingerprint,
 	retarget_source_paths,
 	upsert_entry,
+	type PathFingerprintMap,
 	type PluginCacheShape,
-	type ScanHit,
 } from 'src/cache-ops'
 import { text_may_contain_bibtex_block } from 'src/cite-span'
 import { citation_popup, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
@@ -21,6 +26,7 @@ import { build_doi_index, type DoiIndex } from 'src/doi-index'
 import {
 	audit_idle_after_unload,
 	create_perf_counters,
+	format_scale_report,
 	is_plugin_idle,
 	type IdleSnapshot,
 	type PerfCounters,
@@ -30,7 +36,18 @@ import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 import { createHoverWidgetPlugin } from 'src/editor'
 import { SaveCoalescer } from 'src/save-coalesce'
-import { scan_inline_cites_chunked } from 'src/vault-scan'
+import {
+	cite_index_clear,
+	cite_index_remove_path,
+	cite_index_retarget_path,
+	cite_index_set_path,
+	cite_index_paths_for,
+	create_cite_path_index,
+	extract_inline_cite_ids,
+	scan_bibtex_hits_chunked,
+	scan_inline_cites_chunked,
+	type CitePathIndex,
+} from 'src/vault-scan'
 
 type BibtexScholarCache = PluginCacheShape
 
@@ -48,6 +65,18 @@ export default class BibtexScholar extends Plugin {
 	rename_timers = new Map<string, number>()
 	/** Set true to abort an in-flight vault cite scan (best-effort). */
 	private rename_scan_cancel = false
+	/**
+	 * Bumped to cancel an in-flight full rescan (S4).
+	 * Each rescan captures its epoch; mismatch means abandon without writing cache.
+	 */
+	private rescan_epoch = 0
+	/**
+	 * Inline cite reverse index (SPEED S6). Not durable.
+	 * `cite_index_ready` means a full vault pass has populated it; until then
+	 * rename scans read every markdown file (and build the index in that pass).
+	 */
+	private cite_index: CitePathIndex = create_cite_path_index()
+	private cite_index_ready = false
 	private save_coalescer: SaveCoalescer | null = null
 	/** Lightweight counters for idle / scale trust checks (Phase C). */
 	perf: PerfCounters = create_perf_counters()
@@ -142,12 +171,30 @@ export default class BibtexScholar extends Plugin {
 			},
 		})
 
-		// full vault recache from ```bibtex blocks (no confirm; reports clash count)
+		// Incremental vault recache (fingerprints; reports clash count)
 		this.addCommand({
 			id: 'recache-vault-bibtex',
 			name: 'Recache all BibTeX entries from vault',
 			callback: () => {
-				void this.recache_vault_command()
+				void this.recache_vault_command(false)
+			},
+		})
+
+		// Hard reset: re-read every markdown file, rewrite fingerprints
+		this.addCommand({
+			id: 'hard-rescan-vault-bibtex',
+			name: 'Hard reset BibTeX cache from vault',
+			callback: () => {
+				void this.recache_vault_command(true)
+			},
+		})
+
+		// Scale / perf snapshot for large libraries (see SPEED.md)
+		this.addCommand({
+			id: 'bibtex-scale-report',
+			name: 'Show BibTeX library scale report',
+			callback: () => {
+				new Notice(this.scale_report(), 12e3)
 			},
 		})
 
@@ -202,7 +249,14 @@ export default class BibtexScholar extends Plugin {
 		})
 
 		// cite paper editor prompt — live dict getter (survives rescan/uncache)
-		this.registerEditorSuggest(new EditorPrompt(this.app, () => this.cache.bibtex_dict))
+		this.registerEditorSuggest(new EditorPrompt(
+			this.app,
+			() => this.cache.bibtex_dict,
+			({ returned, matched }) => {
+				this.perf.suggest_returned = returned
+				this.perf.suggest_matched = matched
+			},
+		))
 
 		// paper panel — view reads plugin.cache live; pass plugin only for dict identity at open
 		this.registerView(
@@ -226,6 +280,8 @@ export default class BibtexScholar extends Plugin {
 	async onunload() {
 		// Flush durable state and drop idle work so disable/reload is clean.
 		this.rename_scan_cancel = true
+		this.rescan_epoch++
+		this.invalidate_cite_index()
 		for (const t of this.rename_timers.values()) {
 			window.clearTimeout(t)
 		}
@@ -235,6 +291,12 @@ export default class BibtexScholar extends Plugin {
 			await this.save_coalescer.flush()
 			this.save_coalescer.cancel()
 		}
+	}
+
+	/** Drop reverse cite index — next rename scan rebuilds via a full pass. */
+	invalidate_cite_index() {
+		cite_index_clear(this.cite_index)
+		this.cite_index_ready = false
 	}
 
 	/**
@@ -263,6 +325,20 @@ export default class BibtexScholar extends Plugin {
 	/** After unload-style cleanup: empty array means healthy idle. */
 	audit_idle(): string[] {
 		return audit_idle_after_unload(this.idle_snapshot())
+	}
+
+	/** One-line scale snapshot (entries, cache size, panel/suggest/rescan counters). */
+	scale_report(): string {
+		let cache_json_bytes: number | undefined
+		try {
+			cache_json_bytes = JSON.stringify(this.cache).length
+		} catch {
+			cache_json_bytes = undefined
+		}
+		return format_scale_report(this.perf, {
+			entry_count: entry_count(this.cache.bibtex_dict),
+			cache_json_bytes,
+		})
 	}
 
 	/**
@@ -330,7 +406,6 @@ export default class BibtexScholar extends Plugin {
 			})
 			const entry = this.cache.bibtex_dict[id] ?? {
 				fields: fields,
-				source: bibtex_source,
 				source_path: ctx.sourcePath,
 			}
 			ctx.addChild(new HoverRenderChild(paper_bar, entry, this, this.app, false))
@@ -427,7 +502,7 @@ export default class BibtexScholar extends Plugin {
 				} else if (fields.doi) {
 					return `[${id}](http://dx.doi.org/${fields.doi})`
 				} else {
-					return `[${id}](data:text/plain,${encodeURIComponent(entry.source)})`
+					return `[${id}](data:text/plain,${encodeURIComponent(entry_source(entry))})`
 				}
 			})
 			navigator.clipboard.writeText(content)
@@ -473,8 +548,17 @@ export default class BibtexScholar extends Plugin {
 	 */
 	async uncache_bibtex_from_path(path: string) {
 		const n = remove_entries_for_path(this.cache.bibtex_dict, path, this.doi_index)
-		if (n > 0) {
+		const had_fp = path in this.cache.path_fingerprints
+		if (had_fp) {
+			delete this.cache.path_fingerprints[path]
+		}
+		if (this.cite_index_ready) {
+			cite_index_remove_path(this.cite_index, path)
+		}
+		if (n > 0 || had_fp) {
 			await this.save_cache()
+		}
+		if (n > 0) {
 			new Notice(`Uncached BibTeX entries from ${path}`)
 		}
 	}
@@ -484,8 +568,10 @@ export default class BibtexScholar extends Plugin {
 	 */
 	async uncache_bibtex_all() {
 		this.cache.bibtex_dict = {}
+		this.cache.path_fingerprints = {}
 		this.doi_index = new Map()
 		this.clash_reasons = new Map()
+		this.invalidate_cite_index()
 		await this.save_cache()
 		// Snapshot cleared — strip clash chrome from any still-open ```bibtex tags.
 		this.refresh_source_clash_tags()
@@ -493,12 +579,16 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	/**
-	 * Command-palette entry: silent vault rescan, then notice with clash count.
-	 * If clashes exist, points the user at the paper panel collision view.
+	 * Command-palette entry: vault rescan, then notice with clash count.
+	 * @param hard - when true, ignore fingerprints and re-read every file (full clash harvest).
 	 */
-	async recache_vault_command() {
-		new Notice('Recaching BibTeX from vault…')
-		const clashes = await this.rescan_vault()
+	async recache_vault_command(hard = false) {
+		new Notice(hard ? 'Hard-resetting BibTeX from vault…' : 'Recaching BibTeX from vault…')
+		const clashes = await this.rescan_vault({ hard })
+		if (clashes == null) {
+			new Notice('Recache cancelled — cache unchanged')
+			return
+		}
 		const n = entry_count(this.cache.bibtex_dict)
 		if (clashes.length > 0) {
 			new Notice(
@@ -510,36 +600,86 @@ export default class BibtexScholar extends Plugin {
 		}
 	}
 
-	/** Scan ```bibtex blocks, rebuild cache (first id + DOI wins), return undirected clashes. */
-	async rescan_vault(): Promise<Clash[]> {
-		const hits: ScanHit[] = []
-		const files = this.app.vault.getMarkdownFiles().sort((a, b) => a.path.localeCompare(b.path))
+	/**
+	 * Scan ```bibtex blocks, rebuild cache (first id + DOI wins), return undirected clashes.
+	 * Chunked + cancelable (S4). Incremental via path fingerprints (S5); hard resets re-read all.
+	 * On cancel returns null and leaves cache untouched.
+	 */
+	async rescan_vault(opts?: { hard?: boolean }): Promise<Clash[] | null> {
+		const hard = opts?.hard === true
+		const epoch = ++this.rescan_epoch
+		const t0 = Date.now()
 
-		for (const file of files) {
-			const text = await this.app.vault.read(file)
-			if (!text_may_contain_bibtex_block(text)) continue
-			const block_re = /```bibtex[^\n]*\n([\s\S]*?)```/g
-			let match: RegExpExecArray | null
+		const files = this.app.vault.getMarkdownFiles()
+			.slice()
+			.sort((a, b) => a.path.localeCompare(b.path))
 
-			while ((match = block_re.exec(text)) !== null) {
-				const line = text.slice(0, match.index).split('\n').length - 1
-				for (const fields of await parse_bibtex(match[1])) {
-					hits.push({
-						id: fields.id,
-						doi: fields.doi,
-						path: file.path,
-						line,
-						fields,
-					})
-				}
+		const current_fp: PathFingerprintMap = {}
+		for (const f of files) {
+			current_fp[f.path] = file_fingerprint(f.stat.mtime, f.stat.size)
+		}
+		const vault_paths = files.map((f) => f.path)
+		const prev_fp = this.cache.path_fingerprints ?? {}
+
+		const classified = hard
+			? {
+				new: vault_paths.slice(),
+				changed: [] as string[],
+				unchanged: [] as string[],
+				deleted: Object.keys(prev_fp).filter((p) => !current_fp[p]),
 			}
+			: classify_path_fingerprints(vault_paths, current_fp, prev_fp)
+
+		const to_read = hard
+			? vault_paths
+			: classified.new.concat(classified.changed).sort((a, b) => a.localeCompare(b))
+
+		const label = hard ? 'Hard rescan' : 'Rescanning vault'
+		const notice = new Notice(
+			to_read.length === 0
+				? `${label}… all ${vault_paths.length} files unchanged`
+				: `${label}… 0/${to_read.length}`,
+			0,
+		)
+
+		const result = await scan_bibtex_hits_chunked({
+			paths: to_read,
+			read: async (path) => {
+				const af = this.app.vault.getAbstractFileByPath(path)
+				if (!(af instanceof TFile)) return ''
+				return this.app.vault.read(af)
+			},
+			chunk_size: 32,
+			yield_ms: 0,
+			should_cancel: () => this.rescan_epoch !== epoch,
+			on_progress: (done, total) => {
+				notice.setMessage(`${label}… ${done}/${total}`)
+			},
+		})
+		notice.hide()
+
+		const fp_skipped = hard ? 0 : classified.unchanged.length
+		this.perf.rescan_ms = Date.now() - t0
+		this.perf.rescan_files_read = result.files_read
+		this.perf.rescan_files_skipped = result.files_skipped + fp_skipped
+
+		// Partial harvest must not replace the live dict.
+		if (result.cancelled || this.rescan_epoch !== epoch) {
+			return null
 		}
 
+		const unchanged_set = new Set(hard ? [] : classified.unchanged)
+		const cached_hits = hits_from_cached_entries(this.cache.bibtex_dict, unchanged_set)
+		const all_hits = merge_rescan_hits(cached_hits, result.hits)
+
 		// Replace dict atomically so live getters never see a half-cleared map.
-		this.cache.bibtex_dict = rebuild_dict_from_hits(hits)
+		this.cache.bibtex_dict = rebuild_dict_from_hits(all_hits)
+		this.cache.path_fingerprints = current_fp
 		this.doi_index = build_doi_index(this.cache.bibtex_dict)
+		// Vault contents may have changed — rebuild cite reverse index on next rename.
+		this.invalidate_cite_index()
 		await this.save_cache()
-		const clashes = find_clashes(hits)
+		const clashes = find_clashes(all_hits)
 		this.clash_reasons = build_clash_reasons_by_id(clashes)
 		// clash_reasons is plugin state, not note text. Re-running the full
 		// codeblock processor (previewMode.rerender) only hits Reading mode, and
@@ -586,6 +726,10 @@ export default class BibtexScholar extends Plugin {
 
 	async on_file_modified(file: TFile, from_command = false) {
 		const text = await this.app.vault.read(file)
+		// Keep reverse cite index warm on every md edit (cheap string pass).
+		if (this.cite_index_ready) {
+			cite_index_set_path(this.cite_index, file.path, extract_inline_cite_ids(text))
+		}
 		// Idle typing in notes without BibTeX: no parse, no vault-wide work.
 		if (!from_command && !text_may_contain_bibtex_block(text)) {
 			this.perf.modify_early_exits++
@@ -633,17 +777,39 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	/**
-	 * Bounded vault scan for inline cites (Phase B):
-	 * priority open/active files first, chunked reads, progress notice, cheap reject.
+	 * Bounded vault scan for inline cites (Phase B + SPEED S6):
+	 * When the reverse index is ready, only known citing paths are read.
+	 * Otherwise a full vault pass builds the index while scanning.
 	 */
 	async scan_inline_cites(old_id: string): Promise<CiteHit[]> {
 		this.rename_scan_cancel = false
 		const files = this.app.vault.getMarkdownFiles()
-		const paths = files.map((f) => f.path)
+		const all_paths = files.map((f) => f.path)
 		const active = this.app.workspace.getActiveFile()?.path
 		const priority = active ? [active] : []
 
-		const notice = new Notice(`Scanning vault for \`${old_id}\`… 0/${paths.length}`, 0)
+		const building = !this.cite_index_ready
+		if (building) {
+			// Fresh full pass — drop any partial state from a cancelled build.
+			cite_index_clear(this.cite_index)
+		}
+		const paths = building
+			? all_paths
+			: (() => {
+				const known = cite_index_paths_for(this.cite_index, old_id)
+				// Always re-check the active file (may have a brand-new cite).
+				if (active && !known.includes(active)) {
+					return known.concat(active)
+				}
+				return known
+			})()
+
+		const notice = new Notice(
+			paths.length === 0
+				? `No indexed cites for \`${old_id}\``
+				: `Scanning for \`${old_id}\`… 0/${paths.length}`,
+			0,
+		)
 		const result = await scan_inline_cites_chunked({
 			old_id,
 			paths,
@@ -656,14 +822,20 @@ export default class BibtexScholar extends Plugin {
 			chunk_size: 32,
 			yield_ms: 0,
 			should_cancel: () => this.rename_scan_cancel,
+			// Build on full pass; refresh edges on restricted passes too.
+			cite_index: this.cite_index,
 			on_progress: (done, total) => {
-				notice.setMessage(`Scanning vault for \`${old_id}\`… ${done}/${total}`)
+				notice.setMessage(`Scanning for \`${old_id}\`… ${done}/${total}`)
 			},
 		})
 		this.perf.rename_scan_files_read += result.files_read
 		notice.hide()
 		if (result.cancelled) {
+			// Partial full-build is untrustworthy — force a complete rebuild next time.
+			if (building) this.invalidate_cite_index()
 			new Notice('Cite scan cancelled')
+		} else if (building) {
+			this.cite_index_ready = true
 		}
 		return result.hits
 	}
@@ -738,9 +910,16 @@ export default class BibtexScholar extends Plugin {
 	 * @param new_path - The new source path
 	 */
 	async update_bibtex_source_path(old_path: string, new_path: string) {
-		if (retarget_source_paths(this.cache.bibtex_dict, old_path, new_path)) {
+		const dict_changed = retarget_source_paths(this.cache.bibtex_dict, old_path, new_path)
+		const fp_changed = retarget_fingerprint(this.cache.path_fingerprints, old_path, new_path)
+		if (this.cite_index_ready) {
+			cite_index_retarget_path(this.cite_index, old_path, new_path)
+		}
+		if (dict_changed || fp_changed) {
 			await this.save_cache()
-			new Notice('Updated BibTeX entry paths')
+			if (dict_changed) {
+				new Notice('Updated BibTeX entry paths')
+			}
 		}
 	}
 

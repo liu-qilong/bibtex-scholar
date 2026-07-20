@@ -18,14 +18,16 @@ export interface BibtexField {
  * Represents a single BibTeX element, which includes the main BibTeX fields
  * as well as any additional data associated with a paper.
  * @property {BibtexField} fields - The BibTeX fields for the entry (e.g., type, id, author, title).
- * @property {string} source - The raw BibTeX source for the entry.
+ * @property {string} [source] - Optional raw BibTeX; omit when reconstructible via {@link entry_source}.
  * @property {string} source_path - The file path to the BibTeX source.
+ * @property {number} [source_line] - 0-based line of the ```bibtex block (incremental rescan sort).
  * @property {any} [key: string] - Any other data associated with the paper, accessible by key (e.g. abstract, keywords).
  */
 export interface BibtexElement {
-    fields: BibtexField,  // bibtex fields
-    source: string,
+    fields: BibtexField,  // bibtex fields (abstracts stay here — free-text search is opt-in via abstract:)
+    source?: string,
     source_path: string,
+    source_line?: number,
     [key: string]: any,  // other data associated to the paper
 }
 
@@ -240,6 +242,20 @@ export function make_bibtex(fields: BibtexField, include_abstract: Boolean = tru
 }
 
 /**
+ * BibTeX source for an entry: prefer stored `source`, else rebuild from fields.
+ * Hot cache may omit `source` (SPEED S3) because it is reconstructible.
+ */
+export function entry_source(
+    entry: Pick<BibtexElement, 'fields' | 'source'>,
+    include_abstract: boolean = true,
+): string {
+    if (typeof entry.source === 'string' && entry.source.length > 0) {
+        return entry.source
+    }
+    return make_bibtex(entry.fields, include_abstract)
+}
+
+/**
  * Check if a BibTeX entry ID is duplicated within a file or across different files.
  * @param bibtex_dict - The dictionary of BibTeX entries.
  * @param id - The ID of the BibTeX entry to check.
@@ -403,9 +419,29 @@ export function source_tag_state(reasons: ClashReason[] | undefined): {
 }
 
 /**
+ * Fields scanned for free-text (no `key:`) queries.
+ * Abstracts and other long fields are opt-in via `abstract:…` / `key:value`.
+ * Kept here so match_query stays free of library-scale imports (circular risk).
+ */
+const FREE_TEXT_MATCH_FIELDS = [
+    'id',
+    'title',
+    'author',
+    'year',
+    'doi',
+    'journal',
+    'booktitle',
+    'url',
+] as const
+
+/**
  * Check if a BibTeX entry matches a search query.
  * Format: <query>;<query>;...
  * Each query could be a string or a <key>:<value> pair. Only the paper that matches all queries will be considered a match.
+ *
+ * Free-text tokens search a slim field set only (not abstract) so 10k libraries
+ * stay cheap on every keystroke. Use `abstract:foo` to search abstracts.
+ *
  * @param bibtex - The BibTeX entry to check.
  * @param query - The search query to match against.
  * @returns True if the BibTeX entry matches the query, false otherwise.
@@ -413,15 +449,18 @@ export function source_tag_state(reasons: ClashReason[] | undefined): {
  * ```
  * match_query(bibtex, 'CVPR')
  * match_query(bibtex, 'author:John Doe;year:2020')
+ * match_query(bibtex, 'abstract:differential attention')
  * ```
  */
 export function match_query(bibtex: BibtexElement, query: string): boolean {
     function match_query_single(q: string): boolean {
         const q_low_trim = q.toLowerCase().trim()
+        if (q_low_trim.length === 0) {
+            return true
+        }
 
         if (q_low_trim.includes(':')) {
-            // if the query is in the format of <key>:<value>
-            // match the key and value separately
+            // <key>:<value> — any field, including abstract
             let [key, value] = q_low_trim.split(':')
             key = key.trim()
             value = value.trim()
@@ -429,16 +468,16 @@ export function match_query(bibtex: BibtexElement, query: string): boolean {
                 return String(bibtex.fields[key]).toLowerCase().includes(value)
             }
             return false
-        } else {
-            // if the query is not in the format of <key>:<value>
-            // match the query in all fields
-            for (let key in bibtex.fields) {
-                if (String(bibtex.fields[key]).toLowerCase().includes(q_low_trim)) {
-                    return true
-                }
-            }
-            return false
         }
+
+        // Free-text: slim catalog fields only (see FREE_TEXT_MATCH_FIELDS)
+        for (const key of FREE_TEXT_MATCH_FIELDS) {
+            const raw = bibtex.fields[key]
+            if (raw != null && String(raw).toLowerCase().includes(q_low_trim)) {
+                return true
+            }
+        }
+        return false
     }
 
     for (let q of query.split(';')) {

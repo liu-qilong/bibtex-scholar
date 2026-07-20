@@ -410,6 +410,49 @@ code.bibtex-source-tag.is-clashing {
 }
 
 /* id link stays ochre; the more-specific .is-path rule below keeps the title/path link muted */
+.bibtex-panel-missing-pdf-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.bibtex-panel-missing-pdf-recheck {
+    font-size: var(--font-ui-smaller);
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.bibtex-panel-missing-pdf-scroll {
+    position: relative;
+    overflow: auto;
+    max-height: min(70vh, 560px);
+}
+
+.bibtex-panel-missing-pdf-spacer {
+    width: 100%;
+    pointer-events: none;
+}
+
+.bibtex-panel-missing-pdf-rows {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+}
+
+.bibtex-panel-missing-pdf-row {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
+    box-sizing: border-box;
+}
+
+.bibtex-panel-missing-pdf-scroll .bibtex-panel-clash-link,
+.bibtex-panel-missing-pdf-scroll .bibtex-panel-clash-num,
 .bibtex-panel-missing-pdf-list .bibtex-panel-clash-link,
 .bibtex-panel-missing-pdf-list .bibtex-panel-clash-num {
     color: #d4a017;
@@ -419,6 +462,14 @@ code.bibtex-source-tag.is-clashing {
     color: var(--text-muted);
     font-size: var(--font-ui-small);
     padding: var(--size-4-2);
+}
+
+/* Cap / preview notice above paper chips (10k+ libraries). */
+.bibtex-panel-list-status {
+    color: var(--text-muted);
+    padding: 0.35em 0.25em 0.55em;
+    font-size: var(--font-ui-smaller, var(--font-ui-small));
+    line-height: 1.35;
 }
 
 .bibtex-panel-clash-card {

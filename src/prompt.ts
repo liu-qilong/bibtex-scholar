@@ -1,5 +1,6 @@
 import { App, Editor, AbstractInputSuggest, SuggestModal, EditorSuggest, TFile, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian'
-import { BibtexElement, match_query, type BibtexDict } from 'src/bibtex'
+import { BibtexElement, type BibtexDict } from 'src/bibtex'
+import { list_ids_for_suggest } from 'src/library-scale'
 
 /**
  * An editor prompt to suggest BibTeX entries. Triggered by:
@@ -7,18 +8,23 @@ import { BibtexElement, match_query, type BibtexDict } from 'src/bibtex'
  * * Type ` and [ for expanded paper element
  * P.S. Since Obsidian auto-completes ``, we are actually matching `{<cursor>` or `[<cursor>`
  */
+export type SuggestStatsSink = (stats: { returned: number, matched: number }) => void
+
 export class EditorPrompt extends EditorSuggest<string> {
     /** Live getter — never snapshot the dict at construct time (rescan/uncache would stale). */
     private get_dict: () => BibtexDict
+    /** Optional scale counter hook (plugin.perf). */
+    private on_stats: SuggestStatsSink | undefined
     editor: Editor
     bracket_start: string
     bracket_end: string
     code_end: string
     trigger_info: EditorSuggestTriggerInfo
 
-    constructor(app: App, get_dict: () => BibtexDict) {
+    constructor(app: App, get_dict: () => BibtexDict, on_stats?: SuggestStatsSink) {
         super(app)
         this.get_dict = get_dict
+        this.on_stats = on_stats
     }
 
     private get bibtex_dict(): BibtexDict {
@@ -63,11 +69,10 @@ export class EditorPrompt extends EditorSuggest<string> {
     }
 
     getSuggestions(context: EditorSuggestContext): string[] {
-        // generate suggestion items based on the context
-        const query = context.query
-        return Object.values(this.bibtex_dict)
-            .filter((bibtex) => match_query(bibtex, query))
-            .map((bibtex: BibtexElement) => String(bibtex.fields.id))
+        // Capped + slim match_query — never dump the whole library into the suggest UI.
+        const list = list_ids_for_suggest(this.bibtex_dict, context.query)
+        this.on_stats?.({ returned: list.ids.length, matched: list.matched })
+        return list.ids
     }
 
     renderSuggestion(id: string, el: HTMLElement): void {

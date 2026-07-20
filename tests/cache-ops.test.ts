@@ -1,19 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import {
+	ABSTRACTS_IN_HOT_CACHE,
 	audit_bibtex_dict,
 	CARD_FONT_SIZE_MAX,
 	CARD_FONT_SIZE_MIN,
+	classify_path_fingerprints,
+	collect_hits_from_markdown,
 	entry_count,
+	entry_source,
+	file_fingerprint,
+	hits_from_cached_entries,
+	merge_rescan_hits,
 	missing_pdf_ids,
+	probe_missing_pdf_chunked,
 	normalize_card_font_size,
 	normalize_plugin_cache,
 	rebuild_dict_from_hits,
 	remove_entries_for_path,
+	retarget_fingerprint,
 	retarget_source_paths,
+	slim_bibtex_dict,
 	upsert_entry,
 	type ScanHit,
 } from 'src/cache-ops'
-import type { BibtexField } from 'src/bibtex'
+import { make_bibtex, type BibtexField } from 'src/bibtex'
 
 function fields(partial: Partial<BibtexField> & { id: string }): BibtexField {
 	return {
@@ -46,6 +56,28 @@ describe('cache-ops / data integrity', () => {
 		expect(ok.bibtex_dict.A.fields.id).toBe('A')
 		expect(ok.card_font_size).toBe(13)
 		expect(ok.card_wide).toBe(false)
+		expect(ok.path_fingerprints).toEqual({})
+	})
+
+	it('normalize_plugin_cache slims reconstructible source (S3 migration)', () => {
+		const fat = {
+			bibtex_dict: {
+				A: {
+					fields: fields({ id: 'A', title: 'Hello', abstract: 'long text' }),
+					source: '@article{A,\n  title = {Hello},\n  abstract = {long text},\n}\n',
+					source_path: 'a.md',
+					source_line: 3,
+				},
+			},
+			path_fingerprints: { 'a.md': '1:2' },
+		}
+		const ok = normalize_plugin_cache(fat)
+		expect(ok.bibtex_dict.A.source).toBeUndefined()
+		expect(ok.bibtex_dict.A.fields.abstract).toBe('long text')
+		expect(ok.bibtex_dict.A.source_line).toBe(3)
+		expect(entry_source(ok.bibtex_dict.A)).toContain('Hello')
+		expect(ok.path_fingerprints).toEqual({ 'a.md': '1:2' })
+		expect(ABSTRACTS_IN_HOT_CACHE).toBe(true)
 	})
 
 	it('normalize_card_font_size clamps to allowed range', () => {
@@ -88,6 +120,39 @@ describe('cache-ops / data integrity', () => {
 		expect(missing_pdf_ids(dict, () => true)).toEqual([])
 	})
 
+	it('probe_missing_pdf_chunked yields, sorts missing, and supports cancel (S7)', async () => {
+		const ids = Array.from({ length: 20 }, (_, i) => `P${String(i).padStart(2, '0')}`)
+		const sleeps: number[] = []
+		const progress: Array<[number, number]> = []
+		const result = await probe_missing_pdf_chunked({
+			ids,
+			has_pdf: (id) => id === 'P05' || id === 'P10',
+			chunk_size: 5,
+			yield_ms: 0,
+			sleep: async (ms) => { sleeps.push(ms) },
+			on_progress: (done, total) => progress.push([done, total]),
+		})
+		expect(result.cancelled).toBe(false)
+		expect(result.probed).toBe(20)
+		expect(result.missing).not.toContain('P05')
+		expect(result.missing).not.toContain('P10')
+		expect(result.missing).toHaveLength(18)
+		expect(result.missing[0] < result.missing[1]).toBe(true)
+		expect(sleeps.length).toBeGreaterThanOrEqual(1)
+		expect(progress.at(-1)).toEqual([20, 20])
+
+		let n = 0
+		const cancelled = await probe_missing_pdf_chunked({
+			ids,
+			has_pdf: () => false,
+			chunk_size: 5,
+			should_cancel: () => ++n >= 8,
+			sleep: async () => {},
+		})
+		expect(cancelled.cancelled).toBe(true)
+		expect(cancelled.probed).toBeLessThan(20)
+	})
+
 	it('rebuild_dict_from_hits: first path+line wins for id and doi', () => {
 		const hits: ScanHit[] = [
 			hit({ id: 'B', path: 'b.md', line: 1, doi: '10.1/x' }),
@@ -127,13 +192,22 @@ describe('cache-ops / data integrity', () => {
 		expect(entry_count(dict)).toBe(1)
 	})
 
-	it('upsert_entry is idempotent for same source payload', () => {
+	it('upsert_entry is idempotent for same make_bibtex payload (slim, no source stored)', () => {
 		const dict = {}
 		const f = fields({ id: 'A', title: 't' })
-		const src = '@article{A, title = {t},}'
+		const src = make_bibtex(f)
 		expect(upsert_entry(dict, 'A', f, src, 'a.md')).toBe(true)
+		expect(dict.A.source).toBeUndefined()
 		expect(upsert_entry(dict, 'A', f, src, 'a.md')).toBe(false)
 		expect(upsert_entry(dict, 'A', f, src + ' ', 'a.md')).toBe(true)
+	})
+
+	it('rebuild stores source_line and omits source (S3)', () => {
+		const dict = rebuild_dict_from_hits([hit({ id: 'A', path: 'a.md', line: 4, doi: '10/a' })])
+		expect(dict.A.source).toBeUndefined()
+		expect(dict.A.source_line).toBe(4)
+		expect(entry_source(dict.A)).toContain('@article{A')
+		expect(slim_bibtex_dict(dict).A.source).toBeUndefined()
 	})
 
 	it('audit_bibtex_dict flags key/id mismatch and shared DOI', () => {
@@ -143,7 +217,6 @@ describe('cache-ops / data integrity', () => {
 		// poison
 		dict.B = {
 			fields: fields({ id: 'NotB', doi: '10/x' }),
-			source: 'x',
 			source_path: 'b.md',
 		}
 		const problems = audit_bibtex_dict(dict)
@@ -151,11 +224,100 @@ describe('cache-ops / data integrity', () => {
 		expect(problems.some((p) => p.includes('DOI'))).toBe(true)
 	})
 
-	it('healthy dict audits clean', () => {
+	it('healthy dict audits clean without stored source', () => {
 		const dict = rebuild_dict_from_hits([
 			hit({ id: 'A', path: 'a.md', line: 0, doi: '10/a' }),
 			hit({ id: 'B', path: 'b.md', line: 0, doi: '10/b' }),
 		])
 		expect(audit_bibtex_dict(dict)).toEqual([])
+	})
+
+	it('collect_hits_from_markdown finds blocks and records 0-based line', async () => {
+		const text = [
+			'# Notes',
+			'',
+			'```bibtex',
+			'@article{Alpha, title={A}, doi={10/a}}',
+			'```',
+			'',
+			'```bibtex',
+			'@article{Beta, title={B}}',
+			'```',
+		].join('\n')
+		const hits = await collect_hits_from_markdown('papers/a.md', text)
+		expect(hits.map((h) => h.id)).toEqual(['Alpha', 'Beta'])
+		expect(hits[0].path).toBe('papers/a.md')
+		expect(hits[0].line).toBe(2)
+		expect(hits[0].doi).toBe('10/a')
+		expect(hits[1].line).toBe(6)
+	})
+
+	it('collect_hits_from_markdown returns empty when no ```bibtex gate', async () => {
+		const hits = await collect_hits_from_markdown('x.md', 'just `{Alpha}` text')
+		expect(hits).toEqual([])
+	})
+})
+
+describe('cache-ops / incremental rescan (S5)', () => {
+	it('file_fingerprint is mtime:size', () => {
+		expect(file_fingerprint(1000, 42)).toBe('1000:42')
+	})
+
+	it('classify_path_fingerprints: new / changed / unchanged / deleted', () => {
+		const prev = { 'a.md': '1:1', 'b.md': '2:2', 'gone.md': '3:3' }
+		const cur = { 'a.md': '1:1', 'b.md': '9:9', 'c.md': '4:4' }
+		const c = classify_path_fingerprints(['a.md', 'b.md', 'c.md'], cur, prev)
+		expect(c.unchanged).toEqual(['a.md'])
+		expect(c.changed).toEqual(['b.md'])
+		expect(c.new).toEqual(['c.md'])
+		expect(c.deleted).toEqual(['gone.md'])
+	})
+
+	it('merge: unchanged cached winners + fresh hits; delete path drops winner', () => {
+		const old = rebuild_dict_from_hits([
+			hit({ id: 'Keep', path: 'keep.md', line: 0 }),
+			hit({ id: 'Drop', path: 'drop.md', line: 0 }),
+			hit({ id: 'Old', path: 'edit.md', line: 0, doi: '10/old' }),
+		])
+		// Soft scan: keep.md unchanged, drop.md deleted, edit.md re-parsed with new id
+		const cached = hits_from_cached_entries(old, new Set(['keep.md']))
+		const fresh = [hit({ id: 'New', path: 'edit.md', line: 0, doi: '10/new' })]
+		const merged = merge_rescan_hits(cached, fresh)
+		const dict = rebuild_dict_from_hits(merged)
+		expect(Object.keys(dict).sort()).toEqual(['Keep', 'New'])
+		expect(dict.Drop).toBeUndefined()
+		expect(dict.Old).toBeUndefined()
+		expect(dict.New.fields.doi).toBe('10/new')
+	})
+
+	it('merge conflict: first path wins for duplicate citekey across cached + fresh', () => {
+		const old = rebuild_dict_from_hits([
+			hit({ id: 'Same', path: 'a.md', line: 0, doi: '10/a' }),
+		])
+		const cached = hits_from_cached_entries(old, new Set(['a.md']))
+		// b.md changed and also claims Same — a.md sorts first, keeps winner
+		const fresh = [hit({ id: 'Same', path: 'b.md', line: 0, doi: '10/b' })]
+		const dict = rebuild_dict_from_hits(merge_rescan_hits(cached, fresh))
+		expect(dict.Same.source_path).toBe('a.md')
+		expect(dict.Same.fields.doi).toBe('10/a')
+	})
+
+	it('merge conflict: DOI first-wins when cached winner holds DOI', () => {
+		const old = rebuild_dict_from_hits([
+			hit({ id: 'A', path: 'a.md', line: 0, doi: '10/shared' }),
+		])
+		const cached = hits_from_cached_entries(old, new Set(['a.md']))
+		const fresh = [hit({ id: 'B', path: 'b.md', line: 0, doi: '10/shared' })]
+		const dict = rebuild_dict_from_hits(merge_rescan_hits(cached, fresh))
+		expect(dict.A).toBeDefined()
+		expect(dict.B).toBeUndefined()
+	})
+
+	it('retarget_fingerprint moves key on rename', () => {
+		const fps = { 'old.md': '1:1', 'other.md': '2:2' }
+		expect(retarget_fingerprint(fps, 'old.md', 'new.md')).toBe(true)
+		expect(fps['new.md']).toBe('1:1')
+		expect(fps['old.md']).toBeUndefined()
+		expect(retarget_fingerprint(fps, 'missing.md', 'x.md')).toBe(false)
 	})
 })

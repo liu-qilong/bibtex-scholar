@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
 	audit_idle_after_unload,
 	create_perf_counters,
+	format_scale_report,
 	is_plugin_idle,
 } from 'src/idle-audit'
 import { CitationPopupController } from 'src/citation-popup'
@@ -94,5 +95,21 @@ describe('idle audit (Phase C)', () => {
 	it('perf counters start at zero', () => {
 		const c = create_perf_counters()
 		expect(Object.values(c).every((n) => n === 0)).toBe(true)
+	})
+
+	it('format_scale_report summarizes entry and mount counters', () => {
+		const c = create_perf_counters()
+		c.panel_rows_mounted = 50
+		c.suggest_returned = 25
+		c.suggest_matched = 400
+		c.rescan_ms = 1200
+		c.rescan_files_read = 300
+		c.rescan_files_skipped = 200
+		const s = format_scale_report(c, { entry_count: 10_000, cache_json_bytes: 2_500_000 })
+		expect(s).toContain('entries=10000')
+		expect(s).toContain('cache≈')
+		expect(s).toContain('panel_rows=50')
+		expect(s).toContain('suggest=25/400')
+		expect(s).toContain('rescan=1200ms')
 	})
 })
