@@ -84,4 +84,16 @@ describe('PinRegistry', () => {
 		reg.pin('a', 'a', { top: 0, left: 0 })
 		expect(notifications).toBe(0)
 	})
+
+	it('update_payload refreshes data without moving the pin', () => {
+		const reg = new PinRegistry<string>()
+		reg.pin('a', 'old', { top: 10, left: 20 })
+		let n = 0
+		reg.subscribe(() => { n++ })
+		expect(reg.update_payload('a', 'new')).toBe(true)
+		expect(reg.update_payload('missing', 'x')).toBe(false)
+		expect(reg.entries()[0][1].payload).toBe('new')
+		expect(reg.entries()[0][1].pos).toEqual({ top: 10, left: 20 })
+		expect(n).toBe(1)
+	})
 })

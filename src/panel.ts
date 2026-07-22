@@ -1,6 +1,7 @@
 import { addIcon, ItemView, Notice, WorkspaceLeaf, SearchComponent, setIcon, type IconName } from 'obsidian'
 import type { BibtexDict, BibtexElement, Clash } from 'src/bibtex'
 import { normalize_card_font_size, normalize_panel_chip_font_size, probe_missing_pdf_chunked, type ScanHit } from 'src/cache-ops'
+import { CacheOpsModal, CopyExportModal } from 'src/command-modals'
 import { render_hover, unmount_hover_hosts } from 'src/hover'
 import {
     CLASH_RESULT_CAP,
@@ -143,6 +144,25 @@ export class PaperPanelView extends ItemView {
         }
 
         this.list_el = container.createEl('div', { cls: 'bibtex-panel-list' })
+
+        // Corner actions pull the command-palette-only cache/export commands into
+        // the panel itself — floats over the list so it's reachable in any view mode.
+        const corner_actions = container.createEl('div', { cls: 'bibtex-panel-corner-actions' })
+
+        const cache_ops_btn = corner_actions.createEl('button', {
+            cls: 'bibtex-panel-corner-btn',
+            attr: { 'aria-label': 'Manage BibTeX cache', title: 'Manage BibTeX cache' },
+        })
+        setIcon(cache_ops_btn, 'save')
+        cache_ops_btn.addEventListener('click', () => new CacheOpsModal(this.app, this.plugin).open())
+
+        const copy_export_btn = corner_actions.createEl('button', {
+            cls: 'bibtex-panel-corner-btn',
+            attr: { 'aria-label': 'Copy / export BibTeX', title: 'Copy / export BibTeX' },
+        })
+        setIcon(copy_export_btn, 'external-link')
+        copy_export_btn.addEventListener('click', () => new CopyExportModal(this.app, this.plugin).open())
+
         this.show_papers()
     }
 

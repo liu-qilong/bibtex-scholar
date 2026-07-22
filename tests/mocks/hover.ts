@@ -37,7 +37,7 @@ export class HoverWidget extends WidgetType {
 		this.expand = expand
 	}
 
-	toDOM() {
+	toDOM(_view?: unknown) {
 		const span = document.createElement('span')
 		span.className = 'bibtex-cm-widget'
 		span.setAttribute('contenteditable', 'false')

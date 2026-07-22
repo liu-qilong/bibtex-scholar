@@ -9,7 +9,9 @@ import {
 	entry_count,
 	entry_source,
 	file_fingerprint,
+	format_bibtex_for_ids,
 	hits_from_cached_entries,
+	ids_under_path,
 	merge_rescan_hits,
 	missing_pdf_ids,
 	probe_missing_pdf_chunked,
@@ -20,12 +22,16 @@ import {
 	PANEL_CHIP_FONT_SIZE_MIN,
 	rebuild_dict_from_hits,
 	remove_entries_for_path,
+	restore_entries_snapshot,
 	retarget_fingerprint,
 	retarget_source_paths,
 	slim_bibtex_dict,
+	snapshot_entries_for_path,
 	upsert_entry,
 	type ScanHit,
 } from 'src/cache-ops'
+import { build_doi_index } from 'src/doi-index'
+import { build_id_index } from 'src/citekey-index'
 import { make_bibtex, type BibtexField } from 'src/bibtex'
 
 function fields(partial: Partial<BibtexField> & { id: string }): BibtexField {
@@ -116,6 +122,10 @@ describe('cache-ops / data integrity', () => {
 		expect(normalize_plugin_cache(undefined).panel_double_debounce_enabled).toBe(false)
 		expect(normalize_plugin_cache({ panel_double_debounce_enabled: true }).panel_double_debounce_enabled).toBe(true)
 		expect(normalize_plugin_cache({ panel_double_debounce_enabled: 'yes' } as unknown).panel_double_debounce_enabled).toBe(false)
+		expect(normalize_plugin_cache({ quiet_duplicate_notices: true } as unknown).quiet_duplicate_notices).toBe(true)
+		expect(normalize_plugin_cache({ quiet_duplicate_notices: 'yes' } as unknown).quiet_duplicate_notices).toBe(false)
+		expect(normalize_plugin_cache({ export_bib_path: 'refs/all.bib' } as unknown).export_bib_path).toBe('refs/all.bib')
+		expect(normalize_plugin_cache({} as unknown).export_bib_path).toBe('bibliography.bib')
 	})
 
 	it('normalize_plugin_cache defaults papers_view to discover, preserves list, rejects garbage', () => {
@@ -219,6 +229,56 @@ describe('cache-ops / data integrity', () => {
 		expect(remove_entries_for_path(dict, 'keep.md')).toBe(1)
 		expect(dict.B).toBeUndefined()
 		expect(entry_count(dict)).toBe(1)
+	})
+
+	it('snapshot + restore undoes a path removal without clobbering newer owners', () => {
+		const dict = rebuild_dict_from_hits([
+			hit({ id: 'A', path: 'gone.md', line: 0, doi: '10/a' }),
+			hit({ id: 'B', path: 'keep.md', line: 0, doi: '10/b' }),
+		])
+		const doi_index = build_doi_index(dict)
+		const id_index = build_id_index(dict)
+		const snap = snapshot_entries_for_path(dict, 'gone.md')
+		expect(Object.keys(snap)).toEqual(['A'])
+		// Snapshot is a copy — mutating dict does not empty it.
+		remove_entries_for_path(dict, 'gone.md', doi_index, id_index)
+		expect(dict.A).toBeUndefined()
+		expect(Object.keys(snap)).toEqual(['A'])
+
+		const full = restore_entries_snapshot(dict, snap, doi_index, id_index)
+		expect(full).toEqual({ restored: 1, skipped: 0 })
+		expect(dict.A?.source_path).toBe('gone.md')
+		expect(doi_index.get('10/a')).toBe('A')
+		expect(id_index.get('a')).toBe('A')
+
+		// If A was re-occupied after delete, skip rather than overwrite.
+		dict.A = { fields: fields({ id: 'A', title: 'newer' }), source_path: 'other.md' }
+		const again = restore_entries_snapshot(dict, snap, doi_index, id_index)
+		expect(again).toEqual({ restored: 0, skipped: 1 })
+		expect(dict.A.source_path).toBe('other.md')
+		expect(dict.A.fields.title).toBe('newer')
+	})
+
+	it('ids_under_path matches by real path segment, not a same-prefixed sibling folder', () => {
+		const dict = rebuild_dict_from_hits([
+			hit({ id: 'A', path: 'notes/a.md', line: 0 }),
+			hit({ id: 'B', path: 'notes/sub/b.md', line: 0 }),
+			hit({ id: 'C', path: 'notes-archive/c.md', line: 0 }),
+			hit({ id: 'D', path: 'other/d.md', line: 0 }),
+		])
+		expect(ids_under_path(dict, 'notes/').sort()).toEqual(['A', 'B'])
+		expect(ids_under_path(dict, '')).toHaveLength(4)
+	})
+
+	it('format_bibtex_for_ids renders only the requested ids, sorted, abstract omitted', () => {
+		const dict = rebuild_dict_from_hits([
+			hit({ id: 'B', path: 'b.md', line: 0 }),
+			hit({ id: 'A', path: 'a.md', line: 0 }),
+		])
+		dict.A.fields.abstract = 'should not appear'
+		const out = format_bibtex_for_ids(dict, ['B', 'A', 'missing'])
+		expect(out.indexOf('@article{A')).toBeLessThan(out.indexOf('@article{B'))
+		expect(out).not.toContain('should not appear')
 	})
 
 	it('upsert_entry is idempotent for same make_bibtex payload (slim, no source stored)', () => {

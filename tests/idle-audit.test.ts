@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
 	audit_idle_after_unload,
 	create_perf_counters,
+	format_diagnostics_report,
 	format_scale_report,
 	is_plugin_idle,
 } from 'src/idle-audit'
@@ -111,5 +112,27 @@ describe('idle audit (Phase C)', () => {
 		expect(s).toContain('panel_rows=50')
 		expect(s).toContain('suggest=25/400')
 		expect(s).toContain('rescan=1200ms')
+	})
+
+	it('format_diagnostics_report includes audit and quiet-notice flag', () => {
+		const c = create_perf_counters()
+		const ok = format_diagnostics_report(c, {
+			entry_count: 3,
+			idle: true,
+			audit_lines: [],
+			quiet_duplicate_notices: true,
+		})
+		expect(ok).toContain('entries=3')
+		expect(ok).toContain('audit: ok')
+		expect(ok).toContain('quiet_duplicate_notices=on')
+
+		const bad = format_diagnostics_report(c, {
+			entry_count: 1,
+			idle: false,
+			audit_lines: ['key mismatch'],
+			quiet_duplicate_notices: false,
+		})
+		expect(bad).toContain('key mismatch')
+		expect(bad).toContain('quiet_duplicate_notices=off')
 	})
 })

@@ -8,6 +8,7 @@
 
 import {
 	entry_source,
+	make_bibtex,
 	normalize_id,
 	parse_bibtex,
 	type BibtexDict,
@@ -90,6 +91,13 @@ export type PluginCacheShape = {
 	 * Missing/empty → next rescan reads every markdown file (safe cold start).
 	 */
 	path_fingerprints: PathFingerprintMap
+	/**
+	 * When true, paint-time duplicate Notices fire at most once per Obsidian
+	 * session (not once per codeblock). Tooltips / "not cached" tags still show.
+	 */
+	quiet_duplicate_notices: boolean
+	/** Relative vault path for “Export library to .bib” (Copy/export modal). */
+	export_bib_path: string
 }
 
 export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
@@ -105,6 +113,8 @@ export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
 	papers_view: 'discover',
 	panel_chip_font_size: 13,
 	path_fingerprints: {},
+	quiet_duplicate_notices: false,
+	export_bib_path: 'bibliography.bib',
 }
 
 /** Allowed range for citation card font size (px). */
@@ -200,6 +210,8 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		papers_view: DEFAULT_PLUGIN_CACHE.papers_view,
 		panel_chip_font_size: DEFAULT_PLUGIN_CACHE.panel_chip_font_size,
 		path_fingerprints: {},
+		quiet_duplicate_notices: DEFAULT_PLUGIN_CACHE.quiet_duplicate_notices,
+		export_bib_path: DEFAULT_PLUGIN_CACHE.export_bib_path,
 	}
 
 	if (!raw || typeof raw !== 'object') {
@@ -232,6 +244,12 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 			o.panel_chip_font_size !== undefined ? o.panel_chip_font_size : base.panel_chip_font_size,
 		),
 		path_fingerprints: normalize_path_fingerprints(o.path_fingerprints),
+		quiet_duplicate_notices: typeof o.quiet_duplicate_notices === 'boolean'
+			? o.quiet_duplicate_notices
+			: base.quiet_duplicate_notices,
+		export_bib_path: typeof o.export_bib_path === 'string' && o.export_bib_path.length > 0
+			? o.export_bib_path
+			: base.export_bib_path,
 	}
 }
 
@@ -368,6 +386,48 @@ export function retarget_fingerprint(
 }
 
 /**
+ * IDs whose entry is sourced from a path under `dir_prefix`. Pass `""` to match
+ * every path (whole vault). Callers scoping to one directory must include the
+ * trailing slash (`` `${folder.path}/` ``) so a same-prefixed sibling folder
+ * (e.g. `"notes-archive/"`) can't match `"notes/"`.
+ */
+export function ids_under_path(dict: BibtexDict, dir_prefix: string): string[] {
+	return Object.keys(dict).filter((id) => dict[id].source_path.startsWith(dir_prefix))
+}
+
+/** BibTeX source for exactly these ids (abstracts omitted), sorted for a stable file diff. */
+export function format_bibtex_for_ids(dict: BibtexDict, ids: Iterable<string>): string {
+	let out = ''
+	for (const id of [...ids].sort((a, b) => a.localeCompare(b))) {
+		const entry = dict[id]
+		if (!entry) continue
+		out += make_bibtex(entry.fields, false) + '\n'
+	}
+	return out
+}
+
+/**
+ * Shallow-copy every entry whose `source_path` equals `path` (for undo buffers).
+ * Does not mutate `dict`.
+ */
+export function snapshot_entries_for_path(dict: BibtexDict, path: string): BibtexDict {
+	const out: BibtexDict = {}
+	for (const id of Object.keys(dict)) {
+		const entry = dict[id]
+		if (entry.source_path !== path) {
+			continue
+		}
+		out[id] = {
+			fields: { ...entry.fields },
+			source_path: entry.source_path,
+			...(entry.source !== undefined ? { source: entry.source } : {}),
+			...(entry.source_line !== undefined ? { source_line: entry.source_line } : {}),
+		}
+	}
+	return out
+}
+
+/**
  * Remove all entries whose source_path equals `path`. Mutates dict; returns count removed.
  * When `doi_index` / `id_index` are provided they are kept in sync.
  */
@@ -384,6 +444,42 @@ export function remove_entries_for_path(dict: BibtexDict, path: string, doi_inde
 		}
 	}
 	return n
+}
+
+/**
+ * Re-insert a path snapshot after an accidental uncache (e.g. file delete undo).
+ * Skips ids already present so we never clobber a newer winner.
+ * Returns how many rows were restored vs skipped.
+ */
+export function restore_entries_snapshot(
+	dict: BibtexDict,
+	snapshot: BibtexDict,
+	doi_index?: DoiIndex,
+	id_index?: IdIndex,
+): { restored: number, skipped: number } {
+	let restored = 0
+	let skipped = 0
+	for (const id of Object.keys(snapshot)) {
+		if (dict[id]) {
+			skipped++
+			continue
+		}
+		const entry = snapshot[id]
+		if (doi_index) {
+			doi_index_on_upsert(doi_index, id, undefined, entry.fields.doi)
+		}
+		if (id_index) {
+			id_index_claim(id_index, id)
+		}
+		dict[id] = {
+			fields: { ...entry.fields },
+			source_path: entry.source_path,
+			...(entry.source !== undefined ? { source: entry.source } : {}),
+			...(entry.source_line !== undefined ? { source_line: entry.source_line } : {}),
+		}
+		restored++
+	}
+	return { restored, skipped }
 }
 
 /**

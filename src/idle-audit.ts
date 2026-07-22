@@ -70,6 +70,37 @@ export function format_scale_report(
 	return lines.join(' · ')
 }
 
+/**
+ * Multi-line diagnostics block for the settings UI (no network / telemetry).
+ * `audit_lines` empty means the dict looks structurally healthy.
+ */
+export function format_diagnostics_report(
+	counters: PerfCounters,
+	opts: {
+		entry_count: number
+		cache_json_bytes?: number
+		idle: boolean
+		audit_lines: string[]
+		quiet_duplicate_notices: boolean
+	},
+): string {
+	const scale = format_scale_report(counters, {
+		entry_count: opts.entry_count,
+		cache_json_bytes: opts.cache_json_bytes,
+	})
+	const audit = opts.audit_lines.length === 0
+		? 'audit: ok'
+		: `audit: ${opts.audit_lines.length} issue(s)\n  - ${opts.audit_lines.join('\n  - ')}`
+	return [
+		scale,
+		`idle=${opts.idle ? 'yes' : 'no'}`,
+		`quiet_duplicate_notices=${opts.quiet_duplicate_notices ? 'on' : 'off'}`,
+		`save_schedules=${counters.save_schedules} flushes=${counters.save_flushes}`,
+		`modify early_exit=${counters.modify_early_exits} scheduled=${counters.modify_scheduled}`,
+		audit,
+	].join('\n')
+}
+
 export type IdleSnapshot = {
 	popup_active: boolean
 	save_dirty: boolean

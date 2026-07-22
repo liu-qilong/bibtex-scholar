@@ -1,31 +1,35 @@
-import { App, Notice, Plugin, Setting, PluginSettingTab, TFile, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
+import { App, Notice, Plugin, TFile, TFolder, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
 import { parse_bibtex, make_bibtex, entry_source, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
 import {
 	audit_bibtex_dict,
-	CARD_FONT_SIZE_MAX,
-	CARD_FONT_SIZE_MIN,
 	classify_path_fingerprints,
 	delete_entry,
 	entry_count,
 	file_fingerprint,
+	format_bibtex_for_ids,
 	hits_from_cached_entries,
+	ids_under_path,
 	merge_rescan_hits,
-	normalize_card_font_size,
-	normalize_panel_chip_font_size,
 	normalize_plugin_cache,
-	PANEL_CHIP_FONT_SIZE_MAX,
-	PANEL_CHIP_FONT_SIZE_MIN,
 	rebuild_dict_from_hits,
 	remove_entries_for_path,
+	restore_entries_snapshot,
 	retarget_fingerprint,
 	retarget_source_paths,
+	snapshot_entries_for_path,
 	upsert_entry,
 	type PathFingerprintMap,
 	type PluginCacheShape,
 	type ScanHit,
 } from 'src/cache-ops'
+import {
+	delete_uncache_notice_text,
+	duplicate_block_notice,
+	paint_duplicate_tag_state,
+	unknown_cite_title,
+} from 'src/ux-copy'
 import { text_may_contain_bibtex_block } from 'src/cite-span'
-import { citation_popup, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
+import { citation_popup } from 'src/citation-popup'
 import { build_id_index, resolve_id, type IdIndex } from 'src/citekey-index'
 import { build_doi_index, type DoiIndex } from 'src/doi-index'
 import {
@@ -37,11 +41,13 @@ import {
 	type PerfCounters,
 } from 'src/idle-audit'
 import { HoverRenderChild, unmount_card_manager } from 'src/hover'
-import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
+import { EditorPrompt } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 import { createHoverWidgetPlugin } from 'src/editor'
 import { SaveCoalescer } from 'src/save-coalesce'
+import { BibtexScholarSetting } from 'src/settings-tab'
 import {
+	cite_index_all_cites,
 	cite_index_clear,
 	cite_index_count_for,
 	cite_index_remove_path,
@@ -71,6 +77,8 @@ export default class BibtexScholar extends Plugin {
 	clash_reasons: Map<string, ClashReason[]> = new Map()
 	renaming = false
 	rename_timers = new Map<string, number>()
+	/** Session flag for quiet_duplicate_notices (at most one toast per load). */
+	private duplicate_notice_emitted_this_session = false
 	/** Set true to abort an in-flight vault cite scan (best-effort). */
 	private rename_scan_cancel = false
 	/**
@@ -120,51 +128,12 @@ export default class BibtexScholar extends Plugin {
 			(evt: MouseEvent) => this.cp_bibtex()
 		)
 
-		this.addCommand({
-			id: 'copy-all-bibtex',
-			name: 'Copy all BibTeX entries',
-			callback: () => {
-				this.cp_bibtex()
-			},
-		})
-
-		// commands for copy file in standard markdown syntax
-		this.addCommand({
-			id: 'copy-std-md',
-			name: 'Copy current file as standard markdown',
-			checkCallback: (checking: boolean) => {
-				const current_file = this.app.workspace.getActiveFile()
-				if (checking) return Boolean(current_file) // return true if active file exists
-				if (current_file) {
-					this.cp_std_md()
-				}
-			},
-		})
-
-		// commands for copy file with `{}` replaced as \autocite{}
-		this.addCommand({
-			id: 'copy-autocite-md',
-			name: 'Copy current file with ` {id}`  replaced as \\autocite{id}',
-			checkCallback: (checking: boolean) => {
-				const current_file = this.app.workspace.getActiveFile()
-				if (checking) return Boolean(current_file) // return true if active file exists
-				if (current_file) {
-					this.cp_autocite_md()
-				}
-			},
-		})
-
-		// commands for uncache bibtex entries
-		this.addCommand({
-			id: 'uncache-all-bibtex',
-			name: 'Uncache all BibTeX entries',
-			callback: () => {
-				if (window.confirm('Are you sure?')) {
-					this.uncache_bibtex_all()
-				}
-			},
-		})
-
+		// Copy/export and the rest of cache-maintenance are panel-only (bottom-right
+		// corner buttons in PaperPanelView) — not command-palette entries, so the
+		// palette doesn't carry the same near-duplicate clutter it had before.
+		// "Uncache current file" stays in the palette too: it's the one cache
+		// action people reach for mid-edit on the file they're looking at, so it's
+		// worth a direct, hotkey-bindable entry alongside the panel button.
 		this.addCommand({
 			id: 'uncache-file-bibtex',
 			name: 'Uncache BibTeX entries from current file',
@@ -172,28 +141,13 @@ export default class BibtexScholar extends Plugin {
 				const current_file = this.app.workspace.getActiveFile()
 				if (checking) return Boolean(current_file) // return true if active file exists
 				if (current_file) {
-					if (window.confirm('Are you sure?')) {
-						this.uncache_bibtex_from_path(current_file.path)
+					if (window.confirm(
+						`Remove all cached BibTeX entries sourced from “${current_file.path}”? `
+						+ 'Vault notes are not deleted. This is an explicit cache clear (no Undo toast).',
+					)) {
+						void this.uncache_bibtex_from_path(current_file.path)
 					}
 				}
-			},
-		})
-
-		// Incremental vault recache (fingerprints; reports clash count)
-		this.addCommand({
-			id: 'recache-vault-bibtex',
-			name: 'Recache all BibTeX entries from vault',
-			callback: () => {
-				void this.recache_vault_command(false)
-			},
-		})
-
-		// Hard reset: re-read every markdown file, rewrite fingerprints
-		this.addCommand({
-			id: 'hard-rescan-vault-bibtex',
-			name: 'Hard reset BibTeX cache from vault',
-			callback: () => {
-				void this.recache_vault_command(true)
 			},
 		})
 
@@ -212,7 +166,49 @@ export default class BibtexScholar extends Plugin {
 		}))
 
 		this.registerEvent(this.app.vault.on('delete', (file) => {
-			this.uncache_bibtex_from_path(file.path)
+			// Soft uncache with Undo — vault delete should not silently drop the library.
+			void this.uncache_bibtex_from_path(file.path, { offer_undo: true })
+		}))
+
+		// File explorer / tab right-click menu — the same per-file actions available
+		// via the command palette or the panel's corner buttons, localized to the file
+		// being clicked rather than requiring it to already be the active file. Folders
+		// get one directory-scoped action instead (see export_directory_bibtex): the
+		// per-file actions above don't generalize to "a folder full of files" cleanly
+		// (which file's content would "copy as markdown" even mean?), but exporting
+		// everything the folder sources-or-cites to one .bib file does.
+		this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+			if (file instanceof TFolder) {
+				menu.addItem((item) => item
+					.setTitle('Export BibTeX for this folder (sources + cited)')
+					.setIcon('scroll-text')
+					.onClick(() => { void this.export_directory_bibtex(file) }))
+				return
+			}
+
+			if (!(file instanceof TFile) || file.extension !== 'md') return
+
+			menu.addItem((item) => item
+				.setTitle('Copy as standard markdown')
+				.setIcon('scroll-text')
+				.onClick(() => { void this.cp_std_md(file) }))
+
+			menu.addItem((item) => item
+				.setTitle('Copy with \\autocite{}')
+				.setIcon('scroll-text')
+				.onClick(() => { void this.cp_autocite_md(file) }))
+
+			menu.addItem((item) => item
+				.setTitle('Uncache BibTeX entries from this file')
+				.setIcon('database')
+				.onClick(() => {
+					if (window.confirm(
+						`Remove all cached BibTeX entries sourced from “${file.path}”? `
+						+ 'Vault notes are not deleted. This is an explicit cache clear (no Undo toast).',
+					)) {
+						void this.uncache_bibtex_from_path(file.path)
+					}
+				}))
 		}))
 
 		// citekey rename: debounced modify only; skip files without ```bibtex (idle typing elsewhere)
@@ -385,6 +381,11 @@ export default class BibtexScholar extends Plugin {
 		const fields_ls = await parse_bibtex(source)
 		let dirty = false
 		const section_text = String(ctx.getSectionInfo(el)?.text ?? source)
+		// One summary Notice for losers in this block (not one toast per entry).
+		let id_dup_hits = 0
+		let doi_dup_hits = 0
+		let example_id: string | undefined
+		let example_owner_path: string | undefined
 
 		for (const fields of fields_ls) {
 			const id = fields.id
@@ -400,12 +401,24 @@ export default class BibtexScholar extends Plugin {
 			)
 			const duplicate = id_duplicate || doi_duplicate
 
+			let owner_path: string | undefined
 			if (duplicate) {
 				if (id_duplicate) {
-					new Notice(`Warning: BibTeX ID has been used\n${id}`, 10e3)
+					id_dup_hits++
+					const owner = resolve_id(this.id_index, id)
+					owner_path = owner !== undefined
+						? this.cache.bibtex_dict[owner]?.source_path
+						: undefined
+					if (!example_id) {
+						example_id = id
+						example_owner_path = owner_path
+					}
 				}
 				if (doi_duplicate) {
-					new Notice(`Warning: BibTeX DOI has been used\n${fields.doi}`, 10e3)
+					doi_dup_hits++
+					if (!example_id) {
+						example_id = id
+					}
 				}
 			} else if (upsert_entry(this.cache.bibtex_dict, id, fields, bibtex_source, ctx.sourcePath, this.doi_index, undefined, this.id_index)) {
 				dirty = true
@@ -415,16 +428,23 @@ export default class BibtexScholar extends Plugin {
 			const paper_bar = el.createEl('span', {
 				cls: (duplicate) ? ('bibtex-hover-duplicate-id') : ('bibtex-entry'),
 			})
+			if (duplicate) {
+				paper_bar.setAttribute(
+					'title',
+					paint_duplicate_tag_state(owner_path).title,
+				)
+			}
 			const entry = this.cache.bibtex_dict[id] ?? {
 				fields: fields,
 				source_path: ctx.sourcePath,
 			}
 			ctx.addChild(new HoverRenderChild(paper_bar, entry, this, this.app, false))
 
-			// "source" tag: after a vault recache, shows clash reasons in red when this
-			// citekey is involved. data-citekey lets rescan patch open notes without a
-			// full preview re-render (Live Preview would not update otherwise).
-			const tag_state = source_tag_state(this.clash_reasons.get(id))
+			// Source tag: paint-time losers say "not cached"; else rescan clash label / "source".
+			// data-citekey lets rescan patch open notes without a full preview re-render.
+			const tag_state = duplicate
+				? paint_duplicate_tag_state(owner_path)
+				: source_tag_state(this.clash_reasons.get(id))
 			el.createEl('code', {
 				cls: tag_state.clashing ? 'bibtex-source-tag is-clashing' : 'bibtex-source-tag',
 				text: tag_state.text,
@@ -433,6 +453,22 @@ export default class BibtexScholar extends Plugin {
 					...(tag_state.title ? { title: tag_state.title } : {}),
 				},
 			})
+		}
+
+		if (id_dup_hits > 0 || doi_dup_hits > 0) {
+			const quiet = Boolean(this.cache.quiet_duplicate_notices)
+			if (!quiet || !this.duplicate_notice_emitted_this_session) {
+				this.duplicate_notice_emitted_this_session = true
+				new Notice(
+					duplicate_block_notice({
+						id_hits: id_dup_hits,
+						doi_hits: doi_dup_hits,
+						example_id,
+						example_owner_path,
+					}),
+					12e3,
+				)
+			}
 		}
 
 		// One coalesced write per codeblock paint, not per entry.
@@ -461,7 +497,9 @@ export default class BibtexScholar extends Plugin {
 				const canonical_id = resolve_id(this.id_index, paper_id)
 
 				if (canonical_id === undefined || !this.cache.bibtex_dict[canonical_id]) {
-					new Notice(`Paper ID not found in BibTeX cache: ${paper_id}`)
+					// Visual only — no Notice spam when opening notes with typos / stale cites.
+					codeblock.addClass('bibtex-cite-unknown')
+					codeblock.setAttribute('title', unknown_cite_title(paper_id))
 					continue
 				} else {
 					const paper_bar = codeblock.createSpan()
@@ -479,26 +517,119 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	/**
-	 * Copy all BibTeX entries to clipboard
-	 * P.S. The abstract will be omitted to ensure that LaTeX compiles correctly
+	 * Full library as BibTeX source (abstracts omitted).
+	 * P.S. Abstracts are omitted to ensure LaTeX compiles cleanly.
 	 */
+	format_library_bibtex(): string {
+		return format_bibtex_for_ids(this.cache.bibtex_dict, Object.keys(this.cache.bibtex_dict))
+	}
+
 	cp_bibtex() {
-		let bibtex = ''
-		const current_file = this.app.workspace.getActiveFile()
-
-		for (const id in this.cache.bibtex_dict) {
-			bibtex += make_bibtex(this.cache.bibtex_dict[id].fields, false) + '\n'
-		}
-
-		navigator.clipboard.writeText(bibtex)
+		navigator.clipboard.writeText(this.format_library_bibtex())
 		new Notice('Copied BibTeX entries to clipboard')
 	}
 
 	/**
-	 * Copy the current file's content as standard markdown, i.e. replacing inline references with url links
+	 * Write `body` to a vault path, creating parent folders as needed.
+	 * Overwrites an existing file at that path. Returns false (with a Notice)
+	 * if `dest` names something that already exists but isn't a file.
 	 */
-	async cp_std_md() {
-		const current_file = this.app.workspace.getActiveFile()
+	private async write_bib_file(dest: string, body: string): Promise<boolean> {
+		const folder = dest.includes('/') ? dest.slice(0, dest.lastIndexOf('/')) : ''
+		if (folder) {
+			const exists = await this.app.vault.adapter.exists(folder)
+			if (!exists) {
+				await this.app.vault.createFolder(folder)
+			}
+		}
+		const existing = this.app.vault.getAbstractFileByPath(dest)
+		if (existing instanceof TFile) {
+			await this.app.vault.modify(existing, body)
+		} else if (existing) {
+			new Notice(`Cannot export: ${dest} is not a file`)
+			return false
+		} else {
+			await this.app.vault.create(dest, body)
+		}
+		return true
+	}
+
+	/**
+	 * Write the library to a vault path as a `.bib` file (abstracts omitted).
+	 * Overwrites when the file already exists. Remembers the path in settings.
+	 */
+	async export_bibtex_file(path: string) {
+		const dest = normalizePath(path.trim() || this.cache.export_bib_path || 'bibliography.bib')
+		this.cache.export_bib_path = dest
+		if (!(await this.write_bib_file(dest, this.format_library_bibtex()))) return
+		await this.save_cache()
+		const n = entry_count(this.cache.bibtex_dict)
+		new Notice(`Exported ${n} entr${n === 1 ? 'y' : 'ies'} to ${dest}`)
+	}
+
+	/**
+	 * Write a `.bib` file for one directory subtree (recursive): entries sourced
+	 * from any markdown file under it, *plus* entries cited (`` `{id}` ``/`` `[id]` ``)
+	 * by any note under it even when the ```bibtex block that defines them lives
+	 * elsewhere in the vault — "what this folder's notes actually reference,"
+	 * not just "what was pasted into this folder." Written next to the folder
+	 * as `<folder name>.bib` (vault root exports to `bibliography.bib`),
+	 * overwriting a same-named file from a previous export.
+	 */
+	async export_directory_bibtex(folder: TFolder) {
+		const prefix = folder.path === '' ? '' : `${folder.path}/`
+		const label = folder.path === '' ? 'vault root' : folder.path
+		const paths = this.app.vault.getMarkdownFiles()
+			.filter((f) => f.path.startsWith(prefix))
+			.map((f) => f.path)
+
+		if (paths.length === 0) {
+			new Notice(`No markdown files in ${label}`)
+			return
+		}
+
+		// Directory-scoped index: built fresh each time (folders are exported rarely,
+		// not worth keeping this warm alongside the vault-wide cite_index).
+		const dir_cite_index = create_cite_path_index()
+		const notice = new Notice(`Scanning ${label}… 0/${paths.length}`, 0)
+		await scan_inline_cites_chunked({
+			paths,
+			read: async (p) => {
+				const af = this.app.vault.getAbstractFileByPath(p)
+				return af instanceof TFile ? this.app.vault.read(af) : ''
+			},
+			chunk_size: 32,
+			yield_ms: 0,
+			cite_index: dir_cite_index,
+			on_progress: (done, total) => notice.setMessage(`Scanning ${label}… ${done}/${total}`),
+		})
+		notice.hide()
+
+		const ids = new Set(ids_under_path(this.cache.bibtex_dict, prefix))
+		for (const cite_id of cite_index_all_cites(dir_cite_index)) {
+			const canonical = resolve_id(this.id_index, cite_id)
+			if (canonical !== undefined && this.cache.bibtex_dict[canonical]) {
+				ids.add(canonical)
+			}
+		}
+
+		if (ids.size === 0) {
+			new Notice(`No BibTeX entries sourced from or cited in ${label}`)
+			return
+		}
+
+		const dest = normalizePath(folder.path === '' ? 'bibliography.bib' : `${folder.path}/${folder.name}.bib`)
+		if (!(await this.write_bib_file(dest, format_bibtex_for_ids(this.cache.bibtex_dict, ids)))) return
+		new Notice(`Exported ${ids.size} entr${ids.size === 1 ? 'y' : 'ies'} from ${label} to ${dest}`)
+	}
+
+	/**
+	 * Copy a file's content as standard markdown, i.e. replacing inline references with url links.
+	 * @param target - Defaults to the active file (command palette); the file-menu handler passes
+	 * the right-clicked file explicitly, since that need not be the active one.
+	 */
+	async cp_std_md(target?: TFile) {
+		const current_file = target ?? this.app.workspace.getActiveFile()
 		// read file content
 		if (current_file) {
 			let content = await this.app.vault.read(current_file)
@@ -526,10 +657,12 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	/**
-	 * Copy the current file's content with `{id}` replaced as \autocite{id}
+	 * Copy a file's content with `{id}` replaced as \autocite{id}.
+	 * @param target - Defaults to the active file (command palette); the file-menu handler passes
+	 * the right-clicked file explicitly, since that need not be the active one.
 	 */
-	async cp_autocite_md() {
-		const current_file = this.app.workspace.getActiveFile()
+	async cp_autocite_md(target?: TFile) {
+		const current_file = target ?? this.app.workspace.getActiveFile()
 		// read file content
 		if (current_file) {
 			let content = await this.app.vault.read(current_file)
@@ -556,12 +689,16 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	/**
-	 * Uncache all BibTeX entry from a path
-	 * @param path - The path to uncache papers from
+	 * Uncache all BibTeX entries whose source is `path`.
+	 * @param offer_undo - when true (vault delete), keep a short-lived snapshot and an Undo notice.
 	 */
-	async uncache_bibtex_from_path(path: string) {
-		const n = remove_entries_for_path(this.cache.bibtex_dict, path, this.doi_index, this.id_index)
-		const had_fp = path in this.cache.path_fingerprints
+	async uncache_bibtex_from_path(path: string, opts?: { offer_undo?: boolean }) {
+		const snapshot = snapshot_entries_for_path(this.cache.bibtex_dict, path)
+		const n = Object.keys(snapshot).length
+		const fingerprint = this.cache.path_fingerprints[path]
+		const had_fp = fingerprint !== undefined
+
+		remove_entries_for_path(this.cache.bibtex_dict, path, this.doi_index, this.id_index)
 		if (had_fp) {
 			delete this.cache.path_fingerprints[path]
 		}
@@ -571,9 +708,58 @@ export default class BibtexScholar extends Plugin {
 		if (n > 0 || had_fp) {
 			await this.save_cache()
 		}
-		if (n > 0) {
+
+		if (n === 0) {
+			return
+		}
+
+		if (opts?.offer_undo) {
+			this.show_delete_uncache_undo(path, snapshot, fingerprint)
+		} else {
 			new Notice(`Uncached BibTeX entries from ${path}`)
 		}
+	}
+
+	/**
+	 * Notice with an Undo control after a vault file delete dropped cache rows.
+	 * Snapshot is in-memory only; Undo is best-effort until the notice expires.
+	 */
+	private show_delete_uncache_undo(
+		path: string,
+		snapshot: BibtexDict,
+		fingerprint: string | undefined,
+	) {
+		const count = Object.keys(snapshot).length
+		const notice = new Notice('', 16e3)
+		const root = notice.noticeEl
+		root.empty()
+		root.createSpan({ text: `${delete_uncache_notice_text(count, path)} ` })
+		const undo = root.createEl('a', {
+			text: 'Undo',
+			cls: 'bibtex-notice-undo',
+			attr: { href: '#' },
+		})
+		let used = false
+		undo.addEventListener('click', (e) => {
+			e.preventDefault()
+			if (used) {
+				return
+			}
+			used = true
+			const { restored, skipped } = restore_entries_snapshot(
+				this.cache.bibtex_dict,
+				snapshot,
+				this.doi_index,
+				this.id_index,
+			)
+			if (fingerprint !== undefined) {
+				this.cache.path_fingerprints[path] = fingerprint
+			}
+			void this.save_cache()
+			notice.hide()
+			const skip_note = skipped > 0 ? ` (${skipped} already re-occupied)` : ''
+			new Notice(`Restored ${restored} BibTeX entr${restored === 1 ? 'y' : 'ies'} to cache${skip_note}`)
+		})
 	}
 
 	/**
@@ -1002,178 +1188,10 @@ export default class BibtexScholar extends Plugin {
 	 */
 	add_paper_panel() {
 		const { workspace } = this.app
-		let leaf = workspace.getRightLeaf(false)
+		const leaf = workspace.getRightLeaf(false)
 
 		if (leaf) {
 			leaf.setViewState({ type: PAPER_PANEL_VIEW_TYPE, active: true })
 		}
-	}
-}
-
-/**
- * BibTeX Scholar's setting
- */
-class BibtexScholarSetting extends PluginSettingTab {
-	plugin: BibtexScholar
-
-	constructor(app: App, plugin: BibtexScholar) {
-		super(app, plugin)
-		this.plugin = plugin
-	}
-
-	display(): void {
-		const { containerEl } = this
-
-		containerEl.empty()
-
-		new Setting(containerEl).setName('Paths & templates').setHeading()
-
-		new Setting(containerEl)
-			.setName('Paper note folder')
-			.setDesc('Notes created from the note button are placed here. No trailing /.')
-			.addSearch(search => {
-				search
-					.setValue(this.plugin.cache.note_folder)
-					.onChange(async (value) => {
-						this.plugin.cache.note_folder = normalizePath(value);
-						await this.plugin.save_cache();
-					});
-				// attach folder suggestion prompt
-				new FolderSuggest(this.app, search.inputEl);
-			});
-
-		new Setting(containerEl)
-			.setName('PDF folder')
-			.setDesc('PDFs uploaded from the pdf button are placed here. No trailing /.')
-			.addSearch(search => {
-				search
-					.setValue(this.plugin.cache.pdf_folder)
-					.onChange(async (value) => {
-						this.plugin.cache.pdf_folder = normalizePath(value);
-						await this.plugin.save_cache();
-					});
-				// attach folder suggestion prompt
-				new FolderSuggest(this.app, search.inputEl);
-			});
-
-		new Setting(containerEl)
-			.setName('Paper note template')
-			.setDesc('Path to a template file used when creating associated paper notes from BibTeX entries. Leave empty to use the default.')
-			.addSearch(search => {
-				search
-					.setPlaceholder('templates/bibtex-note.md')
-					.setValue(this.plugin.cache.template_path || '')
-					.onChange(async (value) => {
-						this.plugin.cache.template_path = normalizePath(value);
-						await this.plugin.save_cache();
-					});
-				// attach file suggestion prompt
-				new FileSuggest(this.app, search.inputEl);
-			});
-
-		new Setting(containerEl)
-			.setName('Default fetch mode')
-			.setDesc('Default lookup mode when fetching a BibTeX entry online.')
-			.addDropdown(dropdown => dropdown
-				.addOption('doi', 'DOI')
-				.addOption('manual', 'Manual')
-				.setValue(this.plugin.cache.fetch_mode)
-				.onChange(async (value) => {
-					this.plugin.cache.fetch_mode = value
-					await this.plugin.save_cache()
-				}))
-
-		new Setting(containerEl).setName('Citation card').setHeading()
-
-		const font_size = normalize_card_font_size(this.plugin.cache.card_font_size)
-		new Setting(containerEl)
-			.setName('Citation card font size')
-			.setDesc(
-				`Base font size for the floating citation card (title, actions, and fields) — shown ` +
-				`everywhere: inline cites, codeblocks, and the paper panel. ` +
-				`Range ${CARD_FONT_SIZE_MIN}–${CARD_FONT_SIZE_MAX}px. Current: ${font_size}px.`,
-			)
-			.addSlider((slider) => {
-				slider
-					.setLimits(CARD_FONT_SIZE_MIN, CARD_FONT_SIZE_MAX, 1)
-					.setValue(font_size)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.cache.card_font_size = normalize_card_font_size(value)
-						await this.plugin.save_cache()
-						// Refresh description with the live value.
-						this.display()
-					})
-			})
-
-		new Setting(containerEl)
-			.setName('Wider citation cards')
-			.setDesc(
-				'Use a slightly wider floating card so titles and abstracts wrap less and need less scrolling.',
-			)
-			.addToggle((toggle) => {
-				toggle
-					.setValue(Boolean(this.plugin.cache.card_wide))
-					.onChange(async (value) => {
-						this.plugin.cache.card_wide = value
-						await this.plugin.save_cache()
-					})
-			})
-
-		new Setting(containerEl).setName('Paper panel').setHeading()
-
-		const chip_font_size = normalize_panel_chip_font_size(this.plugin.cache.panel_chip_font_size)
-		new Setting(containerEl)
-			.setName('Paper panel text size')
-			.setDesc(
-				`Text size for discover-mode chips in the paper panel — independent of the citation ` +
-				`card font size above (list mode's rows still follow that one). ` +
-				`Range ${PANEL_CHIP_FONT_SIZE_MIN}–${PANEL_CHIP_FONT_SIZE_MAX}px. Current: ${chip_font_size}px. ` +
-				`Reopen the paper panel after changing this.`,
-			)
-			.addSlider((slider) => {
-				slider
-					.setLimits(PANEL_CHIP_FONT_SIZE_MIN, PANEL_CHIP_FONT_SIZE_MAX, 1)
-					.setValue(chip_font_size)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.cache.panel_chip_font_size = normalize_panel_chip_font_size(value)
-						await this.plugin.save_cache()
-						this.display()
-					})
-			})
-
-		new Setting(containerEl)
-			.setName('Missing PDF panel')
-			.setDesc(
-				'Show a toggle button in the paper panel, beside the clash button, that lists cached ' +
-				'references with no matching PDF file. Off by default since it is an occasional-use check, ' +
-				'not something you need on every open. Reopen the paper panel after changing this.',
-			)
-			.addToggle((toggle) => {
-				toggle
-					.setValue(Boolean(this.plugin.cache.missing_pdf_enabled))
-					.onChange(async (value) => {
-						this.plugin.cache.missing_pdf_enabled = value
-						await this.plugin.save_cache()
-					})
-			})
-
-		new Setting(containerEl)
-			.setName('Double hover debounce in paper panel')
-			.setDesc(
-				'The paper panel can show many citation chips close together. Wait twice as long ' +
-				`(${OPEN_DEBOUNCE_MS * 2}ms instead of ${OPEN_DEBOUNCE_MS}ms) before a hover opens the ` +
-				'citation card there, to reduce accidental opens while scrolling or skimming the list. ' +
-				'Only affects the paper panel — inline cites and codeblocks are unchanged.',
-			)
-			.addToggle((toggle) => {
-				toggle
-					.setValue(Boolean(this.plugin.cache.panel_double_debounce_enabled))
-					.onChange(async (value) => {
-						this.plugin.cache.panel_double_debounce_enabled = value
-						await this.plugin.save_cache()
-					})
-			})
 	}
 }

@@ -8,6 +8,7 @@ import {
 	text_may_contain_bibtex_block,
 } from 'src/cite-span'
 import { should_render_cite_widgets } from 'src/editor'
+import { fields_shallow_equal } from '../src/hover'
 
 describe('cite-span / cursor management', () => {
 	it('finds compact and expanded cite spans on a line', () => {
@@ -129,5 +130,13 @@ describe('cite-span / cursor management', () => {
 		expect(find_cite_spans_in_line('plain {Alpha} without ticks')).toEqual([])
 		// Nested-ish / empty id is not a valid match (pattern requires [^\}\]]+)
 		expect(find_cite_spans_in_line('`{}`')).toEqual([])
+	})
+})
+
+describe('fields_shallow_equal (widget content eq)', () => {
+	it('matches equal maps and rejects field updates', () => {
+		expect(fields_shallow_equal({ id: 'A', title: 't' }, { id: 'A', title: 't' })).toBe(true)
+		expect(fields_shallow_equal({ id: 'A', title: 't' }, { id: 'A', title: 'other' })).toBe(false)
+		expect(fields_shallow_equal({ id: 'A' }, { id: 'A', year: '2020' })).toBe(false)
 	})
 })

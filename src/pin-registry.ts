@@ -64,6 +64,20 @@ export class PinRegistry<T> {
 		this.notify()
 	}
 
+	/**
+	 * Replace payload without moving the card (e.g. bibtex fields refreshed).
+	 * No-op if not pinned. Notifies subscribers so open cards re-render.
+	 */
+	update_payload(id: string, payload: T): boolean {
+		const entry = this.pins.get(id)
+		if (!entry) {
+			return false
+		}
+		entry.payload = payload
+		this.notify()
+		return true
+	}
+
 	/** Raise a pin above siblings (click / start-drag). */
 	bring_to_front(id: string): void {
 		const entry = this.pins.get(id)

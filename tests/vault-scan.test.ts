@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+	cite_index_all_cites,
 	cite_index_cites_for,
 	cite_index_clear,
 	cite_index_count_for,
@@ -211,6 +212,14 @@ describe('vault-scan cite reverse index (SPEED S6)', () => {
 		expect(cite_index_count_for(idx, 'Smith2020')).toBe(2)
 		expect(cite_index_count_for(idx, 'SMITH2020')).toBe(2)
 		expect(cite_index_count_for(idx, 'Unknown')).toBe(0)
+	})
+
+	it('cite_index_all_cites unions literal citekeys across every indexed path, de-duped and sorted', () => {
+		const idx = create_cite_path_index()
+		expect(cite_index_all_cites(idx)).toEqual([])
+		cite_index_set_path(idx, 'a.md', ['Beta', 'Alpha'])
+		cite_index_set_path(idx, 'b.md', ['Alpha', 'Gamma'])
+		expect(cite_index_all_cites(idx)).toEqual(['Alpha', 'Beta', 'Gamma'])
 	})
 
 	it('full cite scan populates index for all paths in one pass', async () => {

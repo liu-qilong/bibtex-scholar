@@ -109,6 +109,18 @@ export function cite_index_count_for(index: CitePathIndex, id: string): number {
 	return index.cite_to_paths.get(normalize_id(id))?.size ?? 0
 }
 
+/**
+ * Every distinct literal citekey cited anywhere across the paths `index` currently
+ * knows about — e.g. a directory-scoped index built for exactly one folder's files.
+ */
+export function cite_index_all_cites(index: CitePathIndex): string[] {
+	const found = new Set<string>()
+	for (const cites of index.path_to_cites.values()) {
+		for (const id of cites) found.add(id)
+	}
+	return [...found].sort((a, b) => a.localeCompare(b))
+}
+
 /** Sorted citekeys known for `path` (empty if none). */
 export function cite_index_cites_for(index: CitePathIndex, path: string): string[] {
 	const cites = index.path_to_cites.get(path)

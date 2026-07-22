@@ -143,7 +143,7 @@ describe('citation popup DOM behavior', () => {
 		expect(hint?.getAttribute('title')).toMatch(/dismiss/i)
 	})
 
-	it('chip mousedown preventDefault so a native <button> cannot steal focus from the CM editor', () => {
+	it('chip pointerdown preventDefault so a native <button> cannot steal focus from the CM editor', () => {
 		const { chip_button } = mount()
 		const btn = chip_button()
 		// jsdom only focuses explicitly focusable nodes — tabIndex makes the proxy real.
@@ -153,11 +153,9 @@ describe('citation popup DOM behavior', () => {
 		editor_proxy.focus()
 		expect(document.activeElement).toBe(editor_proxy)
 
-		const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+		// Chips listen on pointerdown (also starts long-press for Live Preview edit).
+		const ev = new PointerEvent('pointerdown', { bubbles: true, cancelable: true })
 		btn.dispatchEvent(ev)
-		// Browser: preventDefault on mousedown stops the button from taking focus.
-		// That is the contract we need; jsdom does not always emulate the focus
-		// side-effect, so we assert the cancellable default was prevented.
 		expect(ev.defaultPrevented).toBe(true)
 		expect(document.activeElement).not.toBe(btn)
 	})
@@ -340,6 +338,23 @@ describe('citation popup DOM behavior', () => {
 		expect(card()!.textContent).not.toContain('Doe2020Widgets')
 		expect(chip_a.chip_button().getAttribute('aria-expanded')).toBe('false')
 		expect(chip_b.chip_button().getAttribute('aria-expanded')).toBe('true')
+	})
+
+	it('pinned card shows the Esc / drag affordance line', async () => {
+		const { chip_button, card } = mount()
+		await act(async () => {
+			fireEvent.click(chip_button())
+		})
+		const pin_btn = card()!.querySelector('.bibtex-card-pin') as HTMLButtonElement
+		await act(async () => {
+			fireEvent.click(pin_btn)
+		})
+		const affordance = card()!.querySelector('.bibtex-card-pin-affordance')
+		expect(affordance).not.toBeNull()
+		expect(affordance!.textContent).toMatch(/Esc/i)
+		expect(affordance!.textContent).toMatch(/drag/i)
+		// Preview-only ⓘ hint is not used on pinned cards.
+		expect(card()!.querySelector('.bibtex-card-hint')).toBeNull()
 	})
 
 	it('marks the card is-flipped when there is no room below (contents move, not header/actions)', async () => {
@@ -574,7 +589,7 @@ describe('HoverWidget / chip lifecycle contracts', () => {
 		expect(dom.querySelector('.bibtex-hover')?.getAttribute('contenteditable')).toBe('false')
 	})
 
-	it('eq is true only for same id + expand; ignoreEvent always true', () => {
+	it('eq is true only for same fields + expand; ignoreEvent always true', () => {
 		const portal_root = document.createElement('div')
 		document.body.appendChild(portal_root)
 		const app = make_fake_app(portal_root)
@@ -587,10 +602,16 @@ describe('HoverWidget / chip lifecycle contracts', () => {
 			fields: { ...bibtex.fields, id: 'Other2022' },
 		}
 		const b = new HoverWidget(other, plugin as any, app as any, false)
+		const updated_title: BibtexElement = {
+			...bibtex,
+			fields: { ...bibtex.fields, title: 'Revised title' },
+		}
+		const c = new HoverWidget(updated_title, plugin as any, app as any, false)
 
 		expect(a.eq(a2)).toBe(true)
 		expect(a.eq(expanded)).toBe(false)
 		expect(a.eq(b)).toBe(false)
+		expect(a.eq(c)).toBe(false) // field content change → re-paint (A5)
 		expect(a.ignoreEvent()).toBe(true)
 		expect(a.ignoreEvent(new Event('mousedown'))).toBe(true)
 	})

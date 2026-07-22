@@ -13,14 +13,37 @@ import { App, Component, MarkdownRenderer, Notice, Modal, MarkdownRenderChild } 
 import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
-import { WidgetType } from '@codemirror/view'
+import { EditorSelection } from '@codemirror/state'
+import { type EditorView, WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
 import { normalize_card_font_size } from 'src/cache-ops'
 import { clamp_card_position, compute_card_placement, compute_card_position } from 'src/citation-card-layout'
 import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
+import { find_cite_spans_in_line } from 'src/cite-span'
 import type BibtexScholar from 'src/main'
 import { PinRegistry, type PinPosition } from 'src/pin-registry'
+
+/** Long-press duration (ms) on a Live Preview chip to drop into raw-text edit mode. */
+export const CHIP_LONG_PRESS_MS = 500
+
+/** True when two field maps have the same keys and string values (widget eq / A5). */
+export function fields_shallow_equal(
+	a: Record<string, unknown>,
+	b: Record<string, unknown>,
+): boolean {
+	const keys_a = Object.keys(a)
+	const keys_b = Object.keys(b)
+	if (keys_a.length !== keys_b.length) {
+		return false
+	}
+	for (const k of keys_a) {
+		if (a[k] !== b[k]) {
+			return false
+		}
+	}
+	return true
+}
 
 /** Snapshot carried by a pinned card (independent of the chip that opened it). */
 type PinPayload = { bibtex: BibtexElement, plugin: BibtexScholar, app: App }
@@ -220,7 +243,7 @@ const CardBtn = ({
     </button>
 )
 
-/** Map-pin glyph for the pin button — outline when unpinned, fills via CSS (`.is-active`) when pinned. */
+/** Tilted thumbtack glyph for the pin button — outline head when unpinned, fills via CSS (`.is-active`) when pinned. */
 const PinIcon = () => (
     <svg
         className='bibtex-card-pin-icon'
@@ -230,8 +253,10 @@ const PinIcon = () => (
         aria-hidden="true"
         focusable="false"
     >
-        <path d="M12 21s7-7.58 7-12A7 7 0 0 0 5 9c0 4.42 7 12 7 12z" />
-        <circle cx="12" cy="9" r="2.5" />
+        <g transform="rotate(45 12 12)">
+            <rect className='bibtex-card-pin-head' x="9" y="3" width="6" height="8" rx="3" />
+            <line x1="12" y1="11" x2="12" y2="20" />
+        </g>
     </svg>
 )
 
@@ -418,13 +443,23 @@ const CitationCardBody = ({
                 })}
             </div>
 
-            {/* On-demand interaction hint, not an unbidden popup: sits with the
-             * scrollable fields (the cluster `is-flipped` always keeps at the
-             * edge farthest from the cursor), away from the header/actions
-             * cluster the cursor sits next to right after opening the card. */}
-            <div className='bibtex-card-hint' title='Esc or click outside the card to dismiss it.' aria-hidden='true'>
-                ⓘ
-            </div>
+            {/* Hint sits with the fields cluster (farthest from the cursor after open). */}
+            {pinned ? (
+                <div
+                    className='bibtex-card-pin-affordance'
+                    title='Pinned cards stay open across notes. Esc dismisses the front pin; drag the header to move.'
+                >
+                    Pinned · Esc dismisses · drag header to move
+                </div>
+            ) : (
+                <div
+                    className='bibtex-card-hint'
+                    title='Esc or click outside the card to dismiss it.'
+                    aria-hidden='true'
+                >
+                    ⓘ
+                </div>
+            )}
         </>
     )
 }
@@ -447,6 +482,44 @@ type ChipRecord = {
 
 /** instance_id → chip record. Filled on mount, cleared on unmount. */
 const chip_registry = new Map<string, ChipRecord>()
+
+/** Bumped when an existing chip's bibtex snapshot changes so open cards re-read. */
+const chip_content_listeners = new Set<() => void>()
+
+function notify_chip_content_changed(): void {
+	for (const listener of chip_content_listeners) {
+		listener()
+	}
+}
+
+/** Subscribe to chip bibtex/payload refreshes (CardManager). */
+function subscribe_chip_content(listener: () => void): () => void {
+	chip_content_listeners.add(listener)
+	return () => {
+		chip_content_listeners.delete(listener)
+	}
+}
+
+/**
+ * Place the caret inside a cite span near `pos` so the replace decoration drops
+ * and the user can edit the raw `` `{id}` `` text (Live Preview only).
+ */
+function enter_cite_edit_mode(view: EditorView, near_pos: number): boolean {
+	const doc = view.state.doc
+	const clamped = Math.max(0, Math.min(near_pos, doc.length))
+	const line = doc.lineAt(clamped)
+	const spans = find_cite_spans_in_line(line.text, line.from)
+	const span = spans.find((s) => near_pos >= s.from && near_pos <= s.to)
+		?? spans.find((s) => Math.abs(near_pos - s.from) <= 1 || Math.abs(near_pos - s.to) <= 1)
+	if (!span) {
+		return false
+	}
+	// Inside half-open [from, to) → chip derenders to raw text.
+	const caret = Math.min(span.from + 1, span.to - 1)
+	view.dispatch({ selection: EditorSelection.cursor(Math.max(span.from, caret)) })
+	view.focus()
+	return true
+}
 
 /** Shared dialog chrome: classes + font CSS vars for both preview and pinned cards. */
 function card_surface_props(
@@ -618,6 +691,17 @@ const PinnedCard = ({
 }) => {
     const { bibtex, plugin, app } = payload
     const card_ref = useRef<HTMLDivElement | null>(null)
+    // During drag we move the DOM node only; registry commits on pointerup (B3).
+    const drag_pos_ref = useRef(pos)
+
+    useEffect(() => {
+        drag_pos_ref.current = pos
+        const card = card_ref.current
+        if (card && !card.dataset.dragging) {
+            card.style.top = `${pos.top}px`
+            card.style.left = `${pos.left}px`
+        }
+    }, [pos.top, pos.left])
 
     const on_header_pointer_down = (e: ReactPointerEvent<HTMLElement>) => {
         // Ignore pin/close buttons — they need their own clicks.
@@ -631,34 +715,38 @@ const PinnedCard = ({
         const header_el = e.currentTarget
         const pointer_id = e.pointerId
         header_el.setPointerCapture(pointer_id)
+        card.dataset.dragging = '1'
 
         const start_x = e.clientX
         const start_y = e.clientY
-        const start_pos = pos
+        const start_pos = { ...drag_pos_ref.current }
         const size = { width: card.offsetWidth, height: card.offsetHeight }
 
         const on_move = (ev: PointerEvent) => {
             const viewport = { width: window.innerWidth, height: window.innerHeight }
-            pin_registry.move(
-                paper_id,
-                clamp_card_position(
-                    {
-                        top: start_pos.top + (ev.clientY - start_y),
-                        left: start_pos.left + (ev.clientX - start_x),
-                    },
-                    size,
-                    viewport,
-                ),
+            const next = clamp_card_position(
+                {
+                    top: start_pos.top + (ev.clientY - start_y),
+                    left: start_pos.left + (ev.clientX - start_x),
+                },
+                size,
+                viewport,
             )
+            drag_pos_ref.current = next
+            card.style.top = `${next.top}px`
+            card.style.left = `${next.left}px`
         }
         const on_up = () => {
             header_el.removeEventListener('pointermove', on_move)
             header_el.removeEventListener('pointerup', on_up)
+            delete card.dataset.dragging
             try {
                 header_el.releasePointerCapture(pointer_id)
             } catch {
                 // already released
             }
+            // Single registry write — avoids re-rendering the card body every move.
+            pin_registry.move(paper_id, drag_pos_ref.current)
         }
         header_el.addEventListener('pointermove', on_move)
         header_el.addEventListener('pointerup', on_up)
@@ -703,9 +791,12 @@ const PinnedCard = ({
 const CardManager = ({ app }: { app: App }) => {
     const [active_id, set_active_id] = useState<string | null>(() => citation_popup.get_active_id())
     const [, force_pins_update] = useState(0)
+    const [, force_chip_content] = useState(0)
 
     useEffect(() => citation_popup.subscribe_active(set_active_id), [])
     useEffect(() => pin_registry.subscribe(() => force_pins_update((n) => n + 1)), [])
+    // Re-read chip_registry when an existing host gets new bibtex (A5).
+    useEffect(() => subscribe_chip_content(() => force_chip_content((n) => n + 1)), [])
 
     // Esc: preview first (citation_popup + stopImmediatePropagation), then front pin only.
     useEffect(() => {
@@ -832,81 +923,127 @@ function build_chip_dom(paper_id: string): { wrapper: HTMLSpanElement, chip: HTM
     return { wrapper, chip, button }
 }
 
+type MountChipOptions = {
+	/** Paper panel dense list — optional 2× open debounce. */
+	dense?: boolean
+	/**
+	 * Live Preview editor: long-press places the caret inside the cite span
+	 * so the chip derenders for editing (B1).
+	 */
+	editor_view?: EditorView
+}
+
 /**
- * Mount (or reuse) a plain-DOM citation chip in `el`, registering it with the
- * shared {@link chip_registry} and {@link citation_popup} controller so the
- * one shared card manager can render its card if/when it opens.
- * @param dense - If true (paper panel's chip list), and the "Double hover
- * debounce in paper panel" setting is on, wait 2x the open debounce.
+ * Mount (or reuse) a plain-DOM citation chip in `el`.
  */
 function mount_chip(
-    el: HTMLElement,
-    bibtex: BibtexElement,
-    plugin: BibtexScholar,
-    app: App,
-    expand: boolean,
-    dense: boolean = false,
+	el: HTMLElement,
+	bibtex: BibtexElement,
+	plugin: BibtexScholar,
+	app: App,
+	expand: boolean,
+	opts: MountChipOptions = {},
 ): void {
-    el.setAttribute(HOVER_HOST_ATTR, '')
-    ensure_card_manager(app)
+	const dense = opts.dense === true
+	const editor_view = opts.editor_view
+	el.setAttribute(HOVER_HOST_ATTR, '')
+	ensure_card_manager(app)
 
-    const existing = chip_hosts.get(el)
-    if (existing) {
-        // Updates the registry so a *future* open reflects the new bibtex/plugin/app.
-        // If this chip's card happens to be open right now, it keeps showing the
-        // stale snapshot until close/reopen — CardManager only re-reads the
-        // registry on an active_id change, not on every registry write.
-        const prev = chip_registry.get(existing.instance_id)
-        chip_registry.set(existing.instance_id, { anchor: prev?.anchor ?? el, bibtex, plugin, app, dense })
-        const paper_id = bibtex.fields.id
-        existing.button.textContent = paper_id
-        existing.button.setAttribute('aria-label', `Citation ${paper_id}`)
-        if (expand) {
-            citation_popup.open_for_expand(existing.instance_id)
-        }
-        return
-    }
+	const existing = chip_hosts.get(el)
+	if (existing) {
+		const prev = chip_registry.get(existing.instance_id)
+		chip_registry.set(existing.instance_id, {
+			anchor: prev?.anchor ?? el,
+			bibtex,
+			plugin,
+			app,
+			dense,
+		})
+		const paper_id = bibtex.fields.id
+		existing.button.textContent = paper_id
+		existing.button.setAttribute('aria-label', `Citation ${paper_id}`)
+		// Keep open preview / pin in sync with new fields (A5).
+		notify_chip_content_changed()
+		if (pin_registry.is_pinned(paper_id)) {
+			pin_registry.update_payload(paper_id, { bibtex, plugin, app })
+		}
+		if (expand) {
+			citation_popup.open_for_expand(existing.instance_id)
+		}
+		return
+	}
 
-    const instance_id = create_citation_popup_id()
-    const card_dom_id = `bibtex-cite-card-${instance_id}`
-    const { wrapper, chip, button } = build_chip_dom(bibtex.fields.id)
+	const instance_id = create_citation_popup_id()
+	const card_dom_id = `bibtex-cite-card-${instance_id}`
+	const { wrapper, chip, button } = build_chip_dom(bibtex.fields.id)
 
-    chip_registry.set(instance_id, { anchor: chip, bibtex, plugin, app, dense })
+	chip_registry.set(instance_id, { anchor: chip, bibtex, plugin, app, dense })
 
-    // mouseenter/leave do not bubble — use capture so the button (child) still counts.
-    chip.addEventListener('mouseenter', () => {
-        const open_debounce_ms = dense && plugin.cache.panel_double_debounce_enabled
-            ? OPEN_DEBOUNCE_MS * 2
-            : OPEN_DEBOUNCE_MS
-        citation_popup.enter_trigger(instance_id, open_debounce_ms)
-    }, true)
-    chip.addEventListener('mouseleave', () => citation_popup.leave_trigger(instance_id), true)
-    // Keep the CM editor focused: a real <button> steals focus on mousedown otherwise.
-    button.addEventListener('mousedown', (e) => {
-        e.preventDefault()
-    })
-    button.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        citation_popup.toggle_trigger(instance_id)
-    })
+	chip.addEventListener('mouseenter', () => {
+		const open_debounce_ms = dense && plugin.cache.panel_double_debounce_enabled
+			? OPEN_DEBOUNCE_MS * 2
+			: OPEN_DEBOUNCE_MS
+		citation_popup.enter_trigger(instance_id, open_debounce_ms)
+	}, true)
+	chip.addEventListener('mouseleave', () => citation_popup.leave_trigger(instance_id), true)
 
-    const unregister = citation_popup.register(instance_id, (open) => {
-        button.setAttribute('aria-expanded', String(open))
-        if (open) {
-            button.setAttribute('aria-controls', card_dom_id)
-        } else {
-            button.removeAttribute('aria-controls')
-        }
-    })
-    chip_hosts.set(el, { instance_id, button, unregister })
+	// Long-press (Live Preview) → edit raw cite; short click → toggle card.
+	let long_press_timer: number | null = null
+	let long_press_fired = false
+	const clear_long_press = () => {
+		if (long_press_timer != null) {
+			window.clearTimeout(long_press_timer)
+			long_press_timer = null
+		}
+	}
+	button.addEventListener('pointerdown', (e) => {
+		// Keep the CM editor focused: a real <button> steals focus on mousedown otherwise.
+		e.preventDefault()
+		long_press_fired = false
+		if (!editor_view) {
+			return
+		}
+		clear_long_press()
+		long_press_timer = window.setTimeout(() => {
+			long_press_timer = null
+			long_press_fired = true
+			citation_popup.close_outside()
+			try {
+				const near = editor_view.posAtDOM(wrapper)
+				enter_cite_edit_mode(editor_view, near)
+			} catch {
+				// DOM not in view — ignore
+			}
+		}, CHIP_LONG_PRESS_MS)
+	})
+	button.addEventListener('pointerup', () => clear_long_press())
+	button.addEventListener('pointerleave', () => clear_long_press())
+	button.addEventListener('pointercancel', () => clear_long_press())
+	button.addEventListener('click', (e) => {
+		e.preventDefault()
+		e.stopPropagation()
+		if (long_press_fired) {
+			long_press_fired = false
+			return
+		}
+		citation_popup.toggle_trigger(instance_id)
+	})
 
-    el.appendChild(wrapper)
+	const unregister = citation_popup.register(instance_id, (open) => {
+		button.setAttribute('aria-expanded', String(open))
+		if (open) {
+			button.setAttribute('aria-controls', card_dom_id)
+		} else {
+			button.removeAttribute('aria-controls')
+		}
+	})
+	chip_hosts.set(el, { instance_id, button, unregister })
 
-    // `[id]`: open immediately on mount (no debounce). Compact `{id}` waits for hover.
-    if (expand) {
-        citation_popup.open_for_expand(instance_id)
-    }
+	el.appendChild(wrapper)
+
+	if (expand) {
+		citation_popup.open_for_expand(instance_id)
+	}
 }
 
 /**
@@ -946,14 +1083,14 @@ export function unmount_hover_hosts(root: HTMLElement) {
  * "Double hover debounce in paper panel" setting.
  */
 export function render_hover(
-    el: HTMLElement,
-    bibtex: BibtexElement,
-    plugin: BibtexScholar,
-    app: App,
-    expand: boolean = false,
-    dense: boolean = false,
+	el: HTMLElement,
+	bibtex: BibtexElement,
+	plugin: BibtexScholar,
+	app: App,
+	expand: boolean = false,
+	dense: boolean = false,
 ) {
-    mount_chip(el, bibtex, plugin, app, expand, dense)
+	mount_chip(el, bibtex, plugin, app, expand, { dense })
 }
 
 /**
@@ -988,41 +1125,43 @@ export class HoverRenderChild extends MarkdownRenderChild {
  * instance — instance fields set in {@link toDOM} are not on that new object.
  */
 export class HoverWidget extends WidgetType {
-    bibtex: BibtexElement
-    plugin: BibtexScholar
-    app: App
-    expand: boolean
+	bibtex: BibtexElement
+	plugin: BibtexScholar
+	app: App
+	expand: boolean
 
-    constructor(bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false) {
-        super()
-        this.bibtex = bibtex
-        this.plugin = plugin
-        this.app = app
-        this.expand = expand
-    }
+	constructor(bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false) {
+		super()
+		this.bibtex = bibtex
+		this.plugin = plugin
+		this.app = app
+		this.expand = expand
+	}
 
-    toDOM() {
-        const span = document.createElement('span')
-        span.className = 'bibtex-cm-widget'
-        span.setAttribute('contenteditable', 'false')
-        mount_chip(span, this.bibtex, this.plugin, this.app, this.expand)
-        return span
-    }
+	toDOM(view: EditorView) {
+		const span = document.createElement('span')
+		span.className = 'bibtex-cm-widget'
+		span.setAttribute('contenteditable', 'false')
+		// Long-press uses `view` to place the caret inside the cite span (B1).
+		mount_chip(span, this.bibtex, this.plugin, this.app, this.expand, { editor_view: view })
+		return span
+	}
 
-    eq(other: HoverWidget) {
-        return (
-            other instanceof HoverWidget
-            && this.bibtex.fields.id === other.bibtex.fields.id
-            && this.expand === other.expand
-        )
-    }
+	eq(other: HoverWidget) {
+		return (
+			other instanceof HoverWidget
+			&& this.expand === other.expand
+			&& this.bibtex.source_path === other.bibtex.source_path
+			&& fields_shallow_equal(this.bibtex.fields, other.bibtex.fields)
+		)
+	}
 
-    destroy(dom: HTMLElement) {
-        unmount_hover(dom)
-    }
+	destroy(dom: HTMLElement) {
+		unmount_hover(dom)
+	}
 
-    /** Let chip listeners handle pointer events; CM should not claim them. */
-    ignoreEvent() {
-        return true
-    }
+	/** Let chip listeners handle pointer events; CM should not claim them. */
+	ignoreEvent() {
+		return true
+	}
 }
