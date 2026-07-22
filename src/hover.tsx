@@ -1,5 +1,16 @@
+/**
+ * Citation chips + floating cards.
+ *
+ * Architecture (see docs/one-root-per-chip.md):
+ * - Chips are plain DOM (`mount_chip`), not React.
+ * - One shared React root (`CardManager`) portals:
+ *     • 0–1 {@link PreviewCard} — hover/click, anchored (`citation_popup` + `chip_registry`)
+ *     • 0–N {@link PinnedCard} — user-pinned, draggable (`pin_registry`)
+ * - Live Preview: {@link HoverWidget} (CodeMirror replace decoration).
+ * - Reading view / panel: {@link render_hover} / {@link HoverRenderChild}.
+ */
 import { App, Component, MarkdownRenderer, Notice, Modal, MarkdownRenderChild } from 'obsidian'
-import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type PointerEvent as ReactPointerEvent, type ReactElement } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { WidgetType } from '@codemirror/view'
@@ -11,10 +22,10 @@ import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/
 import type BibtexScholar from 'src/main'
 import { PinRegistry, type PinPosition } from 'src/pin-registry'
 
-/** Payload for a pinned card — a snapshot, independent of the chip that opened it. */
+/** Snapshot carried by a pinned card (independent of the chip that opened it). */
 type PinPayload = { bibtex: BibtexElement, plugin: BibtexScholar, app: App }
 
-/** Process-wide singleton, mirrors `citation_popup` — pins survive note switches, not plugin reload. */
+/** Process-wide pins — survive note switches; cleared on plugin unload. */
 export const pin_registry = new PinRegistry<PinPayload>()
 
 /**
@@ -40,36 +51,25 @@ function position_floating_card(anchor: HTMLElement, card: HTMLElement) {
     card.classList.toggle('is-flipped', placement === 'above')
 }
 
-/** Workspace chrome root for portaled citation cards (Phase 0 / 2). */
+/** Workspace chrome root — floating cards portal here so they do not shift note layout. */
 function citation_portal_root(app: App): HTMLElement {
     return app.workspace.containerEl
 }
 
-/**
- * Copy the given text to the clipboard.
- * @param text - The text to copy.
- */
-export const copy_to_clipboard = (text: any) => {
+/** Copy text and show a short Notice (errors go to the console). */
+export const copy_to_clipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
         new Notice('Copied to clipboard')
-    }).catch(err => {
-        console.error('Failed to copy text: ', err)
+    }).catch((err) => {
+        console.error('Failed to copy text:', err)
     })
 }
 
-/**
- * Modal for uploading a PDF file.
- */
+/** Modal: pick a PDF and write it into the vault under `folder/fname`. */
 class UploadPdfModal extends Modal {
     folder: string
     fname: string
 
-    /**
-     * Constructor
-     * @param {App} app - The Obsidian app instance
-     * @param {string} folder - The folder to place the PDF file
-     * @param {string} fname - The name of the PDF file
-     */
     constructor(app: App, folder: string = 'paper/pdf', fname: string = 'paper.pdf') {
         super(app)
         this.folder = folder
@@ -84,31 +84,26 @@ class UploadPdfModal extends Modal {
         file_input.addEventListener('change', (event: Event) => {
             const target = event.target as HTMLInputElement
             if (target.files && target.files.length > 0) {
-                const file = target.files[0]
-                this.handle_file_upload(file)
+                this.handle_file_upload(target.files[0])
             }
         })
     }
 
     handle_file_upload(file: File) {
-        // read the file as an ArrayBuffer
         const reader = new FileReader()
         reader.onload = async (event) => {
             const { result } = event.target as FileReader
             const data = result as ArrayBuffer
             const file_path = `${this.folder}/${this.fname}`
 
-            // ensure the folder exists
             if (!await this.app.vault.getFolderByPath(this.folder)) {
                 await this.app.vault.createFolder(this.folder)
             }
 
-            // save the file to the vault
             await this.app.vault.createBinary(file_path, data)
             await this.app.workspace.openLinkText(this.fname, this.fname, true)
         }
         reader.readAsArrayBuffer(file)
-
         this.close()
     }
 }
@@ -225,6 +220,21 @@ const CardBtn = ({
     </button>
 )
 
+/** Map-pin glyph for the pin button — outline when unpinned, fills via CSS (`.is-active`) when pinned. */
+const PinIcon = () => (
+    <svg
+        className='bibtex-card-pin-icon'
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        aria-hidden="true"
+        focusable="false"
+    >
+        <path d="M12 21s7-7.58 7-12A7 7 0 0 0 5 9c0 4.42 7 12 7 12z" />
+        <circle cx="12" cy="9" r="2.5" />
+    </svg>
+)
+
 /**
  * One field value rendered through Obsidian's own MarkdownRenderer — reuses the
  * vault's math/link rendering instead of bundling a second markdown+katex pipeline.
@@ -334,7 +344,7 @@ const CitationCardBody = ({
                     aria-pressed={pinned}
                     onClick={on_pin_toggle}
                 >
-                    📌
+                    <PinIcon />
                 </button>
                 <button
                     type="button"
@@ -420,93 +430,99 @@ const CitationCardBody = ({
 }
 
 /**
- * One entry per live chip: what the shared card manager needs to render its
- * floating card for that chip if/when it becomes active.
- * See docs/one-root-per-chip.md — this registry plus {@link CardManager} is
- * the "one React root per chip" fix: chips are plain DOM, only the (0-or-1)
- * open card is ever a React tree.
+ * Live chip → data the shared card manager needs for its floating preview.
+ * Chips are plain DOM; only the open card(s) are React (see docs/one-root-per-chip.md).
  */
 type ChipRecord = {
     anchor: HTMLElement
     bibtex: BibtexElement
     plugin: BibtexScholar
     app: App
-    /** Panel chips (paper panel discover mode) are packed densely in their own
-     * scrolling region; the card should dismiss on scroll there instead of
-     * chasing the anchor down the list like inline in-note chips do. */
+    /**
+     * Panel discover chips sit in a dense scrolling list. Preview cards there
+     * dismiss on scroll instead of chasing the anchor (inline notes re-tether).
+     */
     dense: boolean
 }
 
-/** instance_id -> chip record. Populated on chip mount, dropped on unmount. */
+/** instance_id → chip record. Filled on mount, cleared on unmount. */
 const chip_registry = new Map<string, ChipRecord>()
 
-type CardShellProps =
-    | { pinned: false, instance_id: string, record: ChipRecord }
-    | { pinned: true, paper_id: string, payload: PinPayload, pos: PinPosition, z: number }
+/** Shared dialog chrome: classes + font CSS vars for both preview and pinned cards. */
+function card_surface_props(
+    plugin: BibtexScholar,
+    paper_id: string,
+    opts: { positioned?: boolean, pinned?: boolean, pos?: PinPosition, z?: number },
+): { className: string, style: { [key: string]: string | number }, 'aria-label': string } {
+    const font_px = normalize_card_font_size(plugin.cache.card_font_size)
+    const classes = ['bibtex-hover-card', 'is-floating']
+    if (plugin.cache.card_wide) {
+        classes.push('is-wide')
+    }
+    if (opts.positioned || opts.pinned) {
+        classes.push('is-positioned')
+    }
+    if (opts.pinned) {
+        classes.push('is-pinned')
+    }
+    const style: { [key: string]: string | number } = {
+        // Drives em-based type inside the card (see styles.css).
+        ['--bibtex-card-font-size']: `${font_px}px`,
+        fontSize: `${font_px}px`,
+    }
+    if (opts.pos) {
+        style.top = opts.pos.top
+        style.left = opts.pos.left
+    }
+    if (opts.z != null) {
+        // Base matches styles.css `--layer-popover` fallback (30); pin z stacks above it.
+        style.zIndex = 30 + opts.z
+    }
+    return {
+        className: classes.join(' '),
+        style,
+        'aria-label': `Citation ${paper_id}`,
+    }
+}
 
 /**
- * Floating card. Two modes:
- * - Preview (0-or-1, driven by `citation_popup`): anchored to its chip,
- *   repositions on scroll/resize, closes on click-outside / mouseleave grace
- *   / scroll (dense) / Esc — the original HoverPopup card behavior.
- * - Pinned (0-or-N, driven by `pin_registry`): detached from any anchor,
- *   sits at an owned position, draggable via its header, closes only via
- *   unpin (button or Esc-on-the-front-most-pin, handled in `CardManager`).
+ * Transient hover/click card (0-or-1). Anchored to a chip; closes on outside
+ * click, leave-grace, dense-list scroll, or Esc (via citation_popup).
  */
-const CardShell = (props: CardShellProps) => {
-    const bibtex = props.pinned ? props.payload.bibtex : props.record.bibtex
-    const plugin = props.pinned ? props.payload.plugin : props.record.plugin
-    const app = props.pinned ? props.payload.app : props.record.app
+const PreviewCard = ({
+    instance_id,
+    record,
+}: {
+    instance_id: string
+    record: ChipRecord
+}) => {
+    const { anchor, bibtex, plugin, app, dense } = record
     const paper_id = bibtex.fields.id
-    const card_dom_id = props.pinned
-        ? `bibtex-cite-card-${props.paper_id}`
-        : `bibtex-cite-card-${props.instance_id}`
     const card_ref = useRef<HTMLDivElement | null>(null)
-    const anchor = props.pinned ? null : props.record.anchor
-    const dense = props.pinned ? false : props.record.dense
 
-    // Phase 4: pointer down outside chip+card closes (no hover-suppress).
-    // Deferred one tick so the same gesture that opened via click does not immediately close.
-    // Preview only — a pinned card only closes via unpin.
+    // Outside click closes. Bind next tick so the opening click does not close it.
     useEffect(() => {
-        if (!anchor) {
-            return
-        }
         const on_pointer_down = (e: PointerEvent) => {
             const t = e.target
             if (!(t instanceof Node)) {
                 return
             }
-            if (anchor.contains(t)) {
-                return
-            }
-            if (card_ref.current?.contains(t)) {
+            if (anchor.contains(t) || card_ref.current?.contains(t)) {
                 return
             }
             citation_popup.close_outside()
         }
-
         const bind_timer = window.setTimeout(() => {
             document.addEventListener('pointerdown', on_pointer_down, true)
         }, 0)
-
         return () => {
             window.clearTimeout(bind_timer)
             document.removeEventListener('pointerdown', on_pointer_down, true)
         }
     }, [anchor])
 
-    // Position floating card near chip; keep it attached on resize/content size.
-    // Scroll: inline in-note chips keep the card tethered to the anchor as the
-    // editor scrolls a little. Panel chips (dense) are packed close together in
-    // their own scrolling list — chasing the anchor there reads as the card
-    // "scrolling along with the content", so scrolling dismisses it instead.
-    // Pinned cards skip this entirely: their position comes straight from
-    // `pin_registry` (below), not from measuring an anchor.
+    // Tether to chip on resize/scroll. Dense (panel) lists dismiss on scroll instead.
     useLayoutEffect(() => {
-        if (!anchor) {
-            return
-        }
         const update = () => {
             const card = card_ref.current
             if (!card) {
@@ -515,14 +531,12 @@ const CardShell = (props: CardShellProps) => {
             position_floating_card(anchor, card)
             card.classList.add('is-positioned')
         }
-
         const on_scroll = dense
             ? () => citation_popup.close_outside()
             : update
 
         update()
         const raf = window.requestAnimationFrame(update)
-
         window.addEventListener('resize', update)
         window.addEventListener('scroll', on_scroll, true)
 
@@ -541,13 +555,72 @@ const CardShell = (props: CardShellProps) => {
         }
     }, [anchor, paper_id, dense])
 
-    // Drag: header pointerdown starts a drag (unless the target is a button —
-    // pin/close need their own clicks), tracked via pointer capture so the
-    // drag continues even if the pointer outruns the header's bounds.
-    const on_header_pointer_down = (e: ReactPointerEvent<HTMLElement>) => {
-        if (!props.pinned) {
+    const pin_from_preview = () => {
+        // Snapshot on-screen position, pin first, then drop the transient card
+        // so there is no frame where the card is neither pinned nor previewed.
+        const card = card_ref.current
+        if (!card) {
             return
         }
+        const rect = card.getBoundingClientRect()
+        pin_registry.pin(paper_id, { bibtex, plugin, app }, { top: rect.top, left: rect.left })
+        citation_popup.close_outside()
+    }
+
+    const surface = card_surface_props(plugin, paper_id, {})
+
+    return (
+        <div
+            ref={card_ref}
+            id={`bibtex-cite-card-${instance_id}`}
+            className={surface.className}
+            role='dialog'
+            aria-label={surface['aria-label']}
+            aria-modal={false}
+            tabIndex={-1}
+            style={surface.style}
+            // Not autoFocused — keep editor focus for typing.
+            onMouseEnter={() => citation_popup.enter_card(instance_id)}
+            onMouseLeave={() => citation_popup.leave_card(instance_id)}
+            onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    citation_popup.dismiss()
+                }
+            }}
+        >
+            <CitationCardBody
+                bibtex={bibtex}
+                plugin={plugin}
+                app={app}
+                pinned={false}
+                on_pin_toggle={pin_from_preview}
+                on_close={() => citation_popup.dismiss()}
+            />
+        </div>
+    )
+}
+
+/**
+ * User-pinned card (0-or-N). Owns its position; drag from header; closes only
+ * via unpin (button or Esc on the front-most pin, handled in CardManager).
+ */
+const PinnedCard = ({
+    paper_id,
+    payload,
+    pos,
+    z,
+}: {
+    paper_id: string
+    payload: PinPayload
+    pos: PinPosition
+    z: number
+}) => {
+    const { bibtex, plugin, app } = payload
+    const card_ref = useRef<HTMLDivElement | null>(null)
+
+    const on_header_pointer_down = (e: ReactPointerEvent<HTMLElement>) => {
+        // Ignore pin/close buttons — they need their own clicks.
         if (e.target instanceof HTMLElement && e.target.closest('button')) {
             return
         }
@@ -561,18 +634,22 @@ const CardShell = (props: CardShellProps) => {
 
         const start_x = e.clientX
         const start_y = e.clientY
-        const start_pos = props.pos
+        const start_pos = pos
         const size = { width: card.offsetWidth, height: card.offsetHeight }
-        const drag_paper_id = props.paper_id
 
         const on_move = (ev: PointerEvent) => {
             const viewport = { width: window.innerWidth, height: window.innerHeight }
-            const next = clamp_card_position(
-                { top: start_pos.top + (ev.clientY - start_y), left: start_pos.left + (ev.clientX - start_x) },
-                size,
-                viewport,
+            pin_registry.move(
+                paper_id,
+                clamp_card_position(
+                    {
+                        top: start_pos.top + (ev.clientY - start_y),
+                        left: start_pos.left + (ev.clientX - start_x),
+                    },
+                    size,
+                    viewport,
+                ),
             )
-            pin_registry.move(drag_paper_id, next)
         }
         const on_up = () => {
             header_el.removeEventListener('pointermove', on_move)
@@ -587,85 +664,32 @@ const CardShell = (props: CardShellProps) => {
         header_el.addEventListener('pointerup', on_up)
     }
 
-    const on_close = () => {
-        if (props.pinned) {
-            pin_registry.unpin(props.paper_id)
-        } else {
-            citation_popup.dismiss()
-        }
-    }
-
-    const on_pin_toggle = () => {
-        if (props.pinned) {
-            pin_registry.unpin(props.paper_id)
-            return
-        }
-        // Freeze the card exactly where it already is (no jump), then detach
-        // from the transient slot — pin first so there's no frame where the
-        // card is neither tracked nor pinned.
-        const card = card_ref.current
-        if (!card) {
-            return
-        }
-        const rect = card.getBoundingClientRect()
-        pin_registry.pin(paper_id, { bibtex, plugin, app }, { top: rect.top, left: rect.left })
-        citation_popup.close_outside()
-    }
-
-    const card_font_px = normalize_card_font_size(plugin.cache.card_font_size)
-    const card_wide = Boolean(plugin.cache.card_wide)
-
-    const class_name_parts = ['bibtex-hover-card', 'is-floating']
-    if (card_wide) {
-        class_name_parts.push('is-wide')
-    }
-    if (props.pinned) {
-        // Already know the position — skip the anchor-measurement fade-in delay.
-        class_name_parts.push('is-positioned', 'is-pinned')
-    }
-
-    const style: { [key: string]: string | number } = {
-        // Drives em-based type inside the card (see styles.css).
-        ['--bibtex-card-font-size']: `${card_font_px}px`,
-        fontSize: `${card_font_px}px`,
-    }
-    if (props.pinned) {
-        style.top = props.pos.top
-        style.left = props.pos.left
-        // Base popover layer (matches styles.css's `--layer-popover, 30`
-        // fallback) plus the pin's own z-order, so the front-most pin (last
-        // dragged/clicked/pinned) sits on top of the rest.
-        style.zIndex = 30 + props.z
-    }
+    const surface = card_surface_props(plugin, paper_id, {
+        positioned: true,
+        pinned: true,
+        pos,
+        z,
+    })
 
     return (
         <div
             ref={card_ref}
-            id={card_dom_id}
-            className={class_name_parts.join(' ')}
+            id={`bibtex-cite-card-${paper_id}`}
+            className={surface.className}
             role='dialog'
-            aria-label={`Citation ${paper_id}`}
+            aria-label={surface['aria-label']}
             aria-modal={false}
             tabIndex={-1}
-            style={style}
-            // Not autoFocused — keep editor focus for typing; user can Tab into controls.
-            onMouseEnter={() => { if (!props.pinned) citation_popup.enter_card(props.instance_id) }}
-            onMouseLeave={() => { if (!props.pinned) citation_popup.leave_card(props.instance_id) }}
-            onPointerDown={() => { if (props.pinned) pin_registry.bring_to_front(props.paper_id) }}
-            onKeyDown={(e) => {
-                if (e.key === 'Escape' && !props.pinned) {
-                    e.stopPropagation()
-                    citation_popup.dismiss()
-                }
-            }}
+            style={surface.style}
+            onPointerDown={() => pin_registry.bring_to_front(paper_id)}
         >
             <CitationCardBody
                 bibtex={bibtex}
                 plugin={plugin}
                 app={app}
-                pinned={props.pinned}
-                on_pin_toggle={on_pin_toggle}
-                on_close={on_close}
+                pinned={true}
+                on_pin_toggle={() => pin_registry.unpin(paper_id)}
+                on_close={() => pin_registry.unpin(paper_id)}
                 on_header_pointer_down={on_header_pointer_down}
             />
         </div>
@@ -673,11 +697,8 @@ const CardShell = (props: CardShellProps) => {
 }
 
 /**
- * The single shared root's top-level component: renders the 0-or-1 transient
- * preview card for whichever chip {@link citation_popup} currently reports
- * active (looked up in {@link chip_registry}), plus one card per entry in
- * {@link pin_registry}. Portals under the workspace container, same as every
- * card did individually before.
+ * Single React root: 0–1 {@link PreviewCard} + 0–N {@link PinnedCard}s,
+ * portaled under the workspace container.
  */
 const CardManager = ({ app }: { app: App }) => {
     const [active_id, set_active_id] = useState<string | null>(() => citation_popup.get_active_id())
@@ -686,10 +707,7 @@ const CardManager = ({ app }: { app: App }) => {
     useEffect(() => citation_popup.subscribe_active(set_active_id), [])
     useEffect(() => pin_registry.subscribe(() => force_pins_update((n) => n + 1)), [])
 
-    // Esc closes the transient preview card first (citation_popup's own
-    // document-level handler, unaffected by this) — only once nothing is
-    // transiently open does Esc reach for the front-most pinned card, one at
-    // a time, not all pinned cards.
+    // Esc: preview first (citation_popup + stopImmediatePropagation), then front pin only.
     useEffect(() => {
         const on_keydown = (e: KeyboardEvent) => {
             if (e.key !== 'Escape' && e.key !== 'Esc') {
@@ -704,6 +722,7 @@ const CardManager = ({ app }: { app: App }) => {
             }
             e.preventDefault()
             e.stopPropagation()
+            e.stopImmediatePropagation()
             pin_registry.unpin(front)
         }
         document.addEventListener('keydown', on_keydown, true)
@@ -714,16 +733,23 @@ const CardManager = ({ app }: { app: App }) => {
 
     if (active_id) {
         const record = chip_registry.get(active_id)
-        // Pinning detaches the transient slot (citation_popup.close_outside),
-        // but guard anyway: never double-render the same paper.
+        // Avoid double-rendering a paper that was just pinned from its preview.
         if (record && !pin_registry.is_pinned(record.bibtex.fields.id)) {
-            cards.push(<CardShell key={active_id} pinned={false} instance_id={active_id} record={record} />)
+            cards.push(
+                <PreviewCard key={active_id} instance_id={active_id} record={record} />,
+            )
         }
     }
 
     for (const [paper_id, entry] of pin_registry.entries()) {
         cards.push(
-            <CardShell key={paper_id} pinned={true} paper_id={paper_id} payload={entry.payload} pos={entry.pos} z={entry.z} />,
+            <PinnedCard
+                key={paper_id}
+                paper_id={paper_id}
+                payload={entry.payload}
+                pos={entry.pos}
+                z={entry.z}
+            />,
         )
     }
 
@@ -785,14 +811,12 @@ type ChipHost = {
 /** Host element -> its chip's identity, so re-render on the same element reuses one instance. */
 const chip_hosts = new WeakMap<HTMLElement, ChipHost>()
 
-/** Build the plain-DOM chip (no React) — see docs/one-root-per-chip.md. */
+/** Plain-DOM chip (no React). `contenteditable=false` keeps CM's caret out of the label. */
 function build_chip_dom(paper_id: string): { wrapper: HTMLSpanElement, chip: HTMLSpanElement, button: HTMLButtonElement } {
     const wrapper = document.createElement('span')
     wrapper.className = 'bibtex-hover'
-    // Chips mount inside CM6's contentEditable root (Live Preview). Without this,
-    // the browser treats the button's rendered text as editable document content,
-    // so clicks/typing near it produce a caret position that doesn't map to any
-    // real document offset — the source of unpredictable cursor placement.
+    // Required inside CM Live Preview: without this the browser can park the caret
+    // inside the chip text at an offset that is not a real document position.
     wrapper.setAttribute('contenteditable', 'false')
     const chip = document.createElement('span')
     chip.className = 'bibtex-hover-chip'
@@ -802,11 +826,7 @@ function build_chip_dom(paper_id: string): { wrapper: HTMLSpanElement, chip: HTM
     button.setAttribute('aria-haspopup', 'dialog')
     button.setAttribute('aria-expanded', 'false')
     button.setAttribute('aria-label', `Citation ${paper_id}`)
-    // Deliberately no native `title` tooltip here — it repeated the chip's own
-    // visible text plus instructions the open card already covers, and popped
-    // up right under the cursor on every hover. The card carries its own
-    // interaction hint, positioned away from the cursor instead (see
-    // `.bibtex-card-hint` in CitationCardBody).
+    // No native `title` — it duplicated the label and fought the card's own hint.
     chip.appendChild(button)
     wrapper.appendChild(chip)
     return { wrapper, chip, button }
@@ -853,8 +873,7 @@ function mount_chip(
 
     chip_registry.set(instance_id, { anchor: chip, bibtex, plugin, app, dense })
 
-    // mouseenter/mouseleave don't bubble; capture so the listener still fires
-    // when the pointer lands directly on the button (a descendant of chip).
+    // mouseenter/leave do not bubble — use capture so the button (child) still counts.
     chip.addEventListener('mouseenter', () => {
         const open_debounce_ms = dense && plugin.cache.panel_double_debounce_enabled
             ? OPEN_DEBOUNCE_MS * 2
@@ -862,15 +881,11 @@ function mount_chip(
         citation_popup.enter_trigger(instance_id, open_debounce_ms)
     }, true)
     chip.addEventListener('mouseleave', () => citation_popup.leave_trigger(instance_id), true)
-    // Native <button> focuses on mousedown. Inside CM Live Preview that blurs the
-    // contentEditable root, so the caret vanishes or reappears on a later click at
-    // an unexpected offset — the remaining "cursor jumps near a chip" report after
-    // contenteditable=false. preventDefault keeps editor focus; click still fires.
+    // Keep the CM editor focused: a real <button> steals focus on mousedown otherwise.
     button.addEventListener('mousedown', (e) => {
         e.preventDefault()
     })
     button.addEventListener('click', (e) => {
-        // Intentional activate: open immediately / toggle closed (touch + keyboard).
         e.preventDefault()
         e.stopPropagation()
         citation_popup.toggle_trigger(instance_id)
@@ -966,14 +981,11 @@ export class HoverRenderChild extends MarkdownRenderChild {
 }
 
 /**
- * CodeMirror replace-widget for a citation chip (card is portaled separately,
- * through the shared card-manager root).
+ * CodeMirror replace widget for one cite chip (card is portaled via CardManager).
  *
- * {@link eq} reuses DOM across decoration rebuilds; {@link destroy} must unmount
- * via the DOM node CM passes in — never instance fields. After `eq` returns true,
- * CM keeps the old DOM but swaps in a *new* widget instance whose fields were
- * never populated by `toDOM`, so `this.host`-style bookkeeping silently no-ops
- * and leaves chip_registry / popup listeners attached to detached nodes.
+ * Important: {@link destroy} must use the `dom` argument CM passes in.
+ * After {@link eq} returns true, CM reuses the DOM but installs a *new* widget
+ * instance — instance fields set in {@link toDOM} are not on that new object.
  */
 export class HoverWidget extends WidgetType {
     bibtex: BibtexElement
@@ -992,8 +1004,6 @@ export class HoverWidget extends WidgetType {
     toDOM() {
         const span = document.createElement('span')
         span.className = 'bibtex-cm-widget'
-        // Chips sit inside CM's contentEditable root. Without this the browser can
-        // place a caret inside the widget's rendered text at a non-document offset.
         span.setAttribute('contenteditable', 'false')
         mount_chip(span, this.bibtex, this.plugin, this.app, this.expand)
         return span
@@ -1007,18 +1017,12 @@ export class HoverWidget extends WidgetType {
         )
     }
 
-    /**
-     * CM calls this with the widget DOM when the decoration is removed (scroll
-     * out of viewport, caret enters the cite span, Source mode, etc.). Always
-     * unmount from `dom` — do not rely on state set in `toDOM` (see class note).
-     */
     destroy(dom: HTMLElement) {
         unmount_hover(dom)
     }
 
+    /** Let chip listeners handle pointer events; CM should not claim them. */
     ignoreEvent() {
-        // Let native listeners handle pointer events on the chip; CM should not steal them.
-        // (CM's WidgetType default is already "ignore all"; kept explicit for readers.)
         return true
     }
 }

@@ -1,15 +1,15 @@
 /**
- * Shared citation popup open/close controller.
+ * Open/close state machine for the transient citation card (hover/click).
  *
- * Spec: docs/true-popup-phase0.md
- * - Open debounce 250ms (compact `{id}` hover)
- * - Close grace 150ms (chip ↔ card transit)
- * - `[id]` open on mount via open_for_expand
- * - One global open popup
- * - ESC dismisses and suppresses reopen until full leave of chip+card
- * - Click-outside closes; chip click toggles (immediate open)
+ * Behaviour (see docs/true-popup-phase0.md):
+ * - Compact `{id}`: open after {@link OPEN_DEBOUNCE_MS} of hover
+ * - Expanded `[id]`: open on mount via {@link CitationPopupController.open_for_expand}
+ * - Close after {@link CLOSE_GRACE_MS} once the pointer leaves chip *and* card
+ * - At most one transient card open globally
+ * - Esc dismisses and suppresses reopen until the pointer fully leaves
+ * - Click-outside closes; chip click toggles immediately
  *
- * Injectable clock supports unit tests without real timers.
+ * Pins are separate — see `pin-registry.ts`. Inject a `clock` in tests.
  */
 
 export const OPEN_DEBOUNCE_MS = 250
@@ -24,7 +24,7 @@ export type PopupClock = {
 
 let next_instance_id = 0
 
-/** Stable id per HoverPopup mount (not cite key — same key can appear many times). */
+/** Stable id per chip mount (not the cite key — the same key can appear many times). */
 export function create_citation_popup_id(): string {
 	next_instance_id += 1
 	return `bibtex-cite-popup-${next_instance_id}`
@@ -190,7 +190,7 @@ export class CitationPopupController {
 		return this.active_id
 	}
 
-	/** Clear timers, ESC listener, and state (plugin unload / tests). */
+	/** Clear timers, Esc listener, subscribers, and open state (plugin unload / tests). */
 	dispose() {
 		this.clear_open_timer()
 		this.clear_close_timer()
@@ -201,6 +201,7 @@ export class CitationPopupController {
 			this.notify_active()
 		}
 		this.listeners.clear()
+		this.active_listeners.clear()
 		this.dismissed.clear()
 		this.over_trigger.clear()
 		this.over_card.clear()
@@ -275,8 +276,12 @@ export class CitationPopupController {
 		if (!this.active_id) {
 			return
 		}
+		// stopImmediatePropagation: pin Esc lives on the same document listener
+		// chain. Without it, dismiss can clear active_id and the pin handler
+		// would also unpin in the same keypress.
 		e.preventDefault()
 		e.stopPropagation()
+		e.stopImmediatePropagation()
 		this.dismiss()
 	}
 

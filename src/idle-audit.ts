@@ -1,5 +1,5 @@
 /**
- * Idle / unload trust checks (Phase C).
+ * Idle / unload trust checks.
  * "Idle" means: no open citation popup, no pending coalesced save, no rename debounce timers.
  */
 

@@ -78,4 +78,20 @@ describe('SaveCoalescer / idle write pressure', () => {
 		await flush_p
 		expect(persist).toHaveBeenCalledTimes(2)
 	})
+
+	it('keeps dirty=true when persist throws so a later flush can retry', async () => {
+		const { clock } = fake_clock()
+		const persist = vi.fn()
+			.mockRejectedValueOnce(new Error('disk full'))
+			.mockResolvedValueOnce(undefined)
+		const c = new SaveCoalescer({ delay_ms: 80, clock, persist })
+		c.schedule()
+
+		await expect(c.flush()).rejects.toThrow('disk full')
+		expect(c.is_dirty()).toBe(true)
+
+		await c.flush()
+		expect(persist).toHaveBeenCalledTimes(2)
+		expect(c.is_dirty()).toBe(false)
+	})
 })

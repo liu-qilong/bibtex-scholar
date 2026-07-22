@@ -46,7 +46,7 @@ export function find_prompt_trigger(
 		const code_end = match[5]
 
 		if (bracket_end && !code_end) {
-			// rule out the case like `{test}, where proper insertion is not achievable
+			// e.g. `{test} without a closing backtick — cannot finish a valid cite.
 			continue
 		}
 

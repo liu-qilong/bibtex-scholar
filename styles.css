@@ -220,6 +220,23 @@ code.bibtex-source-tag.is-clashing {
 .bibtex-card-pin {
     font-size: 1em;
     opacity: 0.6;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bibtex-card-pin-icon {
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+}
+
+/* Pinned: the outline pin fills solid — reads as "stuck", still just a color
+ * change at icon scale, not a loud block (same restraint as the highlight below). */
+.bibtex-card-pin.is-active .bibtex-card-pin-icon {
+    fill: currentColor;
 }
 
 .bibtex-card-pin:hover,

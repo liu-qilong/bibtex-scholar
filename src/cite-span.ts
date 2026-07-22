@@ -1,19 +1,19 @@
 /**
- * Pure helpers for inline citation spans and cursor/decoration decisions.
- * No Obsidian / CodeMirror imports — unit-testable.
+ * Pure helpers for inline citation spans and caret/decoration decisions.
+ * No Obsidian or CodeMirror imports — safe for unit tests in Node.
  */
 
-/** Inline cite forms: `{id}` or `[id]` inside backticks. */
+/** `` `{id}` `` (compact chip) or `` `[id]` `` (expanded card) inside backticks. */
 export const CITE_PATTERN = /\`[\{\[][^\}\]]+[\}\]]\`/g
 
 export type CiteSpan = {
-	/** Absolute doc offset of match start */
+	/** Absolute document offset of the match start */
 	from: number
-	/** Absolute doc offset of match end (exclusive) */
+	/** Absolute document offset of the match end (exclusive, CM half-open) */
 	to: number
-	/** Citation key without brackets */
+	/** Citation key without brackets or backticks */
 	id: string
-	/** True when form is `[id]` (expanded) */
+	/** True when the form is `` `[id]` `` (open card on mount) */
 	expand: boolean
 }
 

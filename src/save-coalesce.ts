@@ -65,7 +65,7 @@ export class SaveCoalescer {
 			this.timer = null
 		}
 
-		// Serialize concurrent flush() callers.
+		// One write at a time — concurrent flush() callers wait their turn.
 		while (this.inflight) {
 			await this.inflight
 		}
@@ -75,15 +75,23 @@ export class SaveCoalescer {
 		this.dirty = false
 		const run = this.persist()
 		this.inflight = run
+		let wrote_ok = false
 		try {
 			await run
+			wrote_ok = true
 			this.on_flush?.()
+		} catch (err) {
+			// Keep the dirty bit so a later schedule/flush can retry. A failed
+			// saveData must not look "clean" or cache changes are silently lost.
+			this.dirty = true
+			throw err
 		} finally {
 			this.inflight = null
 		}
 
-		// Mutations during await: write again.
-		if (this.dirty) {
+		// Only re-enter after a successful write: a concurrent schedule() during
+		// the await left dirty=true. Never auto-retry failures here (would loop).
+		if (wrote_ok && this.dirty) {
 			await this.flush()
 		}
 	}

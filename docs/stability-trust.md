@@ -10,6 +10,8 @@ Focus areas: **cursor management**, **cache durability**, **data integrity**, **
 | Chip visibility filter is pure half-open policy (`spans_showing_chips`); multi-cite lines hide only the span under the caret | `src/cite-span.ts` | `tests/cite-span.test.ts` |
 | Live Preview EditorView: chip outside cite, raw text inside, Source mode empty, case-insensitive resolve, multi-cite isolation, rebuild on doc edit | `src/editor.ts` (`createHoverWidgetPlugin`) | `tests/editor-decorations.test.ts` |
 | Chip lifecycle: unmount closes open card; host re-render does not stack chips; panel host wipe / HoverRenderChild unload clean up; widget `eq` / `ignoreEvent` / double-destroy contracts | `src/hover.tsx` | `tests/hover-popup.test.tsx` |
+| Failed cache persist keeps the coalescer dirty so a later flush retries (no silent drop) | `src/save-coalesce.ts` | `tests/save-coalesce.test.ts` |
+| `citation_popup.dispose` drops active subscribers (no ghost CardManager listeners after unload/remount) | `src/citation-popup.ts` | `tests/citation-popup.test.ts` |
 | Idle typing in non-bibtex notes skips rename detection (fence gate) | `text_may_contain_bibtex_block` | same |
 | Vault rescan: first id + first DOI wins; pure rebuild | `src/cache-ops.ts` | `tests/cache-ops.test.ts` |
 | Disk load tolerates corrupt/partial plugin data | `normalize_plugin_cache` | same |

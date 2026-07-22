@@ -176,6 +176,23 @@ describe('CitationPopupController stability', () => {
 		expect(ctl.get_active_id()).toBeNull()
 	})
 
+	it('dispose drops active subscribers so a remount does not double-notify ghosts', () => {
+		const { clock } = fake_clock()
+		const ctl = new CitationPopupController({ clock, document: null })
+		const seen: (string | null)[] = []
+		ctl.subscribe_active((id) => seen.push(id))
+		ctl.register('a', () => {})
+		ctl.toggle_trigger('a')
+		expect(seen).toEqual([null, 'a'])
+
+		ctl.dispose()
+		// Ghost listener must not receive this open after dispose.
+		ctl.register('b', () => {})
+		ctl.toggle_trigger('b')
+		expect(seen).toEqual([null, 'a', null])
+		expect(ctl.get_active_id()).toBe('b')
+	})
+
 	it('create_citation_popup_id is unique', () => {
 		expect(create_citation_popup_id()).not.toBe(create_citation_popup_id())
 	})
