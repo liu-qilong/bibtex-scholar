@@ -158,6 +158,10 @@ Example template: [paper-note-template.md](/gallery/paper-note-template.md)
 
 When writing LaTeX manuscript, it's very convenient to copy all BibTeX entries at once and place it to your `.bib` file. Just click the button ![img](/gallery/scroll-text.jpeg) on the left ribbon.
 
+### Excluding a note from BibTeX
+
+Add a `bibtex-ignore` property (checked/`true`) to a note's frontmatter to keep the plugin from ever reading it: its ```bibtex blocks are shown as plain text instead of being cached, and it's skipped by rescans, citekey-rename scans, and directory export. Useful for templates or draft notes with example/dummy BibTeX you don't want polluting your library. If the note was already cached before you added the property, run **Recache from vault** (paper panel corner button) once to drop its entries.
+
 ### Paper panel
 
 You can click ![img](/gallery/scan-search.jpeg) on the left ribbon to open the paper panel to the right sidebar. From there, you can search and filter your papers easily:

@@ -497,6 +497,10 @@ export class PaperPanelView extends ItemView {
             LIST_OVERSCAN,
         )
 
+        // Rows carry a live citekey chip (hover card) — unmount before wiping so a
+        // fast scroll doesn't leak chip_registry / citation_popup registrations
+        // (list mode repaints its visible window on every scroll tick).
+        unmount_hover_hosts(rows_el)
         rows_el.empty()
         rows_el.style.transform = `translateY(${start * LIST_ROW_HEIGHT}px)`
 
@@ -509,7 +513,12 @@ export class PaperPanelView extends ItemView {
         this.plugin.perf.panel_rows_mounted = end - start
     }
 
-    /** Modern-card-style row: title + id/year/path (+ mention count when sorted by it). Click opens source. */
+    /**
+     * Modern-card-style row: title + a real citekey chip (hover for the same
+     * card every other citekey in the plugin shows) + year/path/mentions.
+     * Click anywhere else in the row opens source — the chip's own click
+     * toggles the card instead (stopPropagation, same as any other chip).
+     */
     private add_list_row(parent: HTMLElement, id: string, entry: BibtexElement) {
         const row = parent.createEl('div', { cls: 'bibtex-panel-list-row' })
         row.style.height = `${LIST_ROW_HEIGHT}px`
@@ -517,12 +526,20 @@ export class PaperPanelView extends ItemView {
 
         row.createEl('div', { cls: 'bibtex-panel-list-title', text: entry.fields.title || id })
 
-        const meta_parts = [id, entry.fields.year, String(entry.source_path)].filter((p): p is string => Boolean(p))
+        const meta = row.createEl('div', { cls: 'bibtex-panel-list-meta' })
+        const chip_host = meta.createEl('span', { cls: 'bibtex-panel-list-chip' })
+        // dense=true: same scroll-dismiss-not-chase + double-debounce policy as
+        // every other chip living in this scrollable panel list.
+        render_hover(chip_host, entry, this.plugin, this.app, /* expand */ false, /* dense */ true)
+
+        const rest_parts = [entry.fields.year, String(entry.source_path)].filter((p): p is string => Boolean(p))
         if (this.papers_sort === 'mentions' && this.mentions_index_warm) {
             const n = this.plugin.mention_count(id)
-            meta_parts.push(`${n} cite${n === 1 ? '' : 's'}`)
+            rest_parts.push(`${n} cite${n === 1 ? '' : 's'}`)
         }
-        row.createEl('div', { cls: 'bibtex-panel-list-meta', text: meta_parts.join(' · ') })
+        if (rest_parts.length > 0) {
+            meta.createEl('span', { cls: 'bibtex-panel-list-meta-rest', text: ` · ${rest_parts.join(' · ')}` })
+        }
     }
 
     /** List clashes with a hard mount cap, same policy as {@link show_papers}. */

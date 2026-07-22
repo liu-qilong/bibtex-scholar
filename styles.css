@@ -831,8 +831,28 @@ code.bibtex-source-tag.is-clashing {
 }
 
 .bibtex-panel-list-meta {
+    display: flex;
+    align-items: center;
     color: var(--text-muted);
     font-size: var(--font-ui-smaller, var(--font-ui-small));
+    overflow: hidden;
+}
+
+/* The id is a real citekey chip now (same component every other citekey in the
+ * plugin uses) instead of plain monospace text — hover it for the card, and it
+ * reads visually consistent with discover-mode chips / the card header's id
+ * badge instead of looking like an inert path fragment. */
+.bibtex-panel-list-chip {
+    flex: 0 0 auto;
+}
+
+.bibtex-panel-list-chip .bibtex-hover button {
+    padding: 0 var(--size-4-2);
+}
+
+.bibtex-panel-list-meta-rest {
+    flex: 1 1 auto;
+    min-width: 0;
     font-family: var(--font-monospace);
     white-space: nowrap;
     overflow: hidden;

@@ -604,8 +604,18 @@ const PreviewCard = ({
             position_floating_card(anchor, card)
             card.classList.add('is-positioned')
         }
+        // Capture-phase `scroll` on window sees every scrollable element in the
+        // document, including the card's own internal scroll regions (long
+        // abstract, scrollable field list). Scrolling those is reading the card,
+        // not scrolling past it — only dismiss when the scroll happened outside it.
         const on_scroll = dense
-            ? () => citation_popup.close_outside()
+            ? (e: Event) => {
+                const target = e.target
+                if (target instanceof Node && card_ref.current?.contains(target)) {
+                    return
+                }
+                citation_popup.close_outside()
+            }
             : update
 
         update()

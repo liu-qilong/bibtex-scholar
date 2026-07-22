@@ -213,7 +213,12 @@ export default class BibtexScholar extends Plugin {
 
 		// citekey rename: debounced modify only; skip files without ```bibtex (idle typing elsewhere)
 		this.registerEvent(this.app.vault.on('modify', (file) => {
-			if (this.renaming || !(file instanceof TFile) || file.extension !== 'md') {
+			if (
+				this.renaming
+				|| !(file instanceof TFile)
+				|| file.extension !== 'md'
+				|| this.is_bibtex_ignored(file.path)
+			) {
 				this.perf.modify_early_exits++
 				return
 			}
@@ -305,6 +310,19 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	/**
+	 * True when `path`'s frontmatter has a truthy `bibtex-ignore` property.
+	 * Reads Obsidian's already-warm `metadataCache` (no extra file read) — checked
+	 * at every scan/parse entry point (rescan, inline-cite scan, rename detection,
+	 * the live codeblock processor, directory export) so an ignored file is never
+	 * harvested for ```bibtex blocks or scanned for `{id}`/`[id]` citations.
+	 * Entries already cached before the property was added are only dropped by
+	 * the next recache/hard reset (same as any other stale-cache case).
+	 */
+	is_bibtex_ignored(path: string): boolean {
+		return Boolean(this.app.metadataCache.getCache(path)?.frontmatter?.['bibtex-ignore'])
+	}
+
+	/**
 	 * Loads the plugin cache from storage.
 	 * Normalizes corrupt/partial data so bibtex_dict is always a plain object.
 	 */
@@ -377,6 +395,13 @@ export default class BibtexScholar extends Plugin {
 	 * @param {MarkdownPostProcessorContext} ctx - The Markdown post-processing context.
 	 */
 	async bibtex_codeblock_processor(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
+		// bibtex-ignore: render as an inert code block — no chips, no cache entries.
+		// The block starts empty (Obsidian delegates all rendering to this processor),
+		// so we still have to paint *something* or it would just look blank.
+		if (this.is_bibtex_ignored(ctx.sourcePath)) {
+			el.createEl('pre').createEl('code', { text: source })
+			return
+		}
 		// Sequential: avoid forEach(async) races that interleave dict mutations + disk writes.
 		const fields_ls = await parse_bibtex(source)
 		let dirty = false
@@ -580,7 +605,7 @@ export default class BibtexScholar extends Plugin {
 		const prefix = folder.path === '' ? '' : `${folder.path}/`
 		const label = folder.path === '' ? 'vault root' : folder.path
 		const paths = this.app.vault.getMarkdownFiles()
-			.filter((f) => f.path.startsWith(prefix))
+			.filter((f) => f.path.startsWith(prefix) && !this.is_bibtex_ignored(f.path))
 			.map((f) => f.path)
 
 		if (paths.length === 0) {
@@ -605,10 +630,17 @@ export default class BibtexScholar extends Plugin {
 		})
 		notice.hide()
 
-		const ids = new Set(ids_under_path(this.cache.bibtex_dict, prefix))
+		// Filtered against is_bibtex_ignored again, not just the paths scanned above:
+		// an ignored file's entries can still be sitting in the cache from before the
+		// property was added (only a recache/hard reset evicts them) — this keeps a
+		// same-session export honest even if that cleanup hasn't run yet.
+		const ids = new Set(
+			ids_under_path(this.cache.bibtex_dict, prefix)
+				.filter((id) => !this.is_bibtex_ignored(this.cache.bibtex_dict[id].source_path)),
+		)
 		for (const cite_id of cite_index_all_cites(dir_cite_index)) {
 			const canonical = resolve_id(this.id_index, cite_id)
-			if (canonical !== undefined && this.cache.bibtex_dict[canonical]) {
+			if (canonical !== undefined && this.cache.bibtex_dict[canonical] && !this.is_bibtex_ignored(this.cache.bibtex_dict[canonical].source_path)) {
 				ids.add(canonical)
 			}
 		}
@@ -810,8 +842,13 @@ export default class BibtexScholar extends Plugin {
 		const epoch = ++this.rescan_epoch
 		const t0 = Date.now()
 
+		// Ignored files are excluded before fingerprinting: they never enter
+		// current_fp/vault_paths, so classify_path_fingerprints can't call them
+		// "new"/"changed"/"unchanged" — a file already cached before being marked
+		// ignored falls out of `all_hits` on this pass (same as a deleted file),
+		// dropping its stale entries without any extra removal logic.
 		const files = this.app.vault.getMarkdownFiles()
-			.slice()
+			.filter((f) => !this.is_bibtex_ignored(f.path))
 			.sort((a, b) => a.path.localeCompare(b.path))
 
 		const current_fp: PathFingerprintMap = {}
@@ -926,6 +963,10 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	async on_file_modified(file: TFile, from_command = false) {
+		if (this.is_bibtex_ignored(file.path)) {
+			if (from_command) new Notice(`${file.path} has bibtex-ignore set — skipping`)
+			return
+		}
 		const text = await this.app.vault.read(file)
 		// Keep reverse cite index warm on every md edit (cheap string pass).
 		if (this.cite_index_ready) {
@@ -985,7 +1026,7 @@ export default class BibtexScholar extends Plugin {
 	 */
 	async scan_inline_cites(old_id: string): Promise<CiteHit[]> {
 		this.rename_scan_cancel = false
-		const files = this.app.vault.getMarkdownFiles()
+		const files = this.app.vault.getMarkdownFiles().filter((f) => !this.is_bibtex_ignored(f.path))
 		const all_paths = files.map((f) => f.path)
 		const active = this.app.workspace.getActiveFile()?.path
 		const priority = active ? [active] : []
@@ -1058,7 +1099,7 @@ export default class BibtexScholar extends Plugin {
 		if (this.cite_index_ready) {
 			return true
 		}
-		const files = this.app.vault.getMarkdownFiles()
+		const files = this.app.vault.getMarkdownFiles().filter((f) => !this.is_bibtex_ignored(f.path))
 		const paths = files.map((f) => f.path)
 		cite_index_clear(this.cite_index)
 

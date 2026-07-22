@@ -262,6 +262,26 @@ describe('citation popup DOM behavior', () => {
 		expect(card()).toBeNull()
 	})
 
+	it('scrolling inside the open card itself does not dismiss it for a dense (panel) chip', async () => {
+		const { chip_button, card } = mount(false, true)
+
+		await act(async () => {
+			fireEvent.click(chip_button())
+		})
+		const opened = card()
+		expect(opened).not.toBeNull()
+
+		// Capture-phase `scroll` on window sees every scrollable element, including
+		// ones inside the card (long abstract, scrollable field list) — a scroll
+		// event whose target lives inside the card must not be treated as "the
+		// user scrolled past this card in the panel list."
+		await act(async () => {
+			const inner = opened!.querySelector('.bibtex-card-fields') ?? opened!
+			inner.dispatchEvent(new Event('scroll', { bubbles: false }))
+		})
+		expect(card()).not.toBeNull()
+	})
+
 	it('scrolling keeps the card open (repositioned) for a normal in-note chip', async () => {
 		const { chip_button, card } = mount(false, false)
 
