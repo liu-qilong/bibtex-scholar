@@ -72,6 +72,21 @@ export function cursor_inside_span(pos: number, from: number, to: number): boole
 }
 
 /**
+ * Cite spans on a line that should show a chip widget for the current caret.
+ * Caret inside a span → that span stays raw text (no chip); all other spans chip.
+ * Pure form of the Live Preview decoration filter in `src/editor.ts`.
+ */
+export function spans_showing_chips(
+	line_text: string,
+	line_from: number,
+	cursor_pos: number,
+): CiteSpan[] {
+	return find_cite_spans_in_line(line_text, line_from).filter(
+		(s) => !cursor_inside_span(cursor_pos, s.from, s.to),
+	)
+}
+
+/**
  * Cheap gate: skip expensive citekey-rename detection when the file cannot contain BibTeX blocks.
  */
 export function text_may_contain_bibtex_block(text: string): boolean {

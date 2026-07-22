@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
 	cite_index_cites_for,
 	cite_index_clear,
+	cite_index_count_for,
 	cite_index_paths_for,
 	cite_index_remove_path,
 	cite_index_retarget_path,
@@ -34,6 +35,12 @@ describe('vault-scan (Phase B)', () => {
 		].join('\n')
 		expect(count_inline_cites(text, 'Alpha')).toBe(2)
 		expect(count_inline_cites(text, 'Beta')).toBe(0)
+	})
+
+	it('count_inline_cites matches citekeys case-insensitively', () => {
+		const text = 'See `{Alpha}` and `[alpha]` and `{ALPHA}`.'
+		expect(count_inline_cites(text, 'alpha')).toBe(3)
+		expect(count_inline_cites(text, 'ALPHA')).toBe(3)
 	})
 
 	it('chunked scan reads all files, prioritizes, yields between chunks', async () => {
@@ -188,6 +195,24 @@ describe('vault-scan cite reverse index (SPEED S6)', () => {
 		expect(cite_index_paths_for(idx, 'X')).toEqual([])
 	})
 
+	it('cite_index_paths_for matches a differently-cased query against the stored citekey', () => {
+		const idx = create_cite_path_index()
+		cite_index_set_path(idx, 'a.md', ['Smith2020'])
+		expect(cite_index_paths_for(idx, 'smith2020')).toEqual(['a.md'])
+		expect(cite_index_paths_for(idx, 'SMITH2020')).toEqual(['a.md'])
+		// literal citekey text for the path stays as-typed
+		expect(cite_index_cites_for(idx, 'a.md')).toEqual(['Smith2020'])
+	})
+
+	it('cite_index_count_for is the O(1) count counterpart to cite_index_paths_for', () => {
+		const idx = create_cite_path_index()
+		cite_index_set_path(idx, 'a.md', ['Smith2020'])
+		cite_index_set_path(idx, 'b.md', ['smith2020'])
+		expect(cite_index_count_for(idx, 'Smith2020')).toBe(2)
+		expect(cite_index_count_for(idx, 'SMITH2020')).toBe(2)
+		expect(cite_index_count_for(idx, 'Unknown')).toBe(0)
+	})
+
 	it('full cite scan populates index for all paths in one pass', async () => {
 		const files: Record<string, string> = {
 			'a.md': '`{Alpha}`',
@@ -207,5 +232,24 @@ describe('vault-scan cite reverse index (SPEED S6)', () => {
 		expect(cite_index_paths_for(idx, 'Alpha')).toEqual(['a.md', 'c.md'])
 		expect(cite_index_paths_for(idx, 'Beta')).toEqual(['c.md'])
 		expect(cite_index_cites_for(idx, 'b.md')).toEqual([])
+	})
+
+	it('omitting old_id still builds the full cite index, without collecting any hits', async () => {
+		const files: Record<string, string> = {
+			'a.md': '`{Alpha}`',
+			'b.md': 'no cites',
+			'c.md': '`[Alpha]` and `{Beta}`',
+		}
+		const idx = create_cite_path_index()
+		const result = await scan_inline_cites_chunked({
+			paths: Object.keys(files),
+			read: async (path) => files[path] ?? '',
+			chunk_size: 10,
+			sleep: async () => {},
+			cite_index: idx,
+		})
+		expect(result.hits).toEqual([])
+		expect(cite_index_paths_for(idx, 'Alpha')).toEqual(['a.md', 'c.md'])
+		expect(cite_index_paths_for(idx, 'Beta')).toEqual(['c.md'])
 	})
 })

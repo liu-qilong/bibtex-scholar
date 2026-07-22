@@ -8,6 +8,7 @@
 
 import {
 	entry_source,
+	normalize_id,
 	parse_bibtex,
 	type BibtexDict,
 	type BibtexElement,
@@ -15,6 +16,11 @@ import {
 	type ClashHit,
 } from 'src/bibtex'
 import { text_may_contain_bibtex_block } from 'src/cite-span'
+import {
+	type IdIndex,
+	id_index_claim,
+	id_index_clear_owner,
+} from 'src/citekey-index'
 import {
 	type DoiIndex,
 	doi_index_on_delete,
@@ -68,6 +74,18 @@ export type PluginCacheShape = {
 	/** When true, citation cards in the paper panel's dense chip list wait 2x the open debounce before a hover opens them. */
 	panel_double_debounce_enabled: boolean
 	/**
+	 * Paper panel papers-list view: 'discover' (capped, occasionally-random
+	 * dense chips with clash/missing-PDF coloring) or 'list' (virtualized,
+	 * unbounded row list, optionally sorted by mention count).
+	 */
+	papers_view: 'discover' | 'list'
+	/**
+	 * Text size (px) for discover-mode chip buttons — independent of
+	 * `card_font_size` (the floating citation card, shown everywhere else).
+	 * List mode inherits `card_font_size` instead; only discover's chips use this.
+	 */
+	panel_chip_font_size: number
+	/**
 	 * Last-known vault file fingerprints for incremental rescan (SPEED S5).
 	 * Missing/empty → next rescan reads every markdown file (safe cold start).
 	 */
@@ -84,12 +102,18 @@ export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
 	card_wide: false,
 	missing_pdf_enabled: false,
 	panel_double_debounce_enabled: false,
+	papers_view: 'discover',
+	panel_chip_font_size: 13,
 	path_fingerprints: {},
 }
 
 /** Allowed range for citation card font size (px). */
 export const CARD_FONT_SIZE_MIN = 10
 export const CARD_FONT_SIZE_MAX = 20
+
+/** Allowed range for paper panel (discover-mode chip) text size (px) — independent of the card range above. */
+export const PANEL_CHIP_FONT_SIZE_MIN = 10
+export const PANEL_CHIP_FONT_SIZE_MAX = 20
 
 /**
  * Abstracts policy (SPEED S3): keep abstracts on `fields` for cards/export,
@@ -105,6 +129,15 @@ export function normalize_card_font_size(raw: unknown): number {
 		return DEFAULT_PLUGIN_CACHE.card_font_size
 	}
 	return Math.min(CARD_FONT_SIZE_MAX, Math.max(CARD_FONT_SIZE_MIN, Math.round(n)))
+}
+
+/** Clamp and coerce a raw setting value to a valid paper panel (discover-mode chip) text size. */
+export function normalize_panel_chip_font_size(raw: unknown): number {
+	const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN
+	if (!Number.isFinite(n)) {
+		return DEFAULT_PLUGIN_CACHE.panel_chip_font_size
+	}
+	return Math.min(PANEL_CHIP_FONT_SIZE_MAX, Math.max(PANEL_CHIP_FONT_SIZE_MIN, Math.round(n)))
 }
 
 /**
@@ -164,6 +197,8 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		card_wide: DEFAULT_PLUGIN_CACHE.card_wide,
 		missing_pdf_enabled: DEFAULT_PLUGIN_CACHE.missing_pdf_enabled,
 		panel_double_debounce_enabled: DEFAULT_PLUGIN_CACHE.panel_double_debounce_enabled,
+		papers_view: DEFAULT_PLUGIN_CACHE.papers_view,
+		panel_chip_font_size: DEFAULT_PLUGIN_CACHE.panel_chip_font_size,
 		path_fingerprints: {},
 	}
 
@@ -192,29 +227,36 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		panel_double_debounce_enabled: typeof o.panel_double_debounce_enabled === 'boolean'
 			? o.panel_double_debounce_enabled
 			: base.panel_double_debounce_enabled,
+		papers_view: o.papers_view === 'discover' || o.papers_view === 'list' ? o.papers_view : base.papers_view,
+		panel_chip_font_size: normalize_panel_chip_font_size(
+			o.panel_chip_font_size !== undefined ? o.panel_chip_font_size : base.panel_chip_font_size,
+		),
 		path_fingerprints: normalize_path_fingerprints(o.path_fingerprints),
 	}
 }
 
 /**
  * Rebuild bibtex_dict from vault scan hits.
- * Policy: path+line sort, first citekey wins, first DOI wins (same as rescan_vault).
- * Entries are slim: no double-stored `source` (use {@link entry_source}).
- * Returns a **new** dict — does not mutate `hits`.
+ * Policy: path+line sort, first citekey wins (case-insensitively), first DOI
+ * wins (same as rescan_vault). Entries are slim: no double-stored `source`
+ * (use {@link entry_source}). Returns a **new** dict — does not mutate `hits`.
  */
 export function rebuild_dict_from_hits(hits: ScanHit[]): BibtexDict {
 	const sorted = hits.slice().sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
 	const dict: BibtexDict = {}
+	const used_ids = new Set<string>()
 	const used_dois = new Set<string>()
 
 	for (const h of sorted) {
-		if (h.id in dict) continue
+		const norm_id = normalize_id(h.id)
+		if (used_ids.has(norm_id)) continue
 		if (h.doi && used_dois.has(h.doi)) continue
 		dict[h.id] = {
 			fields: h.fields,
 			source_path: h.path,
 			source_line: h.line,
 		}
+		used_ids.add(norm_id)
 		if (h.doi) used_dois.add(h.doi)
 	}
 	return dict
@@ -327,15 +369,16 @@ export function retarget_fingerprint(
 
 /**
  * Remove all entries whose source_path equals `path`. Mutates dict; returns count removed.
- * When `doi_index` is provided it is kept in sync.
+ * When `doi_index` / `id_index` are provided they are kept in sync.
  */
-export function remove_entries_for_path(dict: BibtexDict, path: string, doi_index?: DoiIndex): number {
+export function remove_entries_for_path(dict: BibtexDict, path: string, doi_index?: DoiIndex, id_index?: IdIndex): number {
 	if (doi_index) {
 		doi_index_on_remove_path(doi_index, dict, path)
 	}
 	let n = 0
 	for (const id of Object.keys(dict)) {
 		if (dict[id].source_path === path) {
+			if (id_index) id_index_clear_owner(id_index, id)
 			delete dict[id]
 			n++
 		}
@@ -346,7 +389,7 @@ export function remove_entries_for_path(dict: BibtexDict, path: string, doi_inde
 /**
  * Insert or update a non-duplicate entry. Returns true if the dict was mutated.
  * Stores a slim entry (no `source` string). Caller passes source text for dirty compare only.
- * When `doi_index` is provided it is kept in sync.
+ * When `doi_index` / `id_index` are provided they are kept in sync.
  */
 export function upsert_entry(
 	dict: BibtexDict,
@@ -356,6 +399,7 @@ export function upsert_entry(
 	source_path: string,
 	doi_index?: DoiIndex,
 	source_line?: number,
+	id_index?: IdIndex,
 ): boolean {
 	const prev = dict[id]
 	const prev_src = prev ? entry_source(prev) : null
@@ -366,6 +410,9 @@ export function upsert_entry(
 	if (doi_index) {
 		doi_index_on_upsert(doi_index, id, prev, fields.doi)
 	}
+	if (id_index) {
+		id_index_claim(id_index, id)
+	}
 	const entry: BibtexElement = { fields, source_path }
 	if (source_line !== undefined) {
 		entry.source_line = source_line
@@ -374,12 +421,15 @@ export function upsert_entry(
 	return true
 }
 
-/** Delete a single entry and sync DOI index. */
-export function delete_entry(dict: BibtexDict, id: string, doi_index?: DoiIndex): boolean {
+/** Delete a single entry and sync DOI + id indexes. */
+export function delete_entry(dict: BibtexDict, id: string, doi_index?: DoiIndex, id_index?: IdIndex): boolean {
 	const prev = dict[id]
 	if (!prev) return false
 	if (doi_index) {
 		doi_index_on_delete(doi_index, id, prev)
+	}
+	if (id_index) {
+		id_index_clear_owner(id_index, id)
 	}
 	delete dict[id]
 	return true

@@ -14,7 +14,10 @@ import {
 	missing_pdf_ids,
 	probe_missing_pdf_chunked,
 	normalize_card_font_size,
+	normalize_panel_chip_font_size,
 	normalize_plugin_cache,
+	PANEL_CHIP_FONT_SIZE_MAX,
+	PANEL_CHIP_FONT_SIZE_MIN,
 	rebuild_dict_from_hits,
 	remove_entries_for_path,
 	retarget_fingerprint,
@@ -88,6 +91,16 @@ describe('cache-ops / data integrity', () => {
 		expect(normalize_plugin_cache({ card_font_size: 100 }).card_font_size).toBe(CARD_FONT_SIZE_MAX)
 	})
 
+	it('normalize_panel_chip_font_size clamps to its own range, independent of card_font_size', () => {
+		expect(normalize_panel_chip_font_size(undefined)).toBe(13)
+		expect(normalize_panel_chip_font_size('15')).toBe(15)
+		expect(normalize_panel_chip_font_size(3)).toBe(PANEL_CHIP_FONT_SIZE_MIN)
+		expect(normalize_panel_chip_font_size(99)).toBe(PANEL_CHIP_FONT_SIZE_MAX)
+		const cache = normalize_plugin_cache({ panel_chip_font_size: 18, card_font_size: 11 })
+		expect(cache.panel_chip_font_size).toBe(18)
+		expect(cache.card_font_size).toBe(11)
+	})
+
 	it('normalize_plugin_cache preserves card_wide toggle', () => {
 		expect(normalize_plugin_cache({ card_wide: true }).card_wide).toBe(true)
 		expect(normalize_plugin_cache({ card_wide: 'yes' } as unknown).card_wide).toBe(false)
@@ -103,6 +116,13 @@ describe('cache-ops / data integrity', () => {
 		expect(normalize_plugin_cache(undefined).panel_double_debounce_enabled).toBe(false)
 		expect(normalize_plugin_cache({ panel_double_debounce_enabled: true }).panel_double_debounce_enabled).toBe(true)
 		expect(normalize_plugin_cache({ panel_double_debounce_enabled: 'yes' } as unknown).panel_double_debounce_enabled).toBe(false)
+	})
+
+	it('normalize_plugin_cache defaults papers_view to discover, preserves list, rejects garbage', () => {
+		expect(normalize_plugin_cache(undefined).papers_view).toBe('discover')
+		expect(normalize_plugin_cache({ papers_view: 'list' }).papers_view).toBe('list')
+		expect(normalize_plugin_cache({ papers_view: 'discover' }).papers_view).toBe('discover')
+		expect(normalize_plugin_cache({ papers_view: 'grid' } as unknown).papers_view).toBe('discover')
 	})
 
 	it('missing_pdf_ids filters by the injected predicate and sorts the result', () => {
@@ -168,6 +188,15 @@ describe('cache-ops / data integrity', () => {
 		expect(dict.A.source_path).toBe('a.md')
 		expect(dict.B.fields.doi).toBe('10.1/x')
 		expect(dict.C).toBeUndefined()
+	})
+
+	it('rebuild_dict_from_hits: dedupes citekeys case-insensitively, first path+line wins', () => {
+		const dict = rebuild_dict_from_hits([
+			hit({ id: 'smith2020', path: 'b.md', line: 0 }),
+			hit({ id: 'Smith2020', path: 'a.md', line: 0 }),
+		])
+		expect(Object.keys(dict)).toEqual(['Smith2020'])
+		expect(dict.Smith2020.source_path).toBe('a.md')
 	})
 
 	it('rebuild is pure — does not mutate input order for callers that reuse hits', () => {

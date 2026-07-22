@@ -1,6 +1,7 @@
 import { App, Editor, AbstractInputSuggest, SuggestModal, EditorSuggest, TFile, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian'
 import { BibtexElement, type BibtexDict } from 'src/bibtex'
 import { list_ids_for_suggest } from 'src/library-scale'
+import { find_prompt_trigger } from 'src/prompt-trigger'
 
 /**
  * An editor prompt to suggest BibTeX entries. Triggered by:
@@ -35,37 +36,24 @@ export class EditorPrompt extends EditorSuggest<string> {
         // determine if this EditorSuggest should be triggered
         this.editor = editor
         const line = editor.getLine(cursor.line)
-        const regex = /(`)([{\[])([^}\]`\ ]*)([}\]]?)(`?)/g
-        let match
-
-        while ((match = regex.exec(line)) !== null) {
-            // example: match = ('`{test}`', '`', '{', 'test', '}', '`')
-            // console.log(match)
-            const query = match[3]
-            const content_start = match.index + 2 // position after `{` or `[`
-            const content_end = content_start + query.length
-            
-            // if (cursor.ch >= content_start && cursor.ch == content_end) {
-            if (cursor.ch == content_end) {
-                this.bracket_start = match[2]
-                this.bracket_end = match[4]
-                this.code_end = match[5]
-
-                if (this.bracket_end && !this.code_end) {
-                    // rule out the case like `{test}, where proper insertion is not achievable
-                    continue
-                }
-
-                this.trigger_info = {
-                    start: { line: cursor.line, ch: content_start },
-                    end: { line: cursor.line, ch: content_end },
-                    query: query,
-                }
-                return this.trigger_info
-            }
+        const found = find_prompt_trigger(
+            line,
+            cursor.ch,
+            (query) => list_ids_for_suggest(this.bibtex_dict, query).ids.length > 0,
+        )
+        if (!found) {
+            return null
         }
 
-        return null
+        this.bracket_start = found.bracket_start
+        this.bracket_end = found.bracket_end
+        this.code_end = found.code_end
+        this.trigger_info = {
+            start: { line: cursor.line, ch: found.content_start },
+            end: { line: cursor.line, ch: found.content_end },
+            query: found.query,
+        }
+        return this.trigger_info
     }
 
     getSuggestions(context: EditorSuggestContext): string[] {

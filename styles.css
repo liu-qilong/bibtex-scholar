@@ -17,7 +17,10 @@ If your plugin does not need CSS, delete this file.
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--font-ui-small);
+    /* --bibtex-panel-chip-font-size is set on .bibtex-panel-list by discover mode
+     * only (see "Paper panel chip text size" setting) — inline in-note chips never
+     * have an ancestor setting it, so they keep the normal UI-small size. */
+    font-size: var(--bibtex-panel-chip-font-size, var(--font-ui-small));
     padding: 0 var(--size-4-2);
     min-height: calc(var(--input-height) * 0.85);
     height: auto;
@@ -88,6 +91,24 @@ code.bibtex-source-tag.is-clashing {
     animation: bibtex-card-in 0.12s ease-out;
 }
 
+/* Pinned: detached from any anchor, draggable, own z-order (set inline via
+ * style.zIndex — see hover.tsx) — a slightly stronger shadow reads as
+ * "floating/detached" rather than "anchored to a chip." */
+.bibtex-hover-card.is-floating.is-pinned {
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.06),
+        0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+.bibtex-hover-card.is-floating.is-pinned .bibtex-card-header {
+    cursor: grab;
+    user-select: none;
+}
+
+.bibtex-hover-card.is-floating.is-pinned .bibtex-card-header:active {
+    cursor: grabbing;
+}
+
 /* Settings: “Wider citation cards” — more horizontal room, less wrapping/scroll */
 .bibtex-hover-card.is-floating.is-wide {
     width: min(44em, calc(100vw - 16px));
@@ -107,7 +128,8 @@ code.bibtex-source-tag.is-clashing {
  * (instead of reversing the whole flex container) is what keeps title →
  * info tokens → action buttons in that reading order in both placements.
  */
-.bibtex-hover-card.is-floating.is-flipped .bibtex-card-fields {
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-fields,
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-hint {
     order: -1;
 }
 
@@ -178,6 +200,7 @@ code.bibtex-source-tag.is-clashing {
     font-variant: small-caps;
 }
 
+.bibtex-card-pin,
 .bibtex-card-close {
     flex: 0 0 auto;
     width: max(var(--input-height, 2rem), 2em);
@@ -194,10 +217,25 @@ code.bibtex-source-tag.is-clashing {
     cursor: var(--cursor);
 }
 
+.bibtex-card-pin {
+    font-size: 1em;
+    opacity: 0.6;
+}
+
+.bibtex-card-pin:hover,
+.bibtex-card-pin:focus-visible,
 .bibtex-card-close:hover,
 .bibtex-card-close:focus-visible {
     background: var(--background-modifier-hover) !important;
     color: var(--text-normal) !important;
+}
+
+/* Pinned: a slight persistent highlight, not a flashing color block (same
+ * "subtle, not loud" rule as the paper-panel view toggle). */
+.bibtex-card-pin.is-active {
+    opacity: 1;
+    background: var(--background-modifier-hover) !important;
+    color: var(--text-accent) !important;
 }
 
 /* Action toolbar — chunky controls (first card-polish feel) */
@@ -341,6 +379,24 @@ code.bibtex-source-tag.is-clashing {
     color: var(--link-color, var(--text-accent));
 }
 
+/* Small on-demand interaction hint — no native title tooltip on the chip
+ * anymore (it repeated info already on the chip/card and popped up right
+ * under the cursor); this sits with the fields cluster instead, at whichever
+ * edge of the card is farthest from the cursor, and only speaks on hover. */
+.bibtex-card-hint {
+    flex: 0 0 auto;
+    align-self: flex-end;
+    color: var(--text-faint);
+    font-size: 0.85em;
+    line-height: 1;
+    cursor: help;
+    opacity: 0.6;
+}
+
+.bibtex-card-hint:hover {
+    opacity: 1;
+}
+
 /* bibtex prompt */
 
 .bibtex-prompt-id, .bibtex-prompt-title {
@@ -353,6 +409,45 @@ code.bibtex-source-tag.is-clashing {
 
 /* bibtex paper panel */
 
+/* Panel fills its leaf; only the list scrolls, so the search/toggle row stays put
+ * and virtualized lists (list / missing-pdf mode) size to however tall the panel
+ * actually is, instead of an arbitrary max-height. */
+.bibtex-panel-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.bibtex-panel-query {
+    flex: 0 0 auto;
+}
+
+.bibtex-panel-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto; /* discover/clash: plain block content scrolls here directly */
+}
+
+/* list / missing-pdf / discover mode: list_el becomes a flex pass-through so an
+ * inner scroll div (not list_el itself) fills the remaining height and scrolls,
+ * while status/footer chrome outside that inner div stays pinned in place. */
+.bibtex-panel-list.is-virtual {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Discover mode's scrolling content region (status + chips). The "randomize
+ * again" footer is a sibling of this, not a child, so it stays pinned below. */
+.bibtex-panel-discover-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
 .bibtex-panel-query-row {
     display: flex;
     align-items: center;
@@ -362,6 +457,105 @@ code.bibtex-source-tag.is-clashing {
 .bibtex-panel-search {
     flex: 1;
     min-width: 0;
+}
+
+/* Discover ↔ list view toggle — a real sliding switch: an inset skeuomorphic
+ * groove with a raised knob that slides from one side to the other. The knob
+ * carries the current-mode icon; no accent-color flash on hover/focus — unlike
+ * clash/missing-PDF this isn't an alert/audit state, just two equally-valid
+ * ways to browse the same papers, so the highlight stays subtle. */
+.bibtex-panel-view-toggle {
+    position: relative;
+    flex: 0 0 auto;
+    width: calc(var(--input-height) * 1.9);
+    height: var(--input-height);
+    padding: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background-color: var(--background-secondary);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18);
+    cursor: var(--cursor);
+}
+
+.bibtex-panel-view-toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(var(--input-height) - 4px);
+    height: calc(var(--input-height) - 4px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background-color: var(--background-primary);
+    color: var(--text-muted);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: left 0.15s ease, color 0.15s ease;
+}
+
+.bibtex-panel-view-toggle[aria-checked="true"] .bibtex-panel-view-toggle-knob {
+    left: calc(100% - (var(--input-height) - 4px) - 2px);
+}
+
+.bibtex-panel-view-toggle:hover .bibtex-panel-view-toggle-knob {
+    color: var(--text-normal);
+}
+
+/* Slight highlight, not a large flashing color change: a thin neutral ring, no border/background swap. */
+.bibtex-panel-view-toggle:focus-visible {
+    outline: none;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18), 0 0 0 2px var(--background-modifier-border-hover);
+}
+
+/* Discover-mode chip wrapper — inline-block so vertical margin actually creates
+ * breathing room between wrapped lines, not just horizontally between chips. */
+.bibtex-panel-discover-chip {
+    display: inline-block;
+    margin: 0 var(--size-4-1) var(--size-4-1) 0;
+}
+
+.bibtex-panel-discover-chip .bibtex-hover button {
+    padding: var(--size-4-1) var(--size-4-3);
+}
+
+/* Discover-mode chip flags — small corner dots, same crimson/ochre language as the clash/missing-PDF buttons. */
+.is-clashing-chip,
+.is-missing-pdf-chip {
+    position: relative;
+}
+
+.is-clashing-chip::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: crimson;
+    box-shadow: 0 0 0 1px var(--background-primary);
+    pointer-events: none;
+}
+
+.is-missing-pdf-chip::before {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d4a017;
+    box-shadow: 0 0 0 1px var(--background-primary);
+    pointer-events: none;
+}
+
+/* Discover-mode empty-query footer ("type to search, or randomize again"). */
+.bibtex-panel-discover-footer {
+    color: var(--text-muted);
+    padding: 0.5em 0.25em;
+    font-size: var(--font-ui-smaller, var(--font-ui-small));
+    flex: 0 0 auto;
 }
 
 .bibtex-panel-clash-btn {
@@ -417,6 +611,7 @@ code.bibtex-source-tag.is-clashing {
     gap: 8px;
     flex-wrap: wrap;
     margin-bottom: 4px;
+    flex: 0 0 auto;
 }
 
 .bibtex-panel-missing-pdf-recheck {
@@ -425,10 +620,13 @@ code.bibtex-source-tag.is-clashing {
     cursor: pointer;
 }
 
+/* Fills whatever height .bibtex-panel-list.is-virtual has left below the toolbar
+ * (see .bibtex-panel-root) — a bigger panel renders a taller virtualized window. */
 .bibtex-panel-missing-pdf-scroll {
     position: relative;
     overflow: auto;
-    max-height: min(70vh, 560px);
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .bibtex-panel-missing-pdf-spacer {
@@ -462,6 +660,79 @@ code.bibtex-source-tag.is-clashing {
     color: var(--text-muted);
     font-size: var(--font-ui-small);
     padding: var(--size-4-2);
+    flex: 0 0 auto;
+}
+
+/* List-mode sort control — anchored at the bottom (like discover mode's footer),
+ * always reachable without scrolling up. */
+.bibtex-panel-list-sort-footer {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller, var(--font-ui-small));
+    padding: 0.5em 0.25em;
+    flex: 0 0 auto;
+}
+
+.bibtex-panel-list-sort-footer select {
+    font-size: var(--font-ui-smaller, var(--font-ui-small));
+    padding: 1px 4px;
+}
+
+/* Fills whatever height .bibtex-panel-list.is-virtual has left (see .bibtex-panel-root) —
+ * a bigger panel renders (and virtualizes) a taller visible slice, not a fixed max-height. */
+.bibtex-panel-list-scroll {
+    position: relative;
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.bibtex-panel-list-spacer {
+    width: 100%;
+    pointer-events: none;
+}
+
+.bibtex-panel-list-rows {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+}
+
+/* "Modern card list" row — title + meta, not a bare chip. */
+.bibtex-panel-list-row {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px var(--size-4-2);
+    box-sizing: border-box;
+    cursor: var(--cursor);
+    border-bottom: 1px solid var(--background-modifier-border);
+    overflow: hidden;
+}
+
+.bibtex-panel-list-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.bibtex-panel-list-title {
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bibtex-panel-list-meta {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller, var(--font-ui-small));
+    font-family: var(--font-monospace);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Cap / preview notice above paper chips (10k+ libraries). */
@@ -470,6 +741,7 @@ code.bibtex-source-tag.is-clashing {
     padding: 0.35em 0.25em 0.55em;
     font-size: var(--font-ui-smaller, var(--font-ui-small));
     line-height: 1.35;
+    flex: 0 0 auto;
 }
 
 .bibtex-panel-clash-card {
@@ -507,18 +779,18 @@ code.bibtex-source-tag.is-clashing {
     text-decoration: underline;
 }
 
-.bibtex-panel-query .setting-item-control, 
-.bibtex-panel-query .search-input-container {
-    width: 100% !important;
+/* Bare SearchComponent (no Setting wrapper — that added padding/border the
+ * toggle/clash/missing-PDF buttons beside it don't have, the "optical
+ * misalignment"). Match height/rounding to the rest of the query row exactly. */
+.bibtex-panel-search .search-input-container {
+    width: 100%;
+    height: var(--input-height);
+    box-sizing: border-box;
 }
 
-.bibtex-panel-query .setting-item {
-    display: block;
-    border: none;
-    padding: 0;
-}
-
-.bibtex-panel-query .search-input-container input {
-    border-bottom: 1px solid var(--background-modifier-border-focus);
+.bibtex-panel-search .search-input-container input {
+    height: 100%;
+    box-sizing: border-box;
+    border-radius: var(--radius-s);
 }
 

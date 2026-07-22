@@ -1,14 +1,20 @@
-import { addIcon, ItemView, WorkspaceLeaf, Setting, setIcon, type IconName } from 'obsidian'
-import type { BibtexDict, BibtexElement, Clash, ClashHit } from 'src/bibtex'
-import { normalize_card_font_size, probe_missing_pdf_chunked } from 'src/cache-ops'
+import { addIcon, ItemView, Notice, WorkspaceLeaf, SearchComponent, setIcon, type IconName } from 'obsidian'
+import type { BibtexDict, BibtexElement, Clash } from 'src/bibtex'
+import { normalize_card_font_size, normalize_panel_chip_font_size, probe_missing_pdf_chunked, type ScanHit } from 'src/cache-ops'
 import { render_hover, unmount_hover_hosts } from 'src/hover'
 import {
     CLASH_RESULT_CAP,
+    compare_by_mention_count,
+    DISCOVER_RESULT_CAP,
+    filtered_ids,
     list_clashes_for_panel,
     list_ids_for_panel,
+    LIST_OVERSCAN,
+    LIST_ROW_HEIGHT,
     MISSING_PDF_OVERSCAN,
     MISSING_PDF_ROW_HEIGHT,
     PANEL_RESULT_CAP,
+    random_sample_ids,
     visible_window,
     type LibraryListResult,
 } from 'src/library-scale'
@@ -34,7 +40,7 @@ type PanelMode = 'papers' | 'clash' | 'missing-pdf'
 export class PaperPanelView extends ItemView {
     plugin: BibtexScholar
     mode: PanelMode = 'papers'
-    clashes: Clash[] = []
+    clashes: Clash<ScanHit>[] = []
     list_el: HTMLElement
     clash_btn: HTMLElement
     /** Only created when Settings → "Missing PDF panel" is enabled. */
@@ -49,6 +55,22 @@ export class PaperPanelView extends ItemView {
     private missing_pdf_scroll_el: HTMLElement | null = null
     private missing_pdf_rows_el: HTMLElement | null = null
     private missing_pdf_ids_view: string[] = []
+
+    /** Switches the papers list between discover (random/capped chips) and list (virtualized rows). */
+    view_toggle_btn: HTMLElement
+    /** The sliding knob inside {@link view_toggle_btn}; carries the current-mode icon. */
+    private view_toggle_knob_el: HTMLElement
+    /** List-mode sort — session-only, not persisted (unlike the discover/list choice itself). */
+    private papers_sort: 'alpha' | 'mentions' = 'alpha'
+    /** True once `plugin.ensure_cite_index()` has completed at least once for this panel session. */
+    private mentions_index_warm = false
+    /** Bumped to cancel an in-flight citation-count index build. */
+    private cite_index_build_epoch = 0
+    private list_scroll_el: HTMLElement | null = null
+    private list_rows_el: HTMLElement | null = null
+    private list_ids_view: string[] = []
+    /** Discover mode's scrolling content region — status + chips scroll here; the footer stays pinned below it. */
+    private discover_scroll_el: HTMLElement | null = null
 
     constructor(leaf: WorkspaceLeaf, plugin: BibtexScholar) {
         super(leaf)
@@ -75,16 +97,28 @@ export class PaperPanelView extends ItemView {
     async onOpen() {
         const container = this.containerEl.children[1]
         container.empty()
+        container.addClass('bibtex-panel-root')
 
         const query_div = container.createEl('div', { cls: 'bibtex-panel-query' })
         const query_row = query_div.createEl('div', { cls: 'bibtex-panel-query-row' })
 
+        // Toggle comes first — it's the primary "what am I looking at" choice,
+        // search is secondary to it.
+        this.view_toggle_btn = query_row.createEl('button', {
+            cls: 'bibtex-panel-view-toggle',
+            attr: { role: 'switch' },
+        })
+        this.view_toggle_knob_el = this.view_toggle_btn.createEl('span', {
+            cls: 'bibtex-panel-view-toggle-knob',
+        })
+        this.update_view_toggle_button()
+        this.view_toggle_btn.addEventListener('click', () => this.on_view_toggle_click())
+
         const search_wrap = query_row.createEl('div', { cls: 'bibtex-panel-search' })
-        new Setting(search_wrap)
-            .addSearch((text) => text.onChange((query) => {
-                if (this.mode !== 'papers') return
-                this.show_papers(query)
-            }))
+        new SearchComponent(search_wrap).onChange((query) => {
+            if (this.mode !== 'papers') return
+            this.show_papers(query)
+        })
 
         this.clash_btn = query_row.createEl('button', {
             cls: 'bibtex-panel-clash-btn',
@@ -108,23 +142,33 @@ export class PaperPanelView extends ItemView {
             this.missing_pdf_btn.addEventListener('click', () => this.on_missing_pdf_click())
         }
 
-        this.list_el = container.createEl('div')
+        this.list_el = container.createEl('div', { cls: 'bibtex-panel-list' })
         this.show_papers()
     }
 
     async onClose() {
         this.missing_pdf_probe_epoch++
+        this.cite_index_build_epoch++
         if (this.list_el) {
             this.clear_list()
         }
     }
 
-    /** Unmount React hover hosts before wiping list DOM (avoids leaked roots). */
+    /** Unmount hover chips before wiping list DOM (avoids leaked chip/registry entries). */
     clear_list() {
         unmount_hover_hosts(this.list_el)
         this.missing_pdf_scroll_el = null
         this.missing_pdf_rows_el = null
+        this.list_scroll_el = null
+        this.list_rows_el = null
+        this.discover_scroll_el = null
         this.list_el.empty()
+        // list_el itself becomes a flex pass-through so an inner scroll div can fill
+        // remaining panel height while status/footer chrome stays pinned outside it —
+        // used by list/missing-pdf mode (virtualized rows) and discover mode (status +
+        // chips scroll, the "randomize again" footer stays put); clash content stays
+        // normal block flow.
+        this.list_el.classList.remove('is-virtual')
     }
 
     /** Switch active mode and keep both toggle buttons' active state in sync. */
@@ -132,6 +176,30 @@ export class PaperPanelView extends ItemView {
         this.mode = mode
         this.clash_btn.classList.toggle('is-active', mode === 'clash')
         this.missing_pdf_btn?.classList.toggle('is-active', mode === 'missing-pdf')
+    }
+
+    private on_view_toggle_click() {
+        this.plugin.cache.papers_view = this.plugin.cache.papers_view === 'list' ? 'discover' : 'list'
+        void this.plugin.save_cache()
+        this.update_view_toggle_button()
+        if (this.mode !== 'papers') {
+            this.set_mode('papers')
+        }
+        this.show_papers()
+    }
+
+    /**
+     * The knob slides along the track and carries the current-mode icon — no
+     * accent-color highlight (unlike clash/missing-pdf, discover/list aren't an
+     * alert/audit state, just two equally-valid ways to browse the same papers).
+     */
+    private update_view_toggle_button() {
+        const is_list = this.plugin.cache.papers_view === 'list'
+        setIcon(this.view_toggle_knob_el, is_list ? 'list' : 'layers')
+        const label = is_list ? 'Switch to discover view' : 'Switch to list view'
+        this.view_toggle_btn.setAttr('aria-label', label)
+        this.view_toggle_btn.setAttr('title', label)
+        this.view_toggle_btn.setAttr('aria-checked', String(is_list))
     }
 
     async on_clash_click() {
@@ -171,48 +239,270 @@ export class PaperPanelView extends ItemView {
         void this.show_missing_pdf(false)
     }
 
-    /**
-     * List papers with a hard mount cap. Empty query shows a short sorted preview
-     * (not the whole library). Search results cap at {@link PANEL_RESULT_CAP}.
-     */
+    /** Dispatches to whichever papers-list view is active (persisted in plugin cache). */
     show_papers(query: string = '') {
-        this.clear_list()
-        const list = list_ids_for_panel(this.bibtex_dict, query)
-        this.render_list_status(list)
+        // Any fresh dispatch (typing, view toggle, back-from-clash/missing-pdf) supersedes
+        // an in-flight "Most cited" index build — see on_sort_change's epoch check.
+        this.cite_index_build_epoch++
+        if (this.plugin.cache.papers_view === 'list') {
+            this.show_list(query)
+        } else {
+            this.show_discover(query)
+        }
+    }
 
-        if (list.ids.length === 0) {
-            const empty_msg = list.kind === 'search'
-                ? 'No papers match this query.'
-                : 'No papers in cache yet.'
-            this.list_el.createEl('div', { cls: 'bibtex-panel-clash-empty', text: empty_msg })
+    /**
+     * Discover view: browse, not search. Empty query shows a random capped
+     * sample (re-rollable) with clash/missing-PDF coloring; a non-empty
+     * query falls back to the same sorted/capped search every other panel
+     * list uses — randomness only applies to the browse state.
+     */
+    show_discover(query: string = '') {
+        this.clear_list()
+        this.list_el.classList.add('is-virtual')
+        const chip_font_px = normalize_panel_chip_font_size(this.plugin.cache.panel_chip_font_size)
+        this.list_el.style.setProperty('--bibtex-panel-chip-font-size', `${chip_font_px}px`)
+        // Status + chips scroll in here; a re-rollable footer (empty query only)
+        // stays pinned below it, outside the scrolling region — same "chrome stays
+        // put, content scrolls" treatment list mode's sort footer already uses.
+        this.discover_scroll_el = this.list_el.createEl('div', { cls: 'bibtex-panel-discover-scroll' })
+        if (query.trim().length === 0) {
+            this.render_discover_preview()
             return
         }
 
+        const list = list_ids_for_panel(this.bibtex_dict, query)
+        this.render_list_status(list)
+        if (list.ids.length === 0) {
+            this.discover_scroll_el.createEl('div', { cls: 'bibtex-panel-clash-empty', text: 'No papers match this query.' })
+            return
+        }
         for (const id of list.ids) {
             const entry = this.bibtex_dict[id]
             if (!entry) continue
-            const paper_bar = this.list_el.createEl('span')
-            // Dense chip + shared popup; mount count is bounded by PANEL_* caps.
-            render_hover(paper_bar, entry, this.plugin, this.app, /* expand */ false, /* dense */ true)
+            this.render_discover_chip(id, entry)
         }
         this.plugin.perf.panel_rows_mounted = list.ids.length
     }
 
-    /** Status line under the search box explaining preview / truncation. */
+    /** Random, re-rollable sample of up to {@link DISCOVER_RESULT_CAP} chips — the browse/discover state. */
+    private render_discover_preview() {
+        const scroll = this.discover_scroll_el!
+        const all_ids = Object.keys(this.bibtex_dict)
+        if (all_ids.length === 0) {
+            scroll.createEl('div', { cls: 'bibtex-panel-clash-empty', text: 'No papers in cache yet.' })
+            return
+        }
+
+        const sample = random_sample_ids(all_ids, DISCOVER_RESULT_CAP)
+        const truncated = all_ids.length > sample.length
+        const status_text = truncated
+            ? `${all_ids.length} papers — showing a random ${sample.length}.`
+            : `${all_ids.length} paper${all_ids.length === 1 ? '' : 's'} in cache.`
+        scroll.createEl('div', { cls: 'bibtex-panel-list-status', text: status_text })
+
+        for (const id of sample) {
+            const entry = this.bibtex_dict[id]
+            if (!entry) continue
+            this.render_discover_chip(id, entry)
+        }
+        this.plugin.perf.panel_rows_mounted = sample.length
+
+        const footer = this.list_el.createEl('div', { cls: 'bibtex-panel-discover-footer' })
+        footer.createEl('span', { text: 'Type to search for more, or ' })
+        const randomize = footer.createEl('span', {
+            cls: 'bibtex-panel-clash-link',
+            text: 'randomize again',
+        })
+        randomize.addEventListener('click', () => this.show_discover(''))
+        footer.createEl('span', { text: '.' })
+    }
+
+    /** Dense chip, flagged with clash/missing-PDF coloring for discover-mode's "notice things" purpose. */
+    private render_discover_chip(id: string, entry: BibtexElement) {
+        const paper_bar = this.discover_scroll_el!.createEl('span', { cls: 'bibtex-panel-discover-chip' })
+        if (this.plugin.clash_reasons.has(id)) {
+            paper_bar.classList.add('is-clashing-chip')
+        }
+        if (!this.has_pdf(id)) {
+            paper_bar.classList.add('is-missing-pdf-chip')
+        }
+        // Dense chip + shared popup; mount count is bounded by DISCOVER/PANEL_* caps.
+        render_hover(paper_bar, entry, this.plugin, this.app, /* expand */ false, /* dense */ true)
+    }
+
+    /** Status line under the search box explaining preview / truncation (discover-mode search only). */
     private render_list_status(list: LibraryListResult) {
+        const scroll = this.discover_scroll_el!
         if (list.kind === 'empty_preview') {
             if (list.matched === 0) return
             const text = list.truncated
                 ? `Showing first ${list.ids.length} of ${list.matched} papers — type to search (max ${PANEL_RESULT_CAP} shown).`
                 : `${list.matched} paper${list.matched === 1 ? '' : 's'} in cache.`
-            this.list_el.createEl('div', { cls: 'bibtex-panel-list-status', text })
+            scroll.createEl('div', { cls: 'bibtex-panel-list-status', text })
             return
         }
         if (list.matched === 0) return
         const text = list.truncated
             ? `${list.matched} matches — showing first ${list.ids.length}. Narrow your query.`
             : `${list.matched} match${list.matched === 1 ? '' : 'es'}.`
-        this.list_el.createEl('div', { cls: 'bibtex-panel-list-status', text })
+        scroll.createEl('div', { cls: 'bibtex-panel-list-status', text })
+    }
+
+    /**
+     * List view: unbounded, virtualized rows (title/id/year/source path,
+     * optionally mention count), sortable A–Z or by mention count.
+     * Virtualized via {@link visible_window}, same technique as the
+     * missing-PDF list — never needs a hard mount cap.
+     */
+    show_list(query: string = '') {
+        this.clear_list()
+        this.list_el.classList.add('is-virtual')
+        const compare = this.papers_sort === 'mentions' && this.mentions_index_warm
+            ? compare_by_mention_count(this.mention_counts())
+            : undefined
+        const ids = filtered_ids(this.bibtex_dict, query, compare)
+        this.render_list_top_status(ids.length, query)
+
+        if (ids.length === 0) {
+            const msg = query.trim().length > 0 ? 'No papers match this query.' : 'No papers in cache yet.'
+            this.list_el.createEl('div', { cls: 'bibtex-panel-clash-empty', text: msg })
+            return
+        }
+
+        const font_px = normalize_card_font_size(this.plugin.cache.card_font_size)
+        const scroll = this.list_el.createEl('div', { cls: 'bibtex-panel-list-scroll' })
+        scroll.style.fontSize = `${font_px}px`
+        const spacer = scroll.createEl('div', { cls: 'bibtex-panel-list-spacer' })
+        spacer.style.height = `${ids.length * LIST_ROW_HEIGHT}px`
+        const rows = scroll.createEl('div', { cls: 'bibtex-panel-list-rows' })
+
+        this.list_scroll_el = scroll
+        this.list_rows_el = rows
+        this.list_ids_view = ids
+
+        const paint = () => this.paint_list_window()
+        scroll.addEventListener('scroll', paint)
+        // First paint after layout so clientHeight is meaningful — the window now
+        // fills whatever height the panel actually has (see .bibtex-panel-list-scroll),
+        // so a taller panel renders (and virtualizes) a taller visible slice.
+        requestAnimationFrame(paint)
+
+        // Sort control lives at the bottom, like discover mode's footer — always
+        // reachable without scrolling up, and reads as "interactive control" vs.
+        // the plain count line at top.
+        this.render_list_sort_footer(query)
+    }
+
+    /** id -> mention count snapshot for the current dict (cheap: cite_index lookups are O(1) once warm). */
+    private mention_counts(): Map<string, number> {
+        return new Map(Object.keys(this.bibtex_dict).map((id) => [id, this.plugin.mention_count(id)]))
+    }
+
+    private render_list_top_status(count: number, query: string) {
+        const status_text = query.trim().length > 0
+            ? `${count} match${count === 1 ? '' : 'es'}.`
+            : `${count} paper${count === 1 ? '' : 's'} in cache.`
+        this.list_el.createEl('div', { cls: 'bibtex-panel-list-status', text: status_text })
+    }
+
+    private render_list_sort_footer(query: string) {
+        const footer = this.list_el.createEl('div', { cls: 'bibtex-panel-list-sort-footer' })
+        footer.createEl('span', { text: 'Sort ' })
+        const select = footer.createEl('select')
+        select.createEl('option', { value: 'alpha', text: 'A–Z' })
+        select.createEl('option', { value: 'mentions', text: 'Most cited' })
+        select.value = this.papers_sort
+        select.addEventListener('change', () => {
+            void this.on_sort_change(select.value === 'mentions' ? 'mentions' : 'alpha', query)
+        })
+    }
+
+    /**
+     * "Most cited" needs `cite_index` warm — build it once (chunked, progress
+     * notice) via {@link BibtexScholar.ensure_cite_index}; a no-op if already
+     * warm (index self-maintains incrementally after that — see main.ts
+     * `on_file_modified`). "A–Z" never needs it.
+     */
+    private async on_sort_change(sort: 'alpha' | 'mentions', query: string) {
+        this.papers_sort = sort
+        if (sort === 'alpha' || this.mentions_index_warm) {
+            this.show_list(query)
+            return
+        }
+
+        const epoch = ++this.cite_index_build_epoch
+        const status = this.list_el.createEl('div', {
+            cls: 'bibtex-panel-list-status',
+            text: 'Preparing citation counts…',
+        })
+        const ok = await this.plugin.ensure_cite_index(
+            (done, total) => status.setText(`Preparing citation counts… ${done}/${total}`),
+            // Cancel only on leaving papers mode / closing the panel — NOT on the
+            // epoch bump `show_papers()` does for every keystroke. Typing further
+            // while this one-time build runs should still let it finish in the
+            // background (see the epoch check below), not restart it from scratch
+            // on the next "Most cited" click.
+            () => this.mode !== 'papers',
+        )
+
+        if (this.cite_index_build_epoch !== epoch || this.mode !== 'papers') {
+            // Superseded by a later action (typed further, closed panel, …) — leave
+            // whatever it rendered alone, but still record success on the plugin
+            // side so a *future* switch to "Most cited" doesn't redo the scan.
+            if (ok) this.mentions_index_warm = true
+            return
+        }
+        if (!ok) {
+            new Notice('Citation count scan cancelled.')
+            this.papers_sort = 'alpha'
+            this.show_list(query)
+            return
+        }
+        this.mentions_index_warm = true
+        this.show_list(query)
+    }
+
+    private paint_list_window() {
+        const scroll = this.list_scroll_el
+        const rows_el = this.list_rows_el
+        const ids = this.list_ids_view
+        if (!scroll || !rows_el || this.mode !== 'papers' || this.plugin.cache.papers_view !== 'list') return
+
+        const { start, end } = visible_window(
+            scroll.scrollTop,
+            scroll.clientHeight || 320,
+            LIST_ROW_HEIGHT,
+            ids.length,
+            LIST_OVERSCAN,
+        )
+
+        rows_el.empty()
+        rows_el.style.transform = `translateY(${start * LIST_ROW_HEIGHT}px)`
+
+        for (let i = start; i < end; i++) {
+            const id = ids[i]
+            const entry = this.bibtex_dict[id]
+            if (!entry) continue
+            this.add_list_row(rows_el, id, entry)
+        }
+        this.plugin.perf.panel_rows_mounted = end - start
+    }
+
+    /** Modern-card-style row: title + id/year/path (+ mention count when sorted by it). Click opens source. */
+    private add_list_row(parent: HTMLElement, id: string, entry: BibtexElement) {
+        const row = parent.createEl('div', { cls: 'bibtex-panel-list-row' })
+        row.style.height = `${LIST_ROW_HEIGHT}px`
+        row.addEventListener('click', () => this.plugin.open_line(String(entry.source_path), entry.source_line ?? 0))
+
+        row.createEl('div', { cls: 'bibtex-panel-list-title', text: entry.fields.title || id })
+
+        const meta_parts = [id, entry.fields.year, String(entry.source_path)].filter((p): p is string => Boolean(p))
+        if (this.papers_sort === 'mentions' && this.mentions_index_warm) {
+            const n = this.plugin.mention_count(id)
+            meta_parts.push(`${n} cite${n === 1 ? '' : 's'}`)
+        }
+        row.createEl('div', { cls: 'bibtex-panel-list-meta', text: meta_parts.join(' · ') })
     }
 
     /** List clashes with a hard mount cap, same policy as {@link show_papers}. */
@@ -241,12 +531,27 @@ export class PaperPanelView extends ItemView {
         }
     }
 
-    add_member_row(parent: HTMLElement, hit: ClashHit, n: number) {
+    /**
+     * `hit` carries its own parsed `fields` from the scan that found it
+     * (`ScanHit`, not the slim `ClashHit`) — so the chip/card built from it
+     * shows this occurrence's own independent content, not whichever entry
+     * happened to win the citekey in `plugin.cache.bibtex_dict`. No extra
+     * read or parse on hover: the fields were already captured mid-scan.
+     */
+    add_member_row(parent: HTMLElement, hit: ScanHit, n: number) {
         const row = parent.createEl('div', { cls: 'bibtex-panel-clash-member' })
         row.createEl('span', { cls: 'bibtex-panel-clash-num', text: `[${n}] ` })
 
-        const key = row.createEl('span', { cls: 'bibtex-panel-clash-link', text: `'${hit.id}'` })
-        key.addEventListener('click', () => this.plugin.open_line(hit.path, hit.line))
+        const key_host = row.createEl('span')
+        const entry: BibtexElement = {
+            fields: hit.fields,
+            source_path: hit.path,
+            source_line: hit.line,
+        }
+        // dense=true: this chip lives in the same scrollable panel list as
+        // discover mode's chips, so it gets the same scroll-dismiss-not-chase
+        // card behavior (see ChipRecord.dense in src/hover.tsx).
+        render_hover(key_host, entry, this.plugin, this.app, /* expand */ false, /* dense */ true)
 
         row.createEl('span', { text: ' ' })
 
@@ -315,6 +620,7 @@ export class PaperPanelView extends ItemView {
     }
 
     private render_missing_pdf_shell(ids: string[], font_px: number, from_cache: boolean) {
+        this.list_el.classList.add('is-virtual')
         const toolbar = this.list_el.createEl('div', { cls: 'bibtex-panel-missing-pdf-toolbar' })
         const status_text = ids.length === 0
             ? 'No references are missing a PDF.'

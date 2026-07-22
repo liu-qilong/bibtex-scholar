@@ -3,7 +3,7 @@
  * Pure: no Obsidian APIs — caps, slim search fields, list windowing math.
  */
 
-import { match_query, type BibtexDict, type BibtexElement, type Clash } from 'src/bibtex'
+import { match_query, type BibtexDict, type BibtexElement, type Clash, type ClashHit } from 'src/bibtex'
 
 /** Empty paper-panel list: show this many sorted ids, not the whole library. */
 export const PANEL_EMPTY_PREVIEW = 50
@@ -17,11 +17,23 @@ export const SUGGEST_RESULT_CAP = 50
 /** Max clash cards mounted in the clash panel. */
 export const CLASH_RESULT_CAP = 80
 
+/**
+ * Discover-mode chip cap (not virtualized — chips need real listeners to
+ * respond to hover, so unlike list mode this stays a hard mount cap).
+ */
+export const DISCOVER_RESULT_CAP = 140
+
 /** Assumed row height (px) for missing-PDF virtual list layout. */
 export const MISSING_PDF_ROW_HEIGHT = 28
 
 /** Overscan rows above/below the missing-PDF viewport. */
 export const MISSING_PDF_OVERSCAN = 6
+
+/** Assumed row height (px) for list-mode's virtual layout (two-line row: title + meta). */
+export const LIST_ROW_HEIGHT = 52
+
+/** Overscan rows above/below the list-mode viewport. */
+export const LIST_OVERSCAN = 6
 
 /**
  * Free-text (no `key:`) match only scans these fields.
@@ -117,8 +129,51 @@ export function list_ids_for_suggest(dict: BibtexDict, query: string): LibraryLi
 	}
 }
 
-export type ClashListResult = {
-	clashes: Clash[]
+/**
+ * Random sample of `ids`, capped at `cap`, no duplicates. Injectable `rng`
+ * (same convention as `probe_missing_pdf_chunked`'s injectable `sleep`) keeps
+ * sampling deterministic in tests. Partial Fisher–Yates: only shuffles as
+ * many positions as needed to fill the cap.
+ */
+export function random_sample_ids(ids: string[], cap: number, rng: () => number = Math.random): string[] {
+	const pool = ids.slice()
+	const n = Math.min(cap, pool.length)
+	for (let i = 0; i < n; i++) {
+		const j = i + Math.floor(rng() * (pool.length - i))
+		;[pool[i], pool[j]] = [pool[j], pool[i]]
+	}
+	return pool.slice(0, n)
+}
+
+/**
+ * Unbounded sorted + filtered id list — backs list mode, which virtualizes
+ * instead of hard-capping. Same `match_query` filtering as {@link list_ids_for_panel},
+ * just without a mount cap. `compare` defaults to alpha (same as every other
+ * panel list); pass {@link compare_by_mention_count} for "Most cited" sort.
+ */
+export function filtered_ids(
+	dict: BibtexDict,
+	query: string,
+	compare: (a: string, b: string) => number = (a, b) => a.localeCompare(b),
+): string[] {
+	const q = query.trim()
+	const all = Object.keys(dict).sort(compare)
+	if (q.length === 0) {
+		return all
+	}
+	return all.filter((id) => {
+		const entry = dict[id]
+		return entry != null && match_query(entry, q)
+	})
+}
+
+/** Descending mention count, alpha tiebreak — comparator for {@link filtered_ids}. */
+export function compare_by_mention_count(counts: Map<string, number>): (a: string, b: string) => number {
+	return (a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b)
+}
+
+export type ClashListResult<H extends ClashHit = ClashHit> = {
+	clashes: Clash<H>[]
 	/** How many clashes existed before the mount cap. */
 	matched: number
 	/** True when more clashes exist than were returned. */
@@ -130,9 +185,10 @@ export type ClashListResult = {
  * cards, same reasoning as {@link list_ids_for_panel} — a messy import can
  * produce as many clash groups as there are entries, and mounting one card
  * + one row per member per clash without a cap is the same unbounded-DOM
- * risk the papers list used to have.
+ * risk the papers list used to have. Generic so callers that scan with
+ * `ScanHit` (id/path/line + parsed `fields`) keep that data on `.members`.
  */
-export function list_clashes_for_panel(clashes: Clash[]): ClashListResult {
+export function list_clashes_for_panel<H extends ClashHit>(clashes: Clash<H>[]): ClashListResult<H> {
 	const matched = clashes.length
 	const capped = clashes.slice(0, CLASH_RESULT_CAP)
 	return {

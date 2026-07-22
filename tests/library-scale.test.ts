@@ -3,11 +3,15 @@ import type { BibtexDict, BibtexElement, Clash } from 'src/bibtex'
 import { match_query } from 'src/bibtex'
 import {
 	CLASH_RESULT_CAP,
+	compare_by_mention_count,
+	DISCOVER_RESULT_CAP,
+	filtered_ids,
 	list_clashes_for_panel,
 	list_ids_for_panel,
 	list_ids_for_suggest,
 	PANEL_EMPTY_PREVIEW,
 	PANEL_RESULT_CAP,
+	random_sample_ids,
 	SUGGEST_RESULT_CAP,
 	is_unsafe_full_mount,
 	visible_window,
@@ -173,6 +177,70 @@ describe('is_unsafe_full_mount', () => {
 		expect(is_unsafe_full_mount(10_000, 10_000)).toBe(true)
 		expect(is_unsafe_full_mount(10_000, PANEL_RESULT_CAP)).toBe(false)
 		expect(is_unsafe_full_mount(20, 20)).toBe(false)
+	})
+})
+
+/** Deterministic [0,1) generator (simple LCG) so sampling tests aren't flaky. */
+function seeded_rng(seed: number): () => number {
+	let state = seed
+	return () => {
+		state = (state * 1103515245 + 12345) & 0x7fffffff
+		return state / 0x7fffffff
+	}
+}
+
+describe('random_sample_ids', () => {
+	it('caps at `cap` with no duplicates, drawn from the input pool', () => {
+		const ids = Array.from({ length: 500 }, (_, i) => `P${i}`)
+		const sample = random_sample_ids(ids, DISCOVER_RESULT_CAP, seeded_rng(1))
+		expect(sample).toHaveLength(DISCOVER_RESULT_CAP)
+		expect(new Set(sample).size).toBe(DISCOVER_RESULT_CAP)
+		for (const id of sample) {
+			expect(ids).toContain(id)
+		}
+	})
+
+	it('returns the whole pool, unchanged in length, when smaller than the cap', () => {
+		const ids = ['A', 'B', 'C']
+		const sample = random_sample_ids(ids, DISCOVER_RESULT_CAP, seeded_rng(2))
+		expect(sample).toHaveLength(3)
+		expect(new Set(sample)).toEqual(new Set(ids))
+	})
+
+	it('is deterministic given the same injected rng sequence', () => {
+		const ids = Array.from({ length: 50 }, (_, i) => `P${i}`)
+		const a = random_sample_ids(ids, 10, seeded_rng(42))
+		const b = random_sample_ids(ids, 10, seeded_rng(42))
+		expect(a).toEqual(b)
+	})
+})
+
+describe('filtered_ids', () => {
+	it('empty query returns every id, sorted, uncapped (unlike list_ids_for_panel)', () => {
+		const d = dict_of(200)
+		const ids = filtered_ids(d, '')
+		expect(ids).toHaveLength(200)
+		expect(ids[0] < ids[1]).toBe(true)
+	})
+
+	it('non-empty query filters via match_query, uncapped', () => {
+		const d = dict_of(200, (i) => entry(`Q${i}`, { title: i < 90 ? 'NeedleHere' : 'Hay' }))
+		const ids = filtered_ids(d, 'NeedleHere')
+		expect(ids).toHaveLength(90) // more than PANEL_RESULT_CAP, none dropped
+	})
+
+	it('custom compare determines order', () => {
+		const d = dict_of(20)
+		const ids = filtered_ids(d, '', (a, b) => b.localeCompare(a))
+		expect(ids[0] > ids[1]).toBe(true)
+	})
+})
+
+describe('compare_by_mention_count', () => {
+	it('sorts descending by count, alpha tiebreak, missing ids treated as 0', () => {
+		const counts = new Map([['B', 5], ['A', 5], ['C', 1]])
+		const ids = ['A', 'B', 'C', 'D'].sort(compare_by_mention_count(counts))
+		expect(ids).toEqual(['A', 'B', 'C', 'D'])
 	})
 })
 

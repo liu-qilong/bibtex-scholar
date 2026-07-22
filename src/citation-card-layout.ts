@@ -58,3 +58,15 @@ export function compute_card_position(
 
 	return { top: Math.round(top), left: Math.round(left) }
 }
+
+/** Clamp an arbitrary (e.g. dragged) card position so it stays inside the viewport. */
+export function clamp_card_position(
+	pos: { top: number, left: number },
+	size: { width: number, height: number },
+	viewport: Viewport,
+	pad: number = VIEWPORT_PAD_PX,
+): { top: number, left: number } {
+	const left = Math.max(pad, Math.min(pos.left, viewport.width - size.width - pad))
+	const top = Math.max(pad, Math.min(pos.top, viewport.height - size.height - pad))
+	return { top: Math.round(top), left: Math.round(left) }
+}

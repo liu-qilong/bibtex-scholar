@@ -11,10 +11,10 @@ import {
 import { App, editorLivePreviewField } from 'obsidian'
 import {
     cite_span_key_at_offset,
-    cursor_inside_span,
-    find_cite_spans_in_line,
     selection_requires_decoration_rebuild,
+    spans_showing_chips,
 } from 'src/cite-span'
+import { resolve_id } from 'src/citekey-index'
 import { HoverWidget } from 'src/hover'
 import type BibtexScholar from 'src/main'
 
@@ -85,11 +85,16 @@ export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
             }
 
             if (update.selectionSet) {
+                // Doc is unchanged here (docChanged returned above). Still resolve
+                // old_head against startState so a future combined transaction
+                // cannot mis-attribute the pre-edit caret to the post-edit line map.
                 const old_head = update.startState.selection.main.head
                 const new_head = update.state.selection.main.head
+                const old_line = update.startState.doc.lineAt(old_head)
+                const new_line = update.state.doc.lineAt(new_head)
                 if (selection_requires_decoration_rebuild(
-                    cite_span_key_at(update.view, old_head),
-                    cite_span_key_at(update.view, new_head),
+                    cite_span_key_at_offset(old_line.text, old_line.from, old_head),
+                    cite_span_key_at_offset(new_line.text, new_line.from, new_head),
                 )) {
                     this.decorations = this.buildDecorations(update.view)
                 }
@@ -113,11 +118,10 @@ export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
 
                 for (let ln = start_line; ln <= end_line; ln++) {
                     const line = view.state.doc.line(ln)
-                    for (const span of find_cite_spans_in_line(line.text, line.from)) {
-                        if (cursor_inside_span(cursor_pos, span.from, span.to)) {
-                            continue
-                        }
-                        const bibtex = dict[span.id]
+                    // Caret inside a span → raw text for edit; all other spans chip.
+                    for (const span of spans_showing_chips(line.text, line.from, cursor_pos)) {
+                        const canonical_id = resolve_id(plugin.id_index, span.id)
+                        const bibtex = canonical_id !== undefined ? dict[canonical_id] : undefined
                         if (!bibtex) {
                             continue
                         }
@@ -139,5 +143,10 @@ export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
         decorations: (value: HoverWidgetPlugin) => value.decorations,
     }
 
+    // Deliberately NOT using EditorView.atomicRanges here: the plugin's own edit
+    // affordance depends on the caret being able to land *inside* [from, to) so
+    // cursor_inside_span() derenders the chip back to raw text. Atomic ranges
+    // would make CM skip over the whole span in one step, breaking arrow-key
+    // entry into edit mode (and doing so asymmetrically left-vs-right).
     return ViewPlugin.fromClass(HoverWidgetPlugin, pluginSpec)
 }

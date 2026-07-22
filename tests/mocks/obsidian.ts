@@ -1,4 +1,12 @@
-/** Minimal Obsidian stubs for pure unit tests (no Electron). */
+/**
+ * Minimal Obsidian stubs for pure unit tests (no Electron).
+ *
+ * `editorLivePreviewField` is a real CodeMirror StateField so editor decoration
+ * tests can mount an EditorView and toggle Live Preview ↔ Source without
+ * Obsidian's runtime.
+ */
+import { StateEffect, StateField } from '@codemirror/state'
+
 export class Modal {
 	constructor(_app?: unknown) {}
 	open() {}
@@ -23,8 +31,24 @@ export async function requestUrl(_opts?: unknown): Promise<{ text: string }> {
 }
 export type App = unknown
 
-/** CodeMirror StateField stand-in — real value comes from EditorView.state.field. */
-export const editorLivePreviewField = Symbol('editorLivePreviewField')
+/** Dispatch to flip Live Preview on/off in unit tests. */
+export const setEditorLivePreview = StateEffect.define<boolean>()
+
+/**
+ * Stand-in for Obsidian's `editorLivePreviewField`.
+ * Default `true` (Live Preview) — matches the mode where cite chips render.
+ */
+export const editorLivePreviewField = StateField.define<boolean>({
+	create: () => true,
+	update(value, tr) {
+		for (const e of tr.effects) {
+			if (e.is(setEditorLivePreview)) {
+				return e.value
+			}
+		}
+		return value
+	},
+})
 
 /** Minimal Component: enough for load()/unload() lifecycle + child registration. */
 export class Component {

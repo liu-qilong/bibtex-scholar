@@ -1,10 +1,26 @@
 # One React root per citation chip — what to fix and why
 
 Audience: someone comfortable with TypeScript who is new to **Obsidian plugin
-development** and to **Electron**. This is a design doc, not a task list for
-this branch — nothing here has been implemented. It explains a real
-architectural cost in the current citation-popup code, why it exists, and what
-replacing it would actually involve.
+development** and to **Electron**. This explains a real architectural cost
+that used to exist in the citation-popup code, why it existed, and what
+replacing it involved.
+
+**Status: implemented 2026-07-22.** Sections 1–3 below describe the problem
+and the target shape as originally scoped; section 6 records what actually
+shipped and how it differs from the original plan. Sections 4–5 (the "why
+later" reasoning and suggested work order) are kept as historical context —
+the blast-radius concerns in section 4 turned out to be manageable in one
+pass, listed in section 6.
+
+**Verification caveat:** this landed as a logic/DOM-behavior refactor,
+verified via `tests/hover-popup.test.tsx` (jsdom + `@testing-library/react`)
+and `tsc`/`esbuild` production build — both green. It has **not** been through
+a manual pass inside real Obsidian (Live Preview, Reading mode, paper panel,
+under actual mouse/keyboard input). jsdom is a strong proxy for open/close/
+position/swap logic, but the refactor's actual payoff — idle-memory and
+listener-count reduction under high citation density in a live editor — is
+not something jsdom measures. Do a manual pass (checklist in section 6) before
+treating this as fully verified.
 
 ---
 
@@ -46,7 +62,7 @@ it's destroyed. That glue is exactly where today's design went.
 
 ---
 
-## 2. What the code does today
+## 2. What the code used to do (historical — see section 6 for what shipped)
 
 Every citation chip — one per `` `{id}` `` / `` `[id]` `` in a note, plus one
 per entry in a `bibtex` code block, the paper panel list, and search results —
@@ -143,7 +159,7 @@ themselves.
 
 ---
 
-## 4. Why this is worth doing later, not now
+## 4. Why this was worth deferring (historical — it was picked up; see section 6)
 
 - It touches the CodeMirror widget (`src/editor.ts`, `HoverWidget` in
   `src/hover.tsx`), the codeblock/inline processors (`src/main.ts`), and the
@@ -160,7 +176,7 @@ themselves.
   mount path replaces today's per-chip root without rewriting the
   assertions.
 
-## 5. Suggested order of work, when this is picked up
+## 5. Suggested order of work (historical — see section 6 for the order actually used)
 
 1. Add the chip registry + a no-op `<CardManager>` (renders nothing yet)
    alongside the existing per-chip roots, so both can be exercised
@@ -172,3 +188,109 @@ themselves.
    `src/main.ts`, panel list in `src/panel.ts`) the same way.
 4. Delete `mount_hover_tree`, `hover_roots`, and the per-chip `<HoverPopup>`
    component once nothing references them.
+
+---
+
+## 6. What actually shipped (2026-07-22)
+
+Landed in one pass rather than the staged rollout in section 5 — all mount
+sites (`HoverWidget` in `src/editor.ts`'s CM path, the codeblock/inline
+processors in `src/main.ts`, and the panel list in `src/panel.ts`) already
+went through the same three entry points (`render_hover`, `HoverRenderChild`,
+`unmount_hover_hosts`), so switching what those entry points do internally
+covered every call site at once — no per-site migration needed, and no
+parallel old/new code path to delete afterward.
+
+### Shape, as built
+
+- **Chip = plain DOM**, built by `build_chip_dom()` in `src/hover.tsx`
+  (`span.bibtex-hover > span.bibtex-hover-chip > button`) — no component, no
+  hooks, no fiber tree. `mount_chip()` wires `mouseenter`/`mouseleave`/`click`
+  listeners straight to `citation_popup` and updates `aria-expanded`/
+  `aria-controls` directly via the existing `citation_popup.register(id, listener)`
+  callback (unchanged controller API — only the listener body changed from a
+  React state setter to direct DOM attribute writes).
+- **Chip registry**: `chip_registry: Map<instance_id, { anchor, bibtex, plugin, app }>`
+  (module-level in `src/hover.tsx`, not a separate file — small enough to keep
+  next to the manager that reads it). `chip_hosts: WeakMap<HTMLElement, ChipHost>`
+  tracks host-element → chip identity so a re-render of the same host reuses
+  its instance id instead of minting a new one (same reuse contract
+  `mount_hover_tree`/`hover_roots` used to provide).
+- **One root, created lazily**: `ensure_card_manager(app)` creates a single
+  hidden host under `app.workspace.containerEl` and mounts `<CardManager>`
+  into it once; every later `mount_chip()` call is a no-op on this front.
+  `CardManager` renders 0-or-1 `<CardShell>` for whichever id
+  `citation_popup.get_active_id()` reports, looked up in `chip_registry`, and
+  portals it — same portal target as before.
+- **`CardShell`** is the old `HoverPopup`'s card half (positioning effect,
+  click-outside effect, ESC handler, `<CitationCardBody>`) extracted
+  unchanged in substance, just reading its anchor from the registry entry
+  instead of a local `chip_ref`.
+- **Teardown**: `unmount_hover(el)` now unregisters from `chip_registry` +
+  `citation_popup` and clears the host's DOM, instead of `root.unmount()`.
+  `unmount_card_manager()` is the new one-time teardown for the shared root
+  itself, called from `BibtexScholar.onunload()` (mirrors the existing
+  `citation_popup.dispose()` call there) and from `tests/hover-popup.test.tsx`'s
+  `afterEach` (each test needs a fresh manager bound to its own fake
+  `app`/portal, since the real plugin only ever has one `app` for its whole
+  lifetime but tests construct a new fake one per case).
+
+### One controller change this required
+
+`CitationPopupController` gained `subscribe_active(listener)` — separate from
+the existing per-id `register(id, listener)` — because `CardManager` needs to
+know "who is active now", not "am I active", which nothing in the old API
+expressed. It fires immediately with the current active id on subscribe (same
+convention `register` already used) and again on every change. The immediate-fire
+part is load-bearing, not cosmetic: without it, a chip that calls
+`open_for_expand()` synchronously right after `ensure_card_manager()` creates
+the manager root can fire before `CardManager`'s subscribing effect has run
+(React defers passive effects a tick), and the card would silently never
+appear. `tests/citation-popup.test.ts` covers both the immediate-fire-on-subscribe
+and fire-on-every-change behavior directly on the controller.
+
+### Deviations from the original plan
+
+- No parallel "no-op CardManager alongside the old roots" step (section 5,
+  step 1) — went straight to the real one, verified by the existing DOM test
+  file plus one new test, rather than incrementally.
+- `chip-registry` was not split into its own file — it's ~10 lines of
+  module state that only `CardManager`/`mount_chip` touch; a separate file
+  would just add an import hop.
+
+### Known gap, not chased
+
+If a chip's host element is re-rendered with new `bibtex` data (same host,
+different entry — rare; markdown re-renders normally get a fresh host)
+**while that chip's card is currently open**, the open card keeps showing
+the pre-update snapshot until it closes and reopens — `mount_chip`'s reuse
+path updates `chip_registry` but doesn't trigger `CardManager` to re-read it
+for an already-active id. The old per-chip-props model would have refreshed
+reactively. Low-value edge case; revisit only if it turns out to matter in
+practice.
+
+### Test coverage added
+
+- `tests/citation-popup.test.ts`: `subscribe_active` fires immediately with
+  the current value and on every subsequent open/close; fires immediately
+  with the already-active id when subscribing mid-open.
+- `tests/hover-popup.test.tsx`: all pre-existing open/close/debounce/
+  click-outside/ESC/flip assertions kept passing unmodified against the new
+  mount path (only the `mount()` test helper was refactored, to share one
+  `app`/portal across chips — no assertion changed), **plus** a new case:
+  two chips under the same shared root, click the first (its card renders,
+  content matches), click the second (exactly one card in the portal at all
+  times, old content gone, new content present, `aria-expanded` flips on
+  both buttons) — the actual card-swap reconciliation this refactor exists to
+  make correct, which the old N-roots design never had to do.
+
+### Manual verification checklist (not yet run)
+
+- [ ] Live Preview: hover/click several cite chips in one note; only one
+      card ever shows; positioning/flip looks right near viewport edges.
+- [ ] Reading mode and `` ```bibtex `` blocks: chips render and open the same way.
+- [ ] Paper panel: open a chip's card from the dense list, scroll/search —
+      card follows or closes sanely, no leaked cards after re-search.
+- [ ] Close a note / navigate away with a card open — no stuck floating card.
+- [ ] Toggle the plugin off (`onunload`) with a card open — no console errors,
+      no leaked listeners on reload.

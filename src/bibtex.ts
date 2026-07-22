@@ -41,10 +41,25 @@ export interface BibtexDict {
 
 export type ClashReason = 'DOI' | 'citeKey'
 export type ClashHit = { id: string, path: string, line: number, doi?: string }
-export type Clash = { reasons: ClashReason[], members: ClashHit[] }
+/**
+ * Generic over the hit type so callers that scan with richer hits (e.g.
+ * `ScanHit`, which also carries `fields`) get that data back on `members`
+ * without a cast — `find_clashes` never rebuilds hit objects, it only groups
+ * and sorts the references it's given.
+ */
+export type Clash<H extends ClashHit = ClashHit> = { reasons: ClashReason[], members: H[] }
 
 /** Backticked inline cites: `{id}` or `[id]` (same as cp_std_md). */
 export const INLINE_CITE_RE = /`(\{|\[)([^\}\]]+)(\}|\])`/g
+
+/**
+ * Case-fold a citekey for internal matching only (duplicate checks, clash
+ * grouping, inline-cite resolution). Users type citekeys however they like —
+ * the literal casing they typed is always what gets stored/displayed.
+ */
+export function normalize_id(id: string): string {
+    return id.toLowerCase()
+}
 
 export function same_paper(a: BibtexField, b: BibtexField): boolean {
     if (a.doi && b.doi) {
@@ -72,8 +87,9 @@ export function replace_inline_citekey(content: string, old_id: string, new_id: 
 }
 
 function replace_cites_chunk(text: string, old_id: string, new_id: string): string {
+    const norm_old = normalize_id(old_id)
     return text.replace(/`(\{|\[)([^\}\]]+)(\}|\])`/g, (match, open, id, close) =>
-        id === old_id ? `\`${open}${new_id}${close}\`` : match
+        normalize_id(id) === norm_old ? `\`${open}${new_id}${close}\`` : match
     )
 }
 
@@ -263,14 +279,20 @@ export function entry_source(
  * @param file_content - The content of the file to check.
  * @returns True if the ID is duplicated, false otherwise.
  */
-export function check_duplicate_id(bibtex_dict: BibtexDict, id: string, file_path: string, file_content: string): boolean {
-    // if the id appears more than 1 time in the file
+export function check_duplicate_id(
+    bibtex_dict: BibtexDict,
+    id: string,
+    file_path: string,
+    file_content: string,
+    id_index?: Map<string, string>,
+): boolean {
+    // if the id appears more than 1 time in the file (case-insensitively)
     // it means the id is duplicated in the same file
     function escape_reg_exp(string: string): string {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
     }
-    
-    const id_regex = new RegExp(`@[a-zA-Z]+{${escape_reg_exp(id)},`, 'g')
+
+    const id_regex = new RegExp(`@[a-zA-Z]+{${escape_reg_exp(id)},`, 'gi')
     let count = 0
 
     while (id_regex.exec(file_content.replace(/\n/g, '')) !== null) {
@@ -280,10 +302,19 @@ export function check_duplicate_id(bibtex_dict: BibtexDict, id: string, file_pat
         }
     }
 
-    // if the same id existed in bibtex_dict and it's from a different file
-    // it means the id is duplicated in different files
-    if (bibtex_dict[id] && (bibtex_dict[id].source_path != file_path)) {
-        return true
+    // if the same id (case-insensitively) existed in bibtex_dict and it's from
+    // a different file, it means the id is duplicated in different files
+    if (id_index) {
+        const owner = id_index.get(normalize_id(id))
+        return !!(owner && bibtex_dict[owner] && bibtex_dict[owner].source_path !== file_path)
+    }
+
+    // Linear fallback (tests / callers without an index).
+    const norm = normalize_id(id)
+    for (const cached_id in bibtex_dict) {
+        if (normalize_id(cached_id) === norm && bibtex_dict[cached_id].source_path !== file_path) {
+            return true
+        }
     }
 
     // otherwise, the id is not duplicated
@@ -343,10 +374,10 @@ function cmp_hit(a: ClashHit, b: ClashHit): number {
 }
 
 /** Undirected clashes: same citekey or same DOI. One result per member set. */
-export function find_clashes(hits: ClashHit[]): Clash[] {
-    const groups = new Map<string, { members: ClashHit[], reasons: Set<ClashReason> }>()
+export function find_clashes<H extends ClashHit>(hits: H[]): Clash<H>[] {
+    const groups = new Map<string, { members: H[], reasons: Set<ClashReason> }>()
 
-    function add(group: ClashHit[], reason: ClashReason) {
+    function add(group: H[], reason: ClashReason) {
         if (group.length < 2) return
         const members = group.slice().sort(cmp_hit)
         const key = members.map(hit_key).join('\n')
@@ -354,11 +385,12 @@ export function find_clashes(hits: ClashHit[]): Clash[] {
         groups.get(key)!.reasons.add(reason)
     }
 
-    const by_id = new Map<string, ClashHit[]>()
-    const by_doi = new Map<string, ClashHit[]>()
+    const by_id = new Map<string, H[]>()
+    const by_doi = new Map<string, H[]>()
     for (const h of hits) {
-        if (!by_id.has(h.id)) by_id.set(h.id, [])
-        by_id.get(h.id)!.push(h)
+        const norm_id = normalize_id(h.id)
+        if (!by_id.has(norm_id)) by_id.set(norm_id, [])
+        by_id.get(norm_id)!.push(h)
         if (h.doi) {
             if (!by_doi.has(h.doi)) by_doi.set(h.doi, [])
             by_doi.get(h.doi)!.push(h)

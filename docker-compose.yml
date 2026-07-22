@@ -1,0 +1,10 @@
+services:
+  obsidian-dev:
+    build: .
+    volumes:
+      - .:/work
+    working_dir: /work
+    user: "${UID:-1000}:${GID:-1000}"
+    stdin_open: true
+    tty: true
+

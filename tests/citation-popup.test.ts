@@ -134,6 +134,38 @@ describe('CitationPopupController stability', () => {
 		expect(ctl.is_open('a')).toBe(true)
 	})
 
+	it('subscribe_active fires immediately with the current value, then on every open/close', () => {
+		const { clock } = fake_clock()
+		const ctl = new CitationPopupController({ clock, document: null })
+		ctl.register('a', () => {})
+		ctl.register('b', () => {})
+		const seen: (string | null)[] = []
+		const unsubscribe = ctl.subscribe_active((id) => seen.push(id))
+		expect(seen).toEqual([null])
+
+		ctl.toggle_trigger('a')
+		expect(seen).toEqual([null, 'a'])
+		ctl.toggle_trigger('b')
+		expect(seen).toEqual([null, 'a', 'b'])
+		ctl.dismiss()
+		expect(seen).toEqual([null, 'a', 'b', null])
+
+		unsubscribe()
+		ctl.toggle_trigger('a')
+		expect(seen).toEqual([null, 'a', 'b', null])
+	})
+
+	it('subscribe_active fires immediately with the id if already active when subscribed', () => {
+		const { clock } = fake_clock()
+		const ctl = new CitationPopupController({ clock, document: null })
+		ctl.register('a', () => {})
+		ctl.toggle_trigger('a')
+
+		const seen: (string | null)[] = []
+		ctl.subscribe_active((id) => seen.push(id))
+		expect(seen).toEqual(['a'])
+	})
+
 	it('dispose clears active state and timers', () => {
 		const { clock, advance } = fake_clock()
 		const ctl = new CitationPopupController({ clock, document: null })

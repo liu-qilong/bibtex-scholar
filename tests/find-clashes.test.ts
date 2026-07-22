@@ -16,6 +16,16 @@ describe('find_clashes trust checks', () => {
 		expect(clashes[0].members).toHaveLength(2)
 	})
 
+	it('groups citeKey collisions case-insensitively, keeping each member\'s literal casing', () => {
+		const clashes = find_clashes([
+			h('Smith2020', 'a.md', 1),
+			h('smith2020', 'b.md', 2),
+		])
+		expect(clashes).toHaveLength(1)
+		expect(clashes[0].reasons).toEqual(['citeKey'])
+		expect(clashes[0].members.map((m) => m.id).sort()).toEqual(['Smith2020', 'smith2020'])
+	})
+
 	it('merges DOI + citeKey reasons on same member set', () => {
 		const clashes = find_clashes([
 			h('A', 'a.md', 1, '10/x'),
@@ -27,6 +37,24 @@ describe('find_clashes trust checks', () => {
 
 	it('ignores singleton hits', () => {
 		expect(find_clashes([h('Only', 'a.md', 0, '10/y')])).toEqual([])
+	})
+
+	it('preserves extra properties on richer hits (e.g. ScanHit.fields) — no rebuild, only grouping', () => {
+		// find_clashes only groups/sorts references; it must never reconstruct a
+		// slimmer object, or a caller passing ScanHit loses each member's own
+		// independently-scanned fields (the data the clash panel now hovers/
+		// renders instead of the cached winner).
+		type WithFields = ClashHit & { fields: { id: string, title: string } }
+		const wf = (id: string, path: string, line: number, title: string): WithFields => ({
+			id, path, line, fields: { id, title },
+		})
+		const clashes = find_clashes([
+			wf('Same', 'a.md', 1, 'Title A'),
+			wf('Same', 'b.md', 2, 'Title B'),
+		])
+		expect(clashes).toHaveLength(1)
+		const titles = clashes[0].members.map((m) => m.fields.title).sort()
+		expect(titles).toEqual(['Title A', 'Title B'])
 	})
 })
 
@@ -46,6 +74,16 @@ describe('build_clash_reasons_by_id', () => {
 		])
 		const by_id = build_clash_reasons_by_id(clashes)
 		expect(by_id.get('Same')).toEqual(['citeKey'])
+	})
+
+	it('flags both literal-cased sides of a case-insensitive citeKey clash', () => {
+		const clashes = find_clashes([
+			h('Smith2020', 'a.md', 1),
+			h('smith2020', 'b.md', 2),
+		])
+		const by_id = build_clash_reasons_by_id(clashes)
+		expect(by_id.get('Smith2020')).toEqual(['citeKey'])
+		expect(by_id.get('smith2020')).toEqual(['citeKey'])
 	})
 
 	it('merges reasons across two different clash groups sharing an id', () => {

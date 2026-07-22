@@ -42,6 +42,8 @@ const default_clock: PopupClock = {
 
 export class CitationPopupController {
 	private listeners = new Map<string, CitationPopupListener>()
+	/** Notified with the new active id (or null) whenever it changes — one shared card manager listens here. */
+	private active_listeners = new Set<(id: string | null) => void>()
 	private active_id: string | null = null
 	private pending_open_id: string | null = null
 	private open_timer: number | null = null
@@ -64,6 +66,17 @@ export class CitationPopupController {
 			listener(true)
 		}
 		return () => this.unregister(id)
+	}
+
+	/**
+	 * Notified with the active id (or null) on every change, and once
+	 * immediately with the current value (same convention as {@link register})
+	 * — the single shared card manager subscribes here.
+	 */
+	subscribe_active(listener: (id: string | null) => void): () => void {
+		this.active_listeners.add(listener)
+		listener(this.active_id)
+		return () => this.active_listeners.delete(listener)
 	}
 
 	unregister(id: string) {
@@ -185,6 +198,7 @@ export class CitationPopupController {
 			const id = this.active_id
 			this.active_id = null
 			this.notify(id, false)
+			this.notify_active()
 		}
 		this.listeners.clear()
 		this.dismissed.clear()
@@ -228,6 +242,7 @@ export class CitationPopupController {
 
 		this.active_id = id
 		this.notify(id, true)
+		this.notify_active()
 		this.bind_esc()
 	}
 
@@ -237,6 +252,7 @@ export class CitationPopupController {
 		}
 		this.active_id = null
 		this.notify(id, false)
+		this.notify_active()
 		if (!this.active_id) {
 			this.unbind_esc()
 		}
@@ -244,6 +260,12 @@ export class CitationPopupController {
 
 	private notify(id: string, open: boolean) {
 		this.listeners.get(id)?.(open)
+	}
+
+	private notify_active() {
+		for (const listener of this.active_listeners) {
+			listener(this.active_id)
+		}
 	}
 
 	private on_esc = (e: KeyboardEvent) => {

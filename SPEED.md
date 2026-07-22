@@ -25,6 +25,7 @@ Update this file as work lands. If a session dies, **this file is the source of 
 | Save coalescing | `src/save-coalesce.ts` | Not one write per entry |
 | Editor cite widgets | `src/editor.ts` + `cite-span.ts` | Visible ranges only |
 | Citation popup | `src/citation-popup.ts` | One global open |
+| Citation chip rendering | `src/hover.tsx` | One shared React root for the card (not one per chip); chips are plain DOM — see `docs/one-root-per-chip.md` |
 | Rename vault scan | `src/vault-scan.ts` | Chunked, cancelable |
 | Idle/unload audit | `src/idle-audit.ts` | No leaked work |
 | Panel/suggest caps | `src/library-scale.ts` | Hard mount caps (S1) |
@@ -67,8 +68,8 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 - [x] Suggest: cap **50**
 - [x] Slim free-text match (no abstract unless `abstract:`)
 - [x] Pure helpers + `is_unsafe_full_mount` guard helper
-- [ ] Lightweight row DOM without React (deferred — cap makes 80 dense chips acceptable; revisit if needed)
-- [ ] True scroll virtualization via `visible_window` (helper ready; wire if UI still janks under cap)
+- [x] Lightweight row DOM without React — **list mode** (2026-07-22): plain-DOM rows, no chips, no React roots
+- [x] True scroll virtualization via `visible_window` — **list mode only** (2026-07-22): unbounded, virtualized, same technique as the missing-PDF list. **Discover mode** (the renamed condensed chip view) deliberately keeps the old capped-mount approach — chips need real listeners to respond to hover, so it stays capped at `DISCOVER_RESULT_CAP` (140), not virtualized. Don't read "virtualization done" as covering discover mode too.
 
 ### S2 checklist
 - [x] PerfCounters: panel_rows, suggest returned/matched, rescan_ms/read/skip
@@ -151,6 +152,8 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 | 2026-07-19 | **S4 done:** chunked full rescan (32, yield, progress Notice, epoch cancel); pure hit collect in cache-ops; no vault-rescan.ts. Next: **S3** or **S5**. |
 | 2026-07-19 | **S3+S5 done:** slim entries (`entry_source`, load strips source); path fingerprints mtime+size; soft recache + hard reset command; panel clashes hard. Next: **S6** or **S7**. |
 | 2026-07-19 | **S6+S7 done:** cite reverse index (build on first rename scan; restrict later); missing-PDF chunked probe + virtual list + cache/Recheck. Program S1–S7 complete. |
+| 2026-07-22 | Follow-up (outside S1–S7, tracked in `docs/one-root-per-chip.md`): citekey matching made case-insensitive (`src/citekey-index.ts`); one-root-per-chip landed — chips are plain DOM, one shared React root renders the (0-or-1) open card instead of one root per chip. `tsc` + `npm test` (122 tests) + `npm run build` green; **no manual Obsidian pass yet** — see checklist in `docs/one-root-per-chip.md` §6. |
+| 2026-07-22 | **S1 follow-up done (list mode only):** paper panel split into two views — **discover** (renamed condensed chips: capped `DISCOVER_RESULT_CAP`=140, randomized empty-query preview + re-roll, clash/missing-PDF coloring; not virtualized, by design) and **list** (new: unbounded, virtualized plain-DOM rows via `visible_window`, sortable A–Z or by mention count). Mention-count sort reuses the existing `cite_index` reverse index rather than a new probe — `scan_inline_cites_chunked`'s `old_id` is now optional so it can warm the index without a rename target (`BibtexScholar.ensure_cite_index()`); `cite_index_count_for()` added (O(1), vs. the display-oriented `cite_index_paths_for()`) so panel sorting doesn't sort+spread a path set per id per render. `tsc` + `npm test` (132 tests) + `npm run build` green; **no manual Obsidian pass yet** — toggle persistence, randomize-again, coloring, and scroll virtualization are all unverified outside jsdom-adjacent unit tests (panel.ts itself has no test file, same as the pre-existing clash/missing-pdf panel code). |
 
 ---
 
@@ -159,5 +162,5 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 1. Read **SPEED.md** Status column.
 2. `git status` / branch; note WIP may be uncommitted.
 3. `npm test` baseline (expect ≥100 tests).
-4. Program **S1–S7 complete**. Follow-ups only if new pain appears (true panel chip virtualization, abstract cold store, S6 durable index).
+4. Program **S1–S7 complete**. Follow-ups only if new pain appears (~~true panel chip virtualization~~ — done for list mode, 2026-07-22; abstract cold store, S6 durable index).
 5. On slice done: Status → `done`, session log line, update trust doc if needed.

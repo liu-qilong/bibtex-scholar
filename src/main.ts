@@ -11,7 +11,10 @@ import {
 	hits_from_cached_entries,
 	merge_rescan_hits,
 	normalize_card_font_size,
+	normalize_panel_chip_font_size,
 	normalize_plugin_cache,
+	PANEL_CHIP_FONT_SIZE_MAX,
+	PANEL_CHIP_FONT_SIZE_MIN,
 	rebuild_dict_from_hits,
 	remove_entries_for_path,
 	retarget_fingerprint,
@@ -19,9 +22,11 @@ import {
 	upsert_entry,
 	type PathFingerprintMap,
 	type PluginCacheShape,
+	type ScanHit,
 } from 'src/cache-ops'
 import { text_may_contain_bibtex_block } from 'src/cite-span'
 import { citation_popup, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
+import { build_id_index, resolve_id, type IdIndex } from 'src/citekey-index'
 import { build_doi_index, type DoiIndex } from 'src/doi-index'
 import {
 	audit_idle_after_unload,
@@ -31,13 +36,14 @@ import {
 	type IdleSnapshot,
 	type PerfCounters,
 } from 'src/idle-audit'
-import { HoverRenderChild } from 'src/hover'
+import { HoverRenderChild, unmount_card_manager } from 'src/hover'
 import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 import { createHoverWidgetPlugin } from 'src/editor'
 import { SaveCoalescer } from 'src/save-coalesce'
 import {
 	cite_index_clear,
+	cite_index_count_for,
 	cite_index_remove_path,
 	cite_index_retarget_path,
 	cite_index_set_path,
@@ -55,6 +61,8 @@ export default class BibtexScholar extends Plugin {
 	cache: BibtexScholarCache
 	/** O(1) DOI ownership map — rebuilt on load/rescan, maintained on mutations. */
 	doi_index: DoiIndex = new Map()
+	/** O(1) normalized-citekey → canonical-citekey map — same lifecycle as doi_index. */
+	id_index: IdIndex = new Map()
 	/**
 	 * citekey -> clash reasons, from the last "Recache and collect collisions" scan.
 	 * Unlike doi_index this is not kept live on every mutation — it's a snapshot,
@@ -287,6 +295,7 @@ export default class BibtexScholar extends Plugin {
 		}
 		this.rename_timers.clear()
 		citation_popup.dispose()
+		unmount_card_manager()
 		if (this.save_coalescer) {
 			await this.save_coalescer.flush()
 			this.save_coalescer.cancel()
@@ -306,6 +315,7 @@ export default class BibtexScholar extends Plugin {
 	async load_cache() {
 		this.cache = normalize_plugin_cache(await this.loadData())
 		this.doi_index = build_doi_index(this.cache.bibtex_dict)
+		this.id_index = build_id_index(this.cache.bibtex_dict)
 	}
 
 	/** Snapshot for idle trust checks (tests / debug). */
@@ -383,6 +393,7 @@ export default class BibtexScholar extends Plugin {
 				this.cache.bibtex_dict, id,
 				ctx.sourcePath,
 				section_text,
+				this.id_index,
 			)
 			const doi_duplicate = check_duplicate_doi(
 				this.cache.bibtex_dict, fields.doi, id, ctx.sourcePath, this.doi_index,
@@ -396,7 +407,7 @@ export default class BibtexScholar extends Plugin {
 				if (doi_duplicate) {
 					new Notice(`Warning: BibTeX DOI has been used\n${fields.doi}`, 10e3)
 				}
-			} else if (upsert_entry(this.cache.bibtex_dict, id, fields, bibtex_source, ctx.sourcePath, this.doi_index)) {
+			} else if (upsert_entry(this.cache.bibtex_dict, id, fields, bibtex_source, ctx.sourcePath, this.doi_index, undefined, this.id_index)) {
 				dirty = true
 			}
 
@@ -447,8 +458,9 @@ export default class BibtexScholar extends Plugin {
 				// `{<id>}` -> collapsed inline reference
 				// `[<id>]` -> collapsed inline reference
 				const paper_id = text.slice(1, -1)
+				const canonical_id = resolve_id(this.id_index, paper_id)
 
-				if (!this.cache.bibtex_dict[paper_id]) {
+				if (canonical_id === undefined || !this.cache.bibtex_dict[canonical_id]) {
 					new Notice(`Paper ID not found in BibTeX cache: ${paper_id}`)
 					continue
 				} else {
@@ -456,7 +468,7 @@ export default class BibtexScholar extends Plugin {
 					codeblock.replaceWith(paper_bar)
 					ctx.addChild(new HoverRenderChild(
 						paper_bar,
-						this.cache.bibtex_dict[paper_id],
+						this.cache.bibtex_dict[canonical_id],
 						this,
 						this.app,
 						text[0] === '[',
@@ -492,7 +504,8 @@ export default class BibtexScholar extends Plugin {
 			let content = await this.app.vault.read(current_file)
 			content = content.replace(/```bibtex[\s\S]*?```/g, '')
 			content = content.replace(/\`(\{|\[)([^\}\]]+)(\}|\])\`/g, (match, p1, id, p3) => {
-				const entry = this.cache.bibtex_dict[id]
+				const canonical_id = resolve_id(this.id_index, id)
+				const entry = canonical_id !== undefined ? this.cache.bibtex_dict[canonical_id] : undefined
 				if (!entry) {
 					return match
 				}
@@ -536,7 +549,7 @@ export default class BibtexScholar extends Plugin {
 	 * @param paper_id - The ID of the paper to uncache
 	 */
 	async uncache_bibtex_with_id(paper_id: string) {
-		if (delete_entry(this.cache.bibtex_dict, paper_id, this.doi_index)) {
+		if (delete_entry(this.cache.bibtex_dict, paper_id, this.doi_index, this.id_index)) {
 			await this.save_cache()
 			new Notice(`Uncached ${paper_id}`)
 		}
@@ -547,7 +560,7 @@ export default class BibtexScholar extends Plugin {
 	 * @param path - The path to uncache papers from
 	 */
 	async uncache_bibtex_from_path(path: string) {
-		const n = remove_entries_for_path(this.cache.bibtex_dict, path, this.doi_index)
+		const n = remove_entries_for_path(this.cache.bibtex_dict, path, this.doi_index, this.id_index)
 		const had_fp = path in this.cache.path_fingerprints
 		if (had_fp) {
 			delete this.cache.path_fingerprints[path]
@@ -570,6 +583,7 @@ export default class BibtexScholar extends Plugin {
 		this.cache.bibtex_dict = {}
 		this.cache.path_fingerprints = {}
 		this.doi_index = new Map()
+		this.id_index = new Map()
 		this.clash_reasons = new Map()
 		this.invalidate_cite_index()
 		await this.save_cache()
@@ -605,7 +619,7 @@ export default class BibtexScholar extends Plugin {
 	 * Chunked + cancelable (S4). Incremental via path fingerprints (S5); hard resets re-read all.
 	 * On cancel returns null and leaves cache untouched.
 	 */
-	async rescan_vault(opts?: { hard?: boolean }): Promise<Clash[] | null> {
+	async rescan_vault(opts?: { hard?: boolean }): Promise<Clash<ScanHit>[] | null> {
 		const hard = opts?.hard === true
 		const epoch = ++this.rescan_epoch
 		const t0 = Date.now()
@@ -676,6 +690,7 @@ export default class BibtexScholar extends Plugin {
 		this.cache.bibtex_dict = rebuild_dict_from_hits(all_hits)
 		this.cache.path_fingerprints = current_fp
 		this.doi_index = build_doi_index(this.cache.bibtex_dict)
+		this.id_index = build_id_index(this.cache.bibtex_dict)
 		// Vault contents may have changed — rebuild cite reverse index on next rename.
 		this.invalidate_cite_index()
 		await this.save_cache()
@@ -766,7 +781,8 @@ export default class BibtexScholar extends Plugin {
 			for (const fields of current) {
 				if (fields.id === old_id || used_new.has(fields.id)) continue
 				if (!same_paper(entry.fields, fields)) continue
-				const other = this.cache.bibtex_dict[fields.id]
+				const other_id = resolve_id(this.id_index, fields.id)
+				const other = other_id !== undefined ? this.cache.bibtex_dict[other_id] : undefined
 				if (other && other.source_path !== file.path) continue
 				out.push({ old_id, new_id: fields.id })
 				used_new.add(fields.id)
@@ -840,11 +856,59 @@ export default class BibtexScholar extends Plugin {
 		return result.hits
 	}
 
+	/**
+	 * Warm `cite_index` for the whole vault without targeting any one
+	 * citekey — backs panel features that need mention counts (e.g. paper
+	 * panel "Most cited" sort) without going through the rename-scan flow.
+	 * No-op (resolves true immediately) if already warm; the index then
+	 * self-maintains via `on_file_modified` until `invalidate_cite_index()`.
+	 * Returns false if cancelled (partial build is discarded, same as a
+	 * cancelled rename scan).
+	 */
+	async ensure_cite_index(
+		on_progress?: (done: number, total: number) => void,
+		should_cancel?: () => boolean,
+	): Promise<boolean> {
+		if (this.cite_index_ready) {
+			return true
+		}
+		const files = this.app.vault.getMarkdownFiles()
+		const paths = files.map((f) => f.path)
+		cite_index_clear(this.cite_index)
+
+		const result = await scan_inline_cites_chunked({
+			paths,
+			read: async (path) => {
+				const af = this.app.vault.getAbstractFileByPath(path)
+				if (!(af instanceof TFile)) return ''
+				return this.app.vault.read(af)
+			},
+			chunk_size: 32,
+			yield_ms: 0,
+			should_cancel: should_cancel ?? (() => false),
+			cite_index: this.cite_index,
+			on_progress,
+		})
+
+		if (result.cancelled) {
+			this.invalidate_cite_index()
+			return false
+		}
+		this.cite_index_ready = true
+		return true
+	}
+
+	/** Distinct notes citing `id`, via the (possibly cold) reverse index — 0 if not built yet. */
+	mention_count(id: string): number {
+		return cite_index_count_for(this.cite_index, id)
+	}
+
 	async offer_rename(old_id: string, new_id: string) {
 		const old = this.cache.bibtex_dict[old_id]
 		if (!old) return
 
-		const existing = this.cache.bibtex_dict[new_id]
+		const existing_id = resolve_id(this.id_index, new_id)
+		const existing = existing_id !== undefined ? this.cache.bibtex_dict[existing_id] : undefined
 		if (existing && existing.source_path !== old.source_path) {
 			new Notice(`Citekey already used: ${new_id}`)
 			return
@@ -862,7 +926,8 @@ export default class BibtexScholar extends Plugin {
 			new Notice(`Unknown citekey: ${old_id}`)
 			return
 		}
-		const existing = this.cache.bibtex_dict[new_id]
+		const existing_id = resolve_id(this.id_index, new_id)
+		const existing = existing_id !== undefined ? this.cache.bibtex_dict[existing_id] : undefined
 		if (existing && existing.source_path !== old.source_path) {
 			new Notice(`Citekey already used: ${new_id}`)
 			return
@@ -884,8 +949,8 @@ export default class BibtexScholar extends Plugin {
 			}
 
 			const fields = { ...old.fields, id: new_id }
-			// Move map entry + keep DOI index ownership on the new key.
-			delete_entry(this.cache.bibtex_dict, old_id, this.doi_index)
+			// Move map entry + keep DOI/id index ownership on the new key.
+			delete_entry(this.cache.bibtex_dict, old_id, this.doi_index, this.id_index)
 			upsert_entry(
 				this.cache.bibtex_dict,
 				new_id,
@@ -893,6 +958,8 @@ export default class BibtexScholar extends Plugin {
 				make_bibtex(fields),
 				old.source_path,
 				this.doi_index,
+				undefined,
+				this.id_index,
 			)
 			await this.save_cache()
 
@@ -959,9 +1026,11 @@ class BibtexScholarSetting extends PluginSettingTab {
 
 		containerEl.empty()
 
+		new Setting(containerEl).setName('Paths & templates').setHeading()
+
 		new Setting(containerEl)
-			.setName('Default paper note folder')
-			.setDesc('When click on the note button, it will create a note in this folder. Without / at the end')
+			.setName('Paper note folder')
+			.setDesc('Notes created from the note button are placed here. No trailing /.')
 			.addSearch(search => {
 				search
 					.setValue(this.plugin.cache.note_folder)
@@ -974,8 +1043,8 @@ class BibtexScholarSetting extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName('Default PDF folder')
-			.setDesc('When click on the pdf button, it will upload a PDF file to this folder. Without / at the end')
+			.setName('PDF folder')
+			.setDesc('PDFs uploaded from the pdf button are placed here. No trailing /.')
 			.addSearch(search => {
 				search
 					.setValue(this.plugin.cache.pdf_folder)
@@ -988,7 +1057,7 @@ class BibtexScholarSetting extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName('Custom paper note template path')
+			.setName('Paper note template')
 			.setDesc('Path to a template file used when creating associated paper notes from BibTeX entries. Leave empty to use the default.')
 			.addSearch(search => {
 				search
@@ -1003,8 +1072,8 @@ class BibtexScholarSetting extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName('Default mode for fetching BibTeX online')
-			.setDesc('Choose the default mode for fetching BibTeX entries online')
+			.setName('Default fetch mode')
+			.setDesc('Default lookup mode when fetching a BibTeX entry online.')
 			.addDropdown(dropdown => dropdown
 				.addOption('doi', 'DOI')
 				.addOption('manual', 'Manual')
@@ -1014,11 +1083,14 @@ class BibtexScholarSetting extends PluginSettingTab {
 					await this.plugin.save_cache()
 				}))
 
+		new Setting(containerEl).setName('Citation card').setHeading()
+
 		const font_size = normalize_card_font_size(this.plugin.cache.card_font_size)
 		new Setting(containerEl)
 			.setName('Citation card font size')
 			.setDesc(
-				`Base font size for the floating citation card (title, actions, and fields). ` +
+				`Base font size for the floating citation card (title, actions, and fields) — shown ` +
+				`everywhere: inline cites, codeblocks, and the paper panel. ` +
 				`Range ${CARD_FONT_SIZE_MIN}–${CARD_FONT_SIZE_MAX}px. Current: ${font_size}px.`,
 			)
 			.addSlider((slider) => {
@@ -1045,6 +1117,29 @@ class BibtexScholarSetting extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.cache.card_wide = value
 						await this.plugin.save_cache()
+					})
+			})
+
+		new Setting(containerEl).setName('Paper panel').setHeading()
+
+		const chip_font_size = normalize_panel_chip_font_size(this.plugin.cache.panel_chip_font_size)
+		new Setting(containerEl)
+			.setName('Paper panel text size')
+			.setDesc(
+				`Text size for discover-mode chips in the paper panel — independent of the citation ` +
+				`card font size above (list mode's rows still follow that one). ` +
+				`Range ${PANEL_CHIP_FONT_SIZE_MIN}–${PANEL_CHIP_FONT_SIZE_MAX}px. Current: ${chip_font_size}px. ` +
+				`Reopen the paper panel after changing this.`,
+			)
+			.addSlider((slider) => {
+				slider
+					.setLimits(PANEL_CHIP_FONT_SIZE_MIN, PANEL_CHIP_FONT_SIZE_MAX, 1)
+					.setValue(chip_font_size)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.cache.panel_chip_font_size = normalize_panel_chip_font_size(value)
+						await this.plugin.save_cache()
+						this.display()
 					})
 			})
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
 	CARD_GAP_PX,
 	VIEWPORT_PAD_PX,
+	clamp_card_position,
 	compute_card_placement,
 	compute_card_position,
 	type Rect,
@@ -74,5 +75,27 @@ describe('compute_card_position', () => {
 		const card = rect({ top: 0, left: 0, width: 300, height: 200 })
 		const { left } = compute_card_position(anchor, card, VIEWPORT, 'below')
 		expect(left).toBe(VIEWPORT_PAD_PX)
+	})
+})
+
+describe('clamp_card_position (dragging a pinned card)', () => {
+	const size = { width: 300, height: 200 }
+
+	it('leaves a position already inside bounds unchanged', () => {
+		expect(clamp_card_position({ top: 100, left: 100 }, size, VIEWPORT)).toEqual({ top: 100, left: 100 })
+	})
+
+	it('clamps off the left/top edges to the pad', () => {
+		expect(clamp_card_position({ top: -50, left: -50 }, size, VIEWPORT)).toEqual({
+			top: VIEWPORT_PAD_PX,
+			left: VIEWPORT_PAD_PX,
+		})
+	})
+
+	it('clamps off the right/bottom edges to viewport - size - pad', () => {
+		expect(clamp_card_position({ top: 5000, left: 5000 }, size, VIEWPORT)).toEqual({
+			top: VIEWPORT.height - size.height - VIEWPORT_PAD_PX,
+			left: VIEWPORT.width - size.width - VIEWPORT_PAD_PX,
+		})
 	})
 })

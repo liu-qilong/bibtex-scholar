@@ -6,7 +6,7 @@
  * rename scans can reuse the same pass that builds them.
  */
 
-import { INLINE_CITE_RE, type CiteHit } from 'src/bibtex'
+import { INLINE_CITE_RE, normalize_id, type CiteHit } from 'src/bibtex'
 import { collect_hits_from_markdown, type ScanHit } from 'src/cache-ops'
 import { text_may_contain_bibtex_block } from 'src/cite-span'
 
@@ -17,6 +17,9 @@ export type VaultRead = (path: string) => Promise<string>
 /**
  * Bidirectional index of inline `` `{id}` `` / `` `[id]` `` cites.
  * Not durable — rebuilt on first full cite scan after invalidate.
+ * `cite_to_paths` is keyed by normalized (case-folded) citekey — internal
+ * matching only. `path_to_cites` keeps the literal as-typed citekeys, since
+ * those are surfaced via {@link cite_index_cites_for}.
  */
 export type CitePathIndex = {
 	cite_to_paths: Map<string, Set<string>>
@@ -52,10 +55,11 @@ export function cite_index_remove_path(index: CitePathIndex, path: string): void
 	const old = index.path_to_cites.get(path)
 	if (!old) return
 	for (const id of old) {
-		const paths = index.cite_to_paths.get(id)
+		const norm = normalize_id(id)
+		const paths = index.cite_to_paths.get(norm)
 		if (!paths) continue
 		paths.delete(path)
-		if (paths.size === 0) index.cite_to_paths.delete(id)
+		if (paths.size === 0) index.cite_to_paths.delete(norm)
 	}
 	index.path_to_cites.delete(path)
 }
@@ -70,10 +74,11 @@ export function cite_index_set_path(index: CitePathIndex, path: string, cite_ids
 	const set = new Set(cite_ids)
 	index.path_to_cites.set(path, set)
 	for (const id of set) {
-		let paths = index.cite_to_paths.get(id)
+		const norm = normalize_id(id)
+		let paths = index.cite_to_paths.get(norm)
 		if (!paths) {
 			paths = new Set()
-			index.cite_to_paths.set(id, paths)
+			index.cite_to_paths.set(norm, paths)
 		}
 		paths.add(path)
 	}
@@ -88,11 +93,20 @@ export function cite_index_retarget_path(index: CitePathIndex, old_path: string,
 	cite_index_set_path(index, new_path, ids)
 }
 
-/** Sorted paths known to cite `id` (empty array if none). */
+/** Sorted paths known to cite `id`, matched case-insensitively (empty array if none). */
 export function cite_index_paths_for(index: CitePathIndex, id: string): string[] {
-	const paths = index.cite_to_paths.get(id)
+	const paths = index.cite_to_paths.get(normalize_id(id))
 	if (!paths || paths.size === 0) return []
 	return [...paths].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * Distinct notes citing `id`, matched case-insensitively — O(1) Set.size,
+ * unlike {@link cite_index_paths_for} which spreads+sorts for display.
+ * Backs panel mention-count sorting, where only the count matters.
+ */
+export function cite_index_count_for(index: CitePathIndex, id: string): number {
+	return index.cite_to_paths.get(normalize_id(id))?.size ?? 0
 }
 
 /** Sorted citekeys known for `path` (empty if none). */
@@ -103,7 +117,13 @@ export function cite_index_cites_for(index: CitePathIndex, path: string): string
 }
 
 export type ChunkedScanOptions = {
-	old_id: string
+	/**
+	 * Citekey to count inline hits for. Omit to use this scan purely to
+	 * (re)build `cite_index` for the whole vault (e.g. warming the reverse
+	 * index for panel sort-by-mentions) — the per-file index update below
+	 * still runs, hit-counting is just skipped.
+	 */
+	old_id?: string
 	/** All candidate markdown paths (typically vault-wide). */
 	paths: string[]
 	/** Paths to scan first (e.g. active/open files). */
@@ -174,21 +194,27 @@ export function order_scan_paths(all_paths: string[], priority_paths: string[] =
 	return out.concat(rest)
 }
 
-/** Count inline `` `{id}` `` / `` `[id]` `` occurrences outside bibtex fences. */
+function escape_reg_exp(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Count inline `` `{id}` `` / `` `[id]` `` occurrences outside bibtex fences, matched case-insensitively. */
 export function count_inline_cites(text: string, old_id: string): number {
-	// Cheap reject before regex work.
-	if (!text.includes(old_id)) {
+	const norm_old = normalize_id(old_id)
+	// Cheap reject before regex work — case-insensitive test, no full-string lowercase copy.
+	const cheap_re = new RegExp(escape_reg_exp(old_id), 'i')
+	if (!cheap_re.test(text)) {
 		return 0
 	}
 	const body = text.replace(/```bibtex[\s\S]*?```/g, '')
-	if (!body.includes(old_id)) {
+	if (!cheap_re.test(body)) {
 		return 0
 	}
 	let count = 0
 	const re = new RegExp(INLINE_CITE_RE.source, 'g')
 	let m: RegExpExecArray | null
 	while ((m = re.exec(body)) !== null) {
-		if (m[2] === old_id) count++
+		if (normalize_id(m[2]) === norm_old) count++
 	}
 	return count
 }
@@ -223,7 +249,7 @@ export async function scan_inline_cites_chunked(opts: ChunkedScanOptions): Promi
 			if (opts.cite_index) {
 				cite_index_set_path(opts.cite_index, path, extract_inline_cite_ids(text))
 			}
-			const count = count_inline_cites(text, opts.old_id)
+			const count = opts.old_id !== undefined ? count_inline_cites(text, opts.old_id) : 0
 			if (count > 0) {
 				hits.push({ path, count })
 			}
