@@ -23,6 +23,7 @@ import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/
 import { find_cite_spans_in_line } from 'src/cite-span'
 import type BibtexScholar from 'src/main'
 import { PinRegistry, type PinPosition } from 'src/pin-registry'
+import { card_affordance_copy } from 'src/ux-copy'
 
 /** Long-press duration (ms) on a Live Preview chip to drop into raw-text edit mode. */
 export const CHIP_LONG_PRESS_MS = 500
@@ -443,24 +444,22 @@ const CitationCardBody = ({
                 })}
             </div>
 
-            {/* Hint sits with the fields cluster (farthest from the cursor after open). */}
-            {pinned ? (
-                <div
-                    className='bibtex-card-pin-affordance'
-                    title='Pinned cards stay open across notes. Esc dismisses the front pin; drag the header to move.'
-                >
-                    Pinned · Esc dismisses · drag header to move
-                </div>
-            ) : (
-                <div
-                    className='bibtex-card-hint'
-                    title='Esc or click outside the card to dismiss it.'
-                    aria-hidden='true'
-                >
-                    ⓘ
-                </div>
-            )}
+            {/* Always-visible footer: same chrome for preview + pin; copy differs by mode. */}
+            <CardAffordance pinned={pinned} />
         </>
+    )
+}
+
+/** Shared dismiss/status strip at the far edge of the fields cluster. */
+const CardAffordance = ({ pinned }: { pinned: boolean }) => {
+    const { line, detail } = card_affordance_copy(pinned)
+    return (
+        <div
+            className={pinned ? 'bibtex-card-affordance is-pinned' : 'bibtex-card-affordance'}
+            title={detail}
+        >
+            {line}
+        </div>
     )
 }
 

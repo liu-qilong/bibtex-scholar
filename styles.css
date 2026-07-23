@@ -144,8 +144,7 @@ code.bibtex-source-tag.is-clashing {
  * info tokens → action buttons in that reading order in both placements.
  */
 .bibtex-hover-card.is-floating.is-flipped .bibtex-card-fields,
-.bibtex-hover-card.is-floating.is-flipped .bibtex-card-hint,
-.bibtex-hover-card.is-floating.is-flipped .bibtex-card-pin-affordance {
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-affordance {
     order: -1;
 }
 
@@ -412,26 +411,12 @@ code.bibtex-source-tag.is-clashing {
     color: var(--link-color, var(--text-accent));
 }
 
-/* Small on-demand interaction hint — no native title tooltip on the chip
- * anymore (it repeated info already on the chip/card and popped up right
- * under the cursor); this sits with the fields cluster instead, at whichever
- * edge of the card is farthest from the cursor, and only speaks on hover. */
-.bibtex-card-hint {
-    flex: 0 0 auto;
-    align-self: flex-end;
-    color: var(--text-faint);
-    font-size: 0.85em;
-    line-height: 1;
-    cursor: help;
-    opacity: 0.6;
-}
-
-.bibtex-card-hint:hover {
-    opacity: 1;
-}
-
-/* Always-visible line on pinned cards so they do not feel like a stuck overlay. */
-.bibtex-card-pin-affordance {
+/*
+ * Always-visible card footer (preview + pinned). Sits with the fields cluster
+ * so is-flipped keeps it farthest from the chip. Short line is readable without
+ * hover; title carries the longer explanation.
+ */
+.bibtex-card-affordance {
     flex: 0 0 auto;
     align-self: stretch;
     margin-top: 0.15em;
@@ -443,6 +428,10 @@ code.bibtex-source-tag.is-clashing {
     text-align: center;
     cursor: help;
     user-select: none;
+}
+
+.bibtex-card-affordance.is-pinned {
+    color: var(--text-muted);
 }
 
 /* Settings diagnostics (local only — no network). */

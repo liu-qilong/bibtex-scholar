@@ -75,3 +75,31 @@ export function delete_uncache_notice_text(count: number, path: string): string 
 	const n = count === 1 ? '1 BibTeX entry' : `${count} BibTeX entries`
 	return `Removed ${n} from cache (deleted “${path}”).`
 }
+
+/**
+ * Always-visible footer on floating citation cards (preview vs pinned).
+ * Short line is readable at a glance; `detail` is the optional title tooltip.
+ */
+export type CardAffordanceCopy = {
+	/** One-line status / dismiss rules (always visible). */
+	line: string
+	/** Longer explanation on hover of the footer only. */
+	detail: string
+}
+
+export function card_affordance_copy(pinned: boolean): CardAffordanceCopy {
+	if (pinned) {
+		return {
+			line: 'Pinned · Esc closes · drag header to move',
+			detail:
+				'Stays open when you change notes. Esc closes the front pin only. '
+				+ 'Drag the title bar to reposition.',
+		}
+	}
+	return {
+		line: 'Esc · click outside to close',
+		detail:
+			'Leave the chip and card, press Esc, or click outside. '
+			+ 'In the paper panel, scrolling the list also closes the card.',
+	}
+}

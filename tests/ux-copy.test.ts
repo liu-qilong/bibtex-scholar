@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+	card_affordance_copy,
 	delete_uncache_notice_text,
 	duplicate_block_notice,
 	paint_duplicate_tag_state,
@@ -46,5 +47,19 @@ describe('ux-copy / user-facing messages', () => {
 		expect(delete_uncache_notice_text(1, 'a.md')).toContain('1 BibTeX entry')
 		expect(delete_uncache_notice_text(3, 'a.md')).toContain('3 BibTeX entries')
 		expect(delete_uncache_notice_text(3, 'a.md')).toContain('a.md')
+	})
+
+	it('card_affordance_copy differs for preview vs pin (line always readable)', () => {
+		const preview = card_affordance_copy(false)
+		expect(preview.line).toMatch(/Esc/)
+		expect(preview.line).toMatch(/click outside/i)
+		expect(preview.line).not.toMatch(/Pinned/)
+		expect(preview.detail.length).toBeGreaterThan(preview.line.length)
+
+		const pinned = card_affordance_copy(true)
+		expect(pinned.line).toMatch(/Pinned/)
+		expect(pinned.line).toMatch(/Esc/)
+		expect(pinned.line).toMatch(/drag/i)
+		expect(pinned.detail).toMatch(/notes/i)
 	})
 })

@@ -133,14 +133,18 @@ describe('citation popup DOM behavior', () => {
 		expect(chip_button().hasAttribute('title')).toBe(false)
 	})
 
-	it('open card carries a `.bibtex-card-hint` with the dismiss instructions, not the chip', async () => {
+	it('open preview card shows a unified affordance line (Esc / click outside), not only an ⓘ', async () => {
 		const { chip_button, card } = mount()
 		await act(async () => {
 			fireEvent.click(chip_button())
 		})
-		const hint = card()?.querySelector('.bibtex-card-hint')
-		expect(hint).not.toBeNull()
-		expect(hint?.getAttribute('title')).toMatch(/dismiss/i)
+		const footer = card()?.querySelector('.bibtex-card-affordance')
+		expect(footer).not.toBeNull()
+		expect(footer!.classList.contains('is-pinned')).toBe(false)
+		expect(footer!.textContent).toMatch(/Esc/i)
+		expect(footer!.textContent).toMatch(/click outside/i)
+		expect(footer!.textContent).not.toBe('ⓘ')
+		expect(footer?.getAttribute('title')).toMatch(/panel/i)
 	})
 
 	it('chip pointerdown preventDefault so a native <button> cannot steal focus from the CM editor', () => {
@@ -360,7 +364,7 @@ describe('citation popup DOM behavior', () => {
 		expect(chip_b.chip_button().getAttribute('aria-expanded')).toBe('true')
 	})
 
-	it('pinned card shows the Esc / drag affordance line', async () => {
+	it('pinned card uses the same affordance chrome with pin-specific copy', async () => {
 		const { chip_button, card } = mount()
 		await act(async () => {
 			fireEvent.click(chip_button())
@@ -369,12 +373,16 @@ describe('citation popup DOM behavior', () => {
 		await act(async () => {
 			fireEvent.click(pin_btn)
 		})
-		const affordance = card()!.querySelector('.bibtex-card-pin-affordance')
-		expect(affordance).not.toBeNull()
-		expect(affordance!.textContent).toMatch(/Esc/i)
-		expect(affordance!.textContent).toMatch(/drag/i)
-		// Preview-only ⓘ hint is not used on pinned cards.
+		const footer = card()!.querySelector('.bibtex-card-affordance')
+		expect(footer).not.toBeNull()
+		expect(footer!.classList.contains('is-pinned')).toBe(true)
+		expect(footer!.textContent).toMatch(/Pinned/i)
+		expect(footer!.textContent).toMatch(/Esc/i)
+		expect(footer!.textContent).toMatch(/drag/i)
+		expect(footer!.getAttribute('title')).toMatch(/notes/i)
+		// Legacy classes removed.
 		expect(card()!.querySelector('.bibtex-card-hint')).toBeNull()
+		expect(card()!.querySelector('.bibtex-card-pin-affordance')).toBeNull()
 	})
 
 	it('marks the card is-flipped when there is no room below (contents move, not header/actions)', async () => {
