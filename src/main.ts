@@ -1,8 +1,9 @@
 import { App, Notice, Plugin, TFile, TFolder, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bibtex, make_bibtex, entry_source, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, find_clashes, same_paper, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
+import { parse_bibtex, make_bibtex, entry_source, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, find_bibtex_block_line_range, find_clashes, same_paper, is_pending_same_file_rename, replace_bibtex_fence_citekey, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
 import {
 	audit_bibtex_dict,
 	classify_path_fingerprints,
+	collect_hits_from_markdown,
 	delete_entry,
 	entry_count,
 	file_fingerprint,
@@ -26,6 +27,7 @@ import {
 	delete_uncache_notice_text,
 	duplicate_block_notice,
 	paint_duplicate_tag_state,
+	rename_notice_text,
 	unknown_cite_title,
 } from 'src/ux-copy'
 import { text_may_contain_bibtex_block } from 'src/cite-span'
@@ -77,6 +79,13 @@ export default class BibtexScholar extends Plugin {
 	clash_reasons: Map<string, ClashReason[]> = new Map()
 	renaming = false
 	rename_timers = new Map<string, number>()
+	/**
+	 * Previously active file, tracked via 'active-leaf-change'. Lets a pending
+	 * citekey rename resolve the moment the user actually leaves the note —
+	 * not just on the next autosave-driven `modify` — closing the window where
+	 * a rename sits half-applied if the user walks away without editing again.
+	 */
+	private last_active_file: TFile | null = null
 	/** Session flag for quiet_duplicate_notices (at most one toast per load). */
 	private duplicate_notice_emitted_this_session = false
 	/** Set true to abort an in-flight vault cite scan (best-effort). */
@@ -230,6 +239,20 @@ export default class BibtexScholar extends Plugin {
 			}, 400)
 			this.rename_timers.set(file.path, t)
 			this.perf.modify_scheduled++
+		}))
+
+		this.last_active_file = this.app.workspace.getActiveFile()
+		// Resolve a pending rename the moment the user leaves the note — moving
+		// the caret alone doesn't fire `modify`, so without this a rename that's
+		// deferred (caret still in the block) and then abandoned (no further
+		// edit) would sit half-applied until some unrelated future edit.
+		this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
+			const left = this.last_active_file
+			const now_active = this.app.workspace.getActiveFile()
+			this.last_active_file = now_active
+			if (left && left.path !== now_active?.path && !this.is_bibtex_ignored(left.path)) {
+				void this.on_file_modified(left)
+			}
 		}))
 
 		this.addCommand({
@@ -412,6 +435,13 @@ export default class BibtexScholar extends Plugin {
 		let example_id: string | undefined
 		let example_owner_path: string | undefined
 
+		// Lazily built, shared across entries in this block: every citekey
+		// currently present anywhere in the file's ```bibtex blocks. Used to
+		// tell a genuine cross-entry DOI duplicate apart from an in-place
+		// citekey rename still in flight (old id vanished from the file, so
+		// the "owner" doi_index still points at is just this entry's past self).
+		let current_ids: Set<string> | undefined
+
 		for (const fields of fields_ls) {
 			const id = fields.id
 			const bibtex_source = make_bibtex(fields)
@@ -421,9 +451,28 @@ export default class BibtexScholar extends Plugin {
 				section_text,
 				this.id_index,
 			)
-			const doi_duplicate = check_duplicate_doi(
+			let doi_duplicate = check_duplicate_doi(
 				this.cache.bibtex_dict, fields.doi, id, ctx.sourcePath, this.doi_index,
 			)
+			// A same-file DOI "duplicate" that's really an in-place rename mid-flight:
+			// don't flag/notify it, but also don't upsert yet — cache reconciliation
+			// for a rename is exclusively on_file_modified's job (settle-time, once
+			// the edit is done), so it stays the only place bibtex_dict/doi_index/
+			// id_index get mutated for a rename.
+			let pending_rename = false
+			if (doi_duplicate && fields.doi) {
+				const owner_id = this.doi_index.get(fields.doi)
+				const owner_entry = owner_id !== undefined ? this.cache.bibtex_dict[owner_id] : undefined
+				if (owner_id !== undefined && owner_entry) {
+					if (current_ids === undefined) {
+						current_ids = new Set((await collect_hits_from_markdown(ctx.sourcePath, section_text)).map((h) => h.id))
+					}
+					if (is_pending_same_file_rename(owner_entry, owner_id, id, ctx.sourcePath, current_ids)) {
+						doi_duplicate = false
+						pending_rename = true
+					}
+				}
+			}
 			const duplicate = id_duplicate || doi_duplicate
 
 			let owner_path: string | undefined
@@ -445,7 +494,7 @@ export default class BibtexScholar extends Plugin {
 						example_id = id
 					}
 				}
-			} else if (upsert_entry(this.cache.bibtex_dict, id, fields, bibtex_source, ctx.sourcePath, this.doi_index, undefined, this.id_index)) {
+			} else if (!pending_rename && upsert_entry(this.cache.bibtex_dict, id, fields, bibtex_source, ctx.sourcePath, this.doi_index, undefined, this.id_index)) {
 				dirty = true
 			}
 
@@ -963,6 +1012,14 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	async on_file_modified(file: TFile, from_command = false) {
+		// A rename is already committing (scan_inline_cites + vault writes take
+		// real time, and cache reconciliation only happens at the very end) —
+		// a stale debounce timer or a leaf-change firing mid-scan must not
+		// re-detect and re-apply the same rename a second time.
+		if (this.renaming) {
+			if (from_command) new Notice('A rename is already in progress — try again in a moment')
+			return
+		}
 		if (this.is_bibtex_ignored(file.path)) {
 			if (from_command) new Notice(`${file.path} has bibtex-ignore set — skipping`)
 			return
@@ -983,11 +1040,46 @@ export default class BibtexScholar extends Plugin {
 			return
 		}
 		// one at a time
-		const { old_id, new_id } = renames[0]
-		await this.offer_rename(old_id, new_id)
+		const { old_id, new_id, via } = renames[0]
+		// The vault `modify` debounce settles on autosave, not on the user
+		// leaving the codeblock — a mid-identifier typing pause can otherwise
+		// trigger this while the caret is still inside the very block being
+		// renamed. Defer (do nothing) until the caret has actually moved on;
+		// the next `modify` event re-evaluates this from scratch. An explicit
+		// command invocation is a deliberate action, so it always proceeds.
+		if (!from_command && await this.is_caret_in_block(file, text, new_id)) {
+			return
+		}
+		if (via === 'doi') {
+			// DOI is an immutable, globally unique identifier — high enough
+			// confidence to apply without an interrupting confirm dialog.
+			await this.rename_citekey(old_id, new_id, { offer_undo: true })
+		} else {
+			await this.offer_rename(old_id, new_id)
+		}
 	}
 
-	async detect_citekey_renames(file: TFile, text?: string): Promise<{ old_id: string, new_id: string }[]> {
+	/**
+	 * True only when `file` is the actively open note AND its editor's caret
+	 * currently sits inside the ```bibtex block that now contains `new_id` —
+	 * i.e. the user is still typing right there. Best-effort: no active
+	 * editor for this file (switched away, closed, edited via API) reads as
+	 * "not in the block", which is correct — nothing is actively being typed.
+	 */
+	private async is_caret_in_block(file: TFile, text: string, new_id: string): Promise<boolean> {
+		const active_editor = this.app.workspace.activeEditor
+		if (!active_editor || active_editor.file?.path !== file.path || !active_editor.editor) {
+			return false
+		}
+		const range = await find_bibtex_block_line_range(text, new_id)
+		if (!range) return false
+		const line = active_editor.editor.getCursor().line
+		return line >= range.start && line <= range.end
+	}
+
+	async detect_citekey_renames(
+		file: TFile, text?: string,
+	): Promise<{ old_id: string, new_id: string, via: 'doi' | 'fuzzy' }[]> {
 		const body = text ?? await this.app.vault.read(file)
 		const current: BibtexField[] = []
 		const block_re = /```bibtex[^\n]*\n([\s\S]*?)```/g
@@ -1001,7 +1093,7 @@ export default class BibtexScholar extends Plugin {
 			.filter(([, e]) => e.source_path === file.path)
 
 		const used_new = new Set<string>()
-		const out: { old_id: string, new_id: string }[] = []
+		const out: { old_id: string, new_id: string, via: 'doi' | 'fuzzy' }[] = []
 
 		for (const [old_id, entry] of cached) {
 			if (current_ids.has(old_id)) continue
@@ -1011,7 +1103,10 @@ export default class BibtexScholar extends Plugin {
 				const other_id = resolve_id(this.id_index, fields.id)
 				const other = other_id !== undefined ? this.cache.bibtex_dict[other_id] : undefined
 				if (other && other.source_path !== file.path) continue
-				out.push({ old_id, new_id: fields.id })
+				// Same immutable DOI on both sides is high confidence; otherwise
+				// this only matched on fuzzy title/author/year.
+				const via = entry.fields.doi && fields.doi ? 'doi' : 'fuzzy'
+				out.push({ old_id, new_id: fields.id, via })
 				used_new.add(fields.id)
 				break
 			}
@@ -1147,7 +1242,7 @@ export default class BibtexScholar extends Plugin {
 		}).open()
 	}
 
-	async rename_citekey(old_id: string, new_id: string) {
+	async rename_citekey(old_id: string, new_id: string, opts?: { offer_undo?: boolean }) {
 		const old = this.cache.bibtex_dict[old_id]
 		if (!old) {
 			new Notice(`Unknown citekey: ${old_id}`)
@@ -1162,6 +1257,18 @@ export default class BibtexScholar extends Plugin {
 
 		this.renaming = true
 		try {
+			// No-op on the normal forward path (the user already typed new_id
+			// into the fence); needed for Undo, which runs this in reverse with
+			// no one to edit the fence by hand.
+			const def_file = this.app.vault.getAbstractFileByPath(old.source_path)
+			if (def_file instanceof TFile) {
+				const def_text = await this.app.vault.read(def_file)
+				const patched = replace_bibtex_fence_citekey(def_text, old_id, new_id)
+				if (patched !== def_text) {
+					await this.app.vault.modify(def_file, patched)
+				}
+			}
+
 			const hits = await this.scan_inline_cites(old_id)
 			let files_changed = 0
 			for (const { path } of hits) {
@@ -1191,10 +1298,42 @@ export default class BibtexScholar extends Plugin {
 			await this.save_cache()
 
 			const total = hits.reduce((s, h) => s + h.count, 0)
-			new Notice(`Renamed ${old_id} → ${new_id} (${total} cite(s) in ${files_changed} file(s))`)
+			if (opts?.offer_undo) {
+				this.show_rename_undo(old_id, new_id, total, files_changed)
+			} else {
+				new Notice(rename_notice_text(old_id, new_id, total, files_changed))
+			}
 		} finally {
 			this.renaming = false
 		}
+	}
+
+	/**
+	 * Notice with an Undo control after an auto-applied (DOI-confident) citekey
+	 * rename. Unlike the vault-delete Undo, the forward rename is already fully
+	 * committed (cache + vault text) by the time this shows, so Undo just runs
+	 * the same `rename_citekey` in reverse — no snapshot bookkeeping needed.
+	 */
+	private show_rename_undo(old_id: string, new_id: string, total: number, files_changed: number) {
+		const notice = new Notice('', 16e3)
+		const root = notice.noticeEl
+		root.empty()
+		root.createSpan({ text: `${rename_notice_text(old_id, new_id, total, files_changed)} ` })
+		const undo = root.createEl('a', {
+			text: 'Undo',
+			cls: 'bibtex-notice-undo',
+			attr: { href: '#' },
+		})
+		let used = false
+		undo.addEventListener('click', (e) => {
+			e.preventDefault()
+			if (used) {
+				return
+			}
+			used = true
+			notice.hide()
+			void this.rename_citekey(new_id, old_id)
+		})
 	}
 
 	/**

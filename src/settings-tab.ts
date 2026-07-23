@@ -3,7 +3,10 @@ import {
 	CARD_FONT_SIZE_MAX,
 	CARD_FONT_SIZE_MIN,
 	entry_count,
+	LIST_FONT_SIZE_MAX,
+	LIST_FONT_SIZE_MIN,
 	normalize_card_font_size,
+	normalize_list_font_size,
 	normalize_panel_chip_font_size,
 	PANEL_CHIP_FONT_SIZE_MAX,
 	PANEL_CHIP_FONT_SIZE_MIN,
@@ -154,10 +157,10 @@ export class BibtexScholarSetting extends PluginSettingTab {
 
 		const chip_font_size = normalize_panel_chip_font_size(this.plugin.cache.panel_chip_font_size)
 		new Setting(containerEl)
-			.setName('Paper panel text size')
+			.setName('Paper panel discover text size')
 			.setDesc(
 				`Text size for discover-mode chips in the paper panel — independent of the citation `
-				+ `card font size above (list mode's rows still follow that one). `
+				+ `card font size and the list-mode size below. `
 				+ `Range ${PANEL_CHIP_FONT_SIZE_MIN}–${PANEL_CHIP_FONT_SIZE_MAX}px. Current: ${chip_font_size}px. `
 				+ `Reopen the paper panel after changing this.`,
 			)
@@ -168,6 +171,27 @@ export class BibtexScholarSetting extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.cache.panel_chip_font_size = normalize_panel_chip_font_size(value)
+						await this.plugin.save_cache()
+						this.display()
+					})
+			})
+
+		const list_font_size = normalize_list_font_size(this.plugin.cache.list_font_size)
+		new Setting(containerEl)
+			.setName('Paper panel list text size')
+			.setDesc(
+				`Text size for list-mode rows in the paper panel — independent of the citation card `
+				+ `font size and the discover-mode size above. Row height scales with it. `
+				+ `Range ${LIST_FONT_SIZE_MIN}–${LIST_FONT_SIZE_MAX}px. Current: ${list_font_size}px. `
+				+ `Reopen the paper panel after changing this.`,
+			)
+			.addSlider((slider) => {
+				slider
+					.setLimits(LIST_FONT_SIZE_MIN, LIST_FONT_SIZE_MAX, 1)
+					.setValue(list_font_size)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.cache.list_font_size = normalize_list_font_size(value)
 						await this.plugin.save_cache()
 						this.display()
 					})

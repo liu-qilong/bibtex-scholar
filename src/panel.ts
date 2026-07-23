@@ -1,6 +1,6 @@
 import { addIcon, ItemView, Notice, WorkspaceLeaf, SearchComponent, setIcon, type IconName } from 'obsidian'
 import type { BibtexDict, BibtexElement, Clash } from 'src/bibtex'
-import { normalize_card_font_size, normalize_panel_chip_font_size, probe_missing_pdf_chunked, type ScanHit } from 'src/cache-ops'
+import { normalize_card_font_size, normalize_list_font_size, normalize_panel_chip_font_size, probe_missing_pdf_chunked, type ScanHit } from 'src/cache-ops'
 import { CacheOpsModal, CopyExportModal } from 'src/command-modals'
 import { render_hover, unmount_hover_hosts } from 'src/hover'
 import {
@@ -392,7 +392,7 @@ export class PaperPanelView extends ItemView {
             return
         }
 
-        const font_px = normalize_card_font_size(this.plugin.cache.card_font_size)
+        const font_px = normalize_list_font_size(this.plugin.cache.list_font_size)
         this.list_row_px = list_row_height_px(font_px)
         const scroll = this.list_el.createEl('div', { cls: 'bibtex-panel-list-scroll' })
         scroll.style.fontSize = `${font_px}px`

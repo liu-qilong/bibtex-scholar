@@ -12,10 +12,13 @@ import {
 	format_bibtex_for_ids,
 	hits_from_cached_entries,
 	ids_under_path,
+	LIST_FONT_SIZE_MAX,
+	LIST_FONT_SIZE_MIN,
 	merge_rescan_hits,
 	missing_pdf_ids,
 	probe_missing_pdf_chunked,
 	normalize_card_font_size,
+	normalize_list_font_size,
 	normalize_panel_chip_font_size,
 	normalize_plugin_cache,
 	PANEL_CHIP_FONT_SIZE_MAX,
@@ -103,6 +106,17 @@ describe('cache-ops / data integrity', () => {
 		expect(normalize_panel_chip_font_size(3)).toBe(PANEL_CHIP_FONT_SIZE_MIN)
 		expect(normalize_panel_chip_font_size(99)).toBe(PANEL_CHIP_FONT_SIZE_MAX)
 		const cache = normalize_plugin_cache({ panel_chip_font_size: 18, card_font_size: 11 })
+		expect(cache.panel_chip_font_size).toBe(18)
+		expect(cache.card_font_size).toBe(11)
+	})
+
+	it('normalize_list_font_size clamps to its own range, independent of card/chip font sizes', () => {
+		expect(normalize_list_font_size(undefined)).toBe(13)
+		expect(normalize_list_font_size('15')).toBe(15)
+		expect(normalize_list_font_size(3)).toBe(LIST_FONT_SIZE_MIN)
+		expect(normalize_list_font_size(99)).toBe(LIST_FONT_SIZE_MAX)
+		const cache = normalize_plugin_cache({ list_font_size: 17, panel_chip_font_size: 18, card_font_size: 11 })
+		expect(cache.list_font_size).toBe(17)
 		expect(cache.panel_chip_font_size).toBe(18)
 		expect(cache.card_font_size).toBe(11)
 	})

@@ -71,6 +71,67 @@ export function same_paper(a: BibtexField, b: BibtexField): boolean {
         && n(a.year) === n(b.year)
 }
 
+/**
+ * A paint-time "duplicate" is actually an in-place rename-in-progress when the
+ * conflicting owner lives in this same file and its old citekey has already
+ * disappeared from the file's current text — i.e. nothing else in this note
+ * still refers to it, so it can't be a genuine two-entries-one-DOI clash.
+ * `current_ids` is every citekey parsed from the file's ```bibtex blocks right
+ * now (case-sensitive is fine here — callers pass raw ids, matched by exact
+ * string membership against `owner_id`).
+ */
+export function is_pending_same_file_rename(
+    owner_entry: BibtexElement | undefined,
+    owner_id: string,
+    current_id: string,
+    file_path: string,
+    current_ids: Set<string>,
+): boolean {
+    if (!owner_entry || owner_id === current_id) {
+        return false
+    }
+    return owner_entry.source_path === file_path && !current_ids.has(owner_id)
+}
+
+/**
+ * 0-based [start, end] line span of the ```bibtex fence block that currently
+ * contains citekey `id` in `body` — or undefined if no such block exists.
+ * Used to check whether the caret is still inside the block being renamed,
+ * so an automatic rename (mutating the vault) waits until the user has
+ * actually moved on rather than firing mid-edit.
+ */
+export async function find_bibtex_block_line_range(
+    body: string,
+    id: string,
+): Promise<{ start: number, end: number } | undefined> {
+    const block_re = /```bibtex[^\n]*\n([\s\S]*?)```/g
+    let match: RegExpExecArray | null
+    while ((match = block_re.exec(body)) !== null) {
+        const fields = await parse_bibtex(match[1])
+        if (fields.some((f) => f.id === id)) {
+            const start = body.slice(0, match.index).split('\n').length - 1
+            const end = start + match[0].split('\n').length - 1
+            return { start, end }
+        }
+    }
+    return undefined
+}
+
+/**
+ * Rewrite the defining `@type{old_id,` header inside a ```bibtex fence to
+ * `new_id`. A no-op wherever `old_id` isn't the fence's own citekey — safe to
+ * call unconditionally. `rename_citekey`'s forward path relies on the user
+ * having already typed `new_id` into the fence themselves (a no-op here);
+ * Undo runs the rename in reverse with no one to edit the fence by hand, so
+ * it needs this to keep the fence, cache, and inline cites in agreement.
+ */
+export function replace_bibtex_fence_citekey(content: string, old_id: string, new_id: string): string {
+    const escaped = old_id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const header_re = new RegExp(`(@[a-zA-Z]+\\{)${escaped}(,)`)
+    const fence = /```bibtex[^\n]*\n[\s\S]*?```/g
+    return content.replace(fence, (block) => block.replace(header_re, `$1${new_id}$2`))
+}
+
 /** Replace `{old}` / `[old]` outside ```bibtex fences. */
 export function replace_inline_citekey(content: string, old_id: string, new_id: string): string {
     const fence = /```bibtex[^\n]*\n[\s\S]*?```/g

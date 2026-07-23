@@ -76,6 +76,13 @@ export function delete_uncache_notice_text(count: number, path: string): string 
 	return `Removed ${n} from cache (deleted “${path}”).`
 }
 
+/** Notice body after an auto-applied citekey rename (before Undo is clicked). */
+export function rename_notice_text(old_id: string, new_id: string, total: number, files_changed: number): string {
+	const cites = total === 1 ? '1 citation' : `${total} citations`
+	const files = files_changed === 1 ? '1 file' : `${files_changed} files`
+	return `Renamed ${old_id} → ${new_id} (${cites} in ${files}).`
+}
+
 /**
  * Always-visible footer on floating citation cards (preview vs pinned).
  * Short line is readable at a glance; `detail` is the optional title tooltip.

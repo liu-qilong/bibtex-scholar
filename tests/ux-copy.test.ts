@@ -4,6 +4,7 @@ import {
 	delete_uncache_notice_text,
 	duplicate_block_notice,
 	paint_duplicate_tag_state,
+	rename_notice_text,
 	unknown_cite_title,
 } from 'src/ux-copy'
 
@@ -47,6 +48,15 @@ describe('ux-copy / user-facing messages', () => {
 		expect(delete_uncache_notice_text(1, 'a.md')).toContain('1 BibTeX entry')
 		expect(delete_uncache_notice_text(3, 'a.md')).toContain('3 BibTeX entries')
 		expect(delete_uncache_notice_text(3, 'a.md')).toContain('a.md')
+	})
+
+	it('rename_notice_text names both keys and pluralizes citations/files', () => {
+		expect(rename_notice_text('Smith2020', 'Jones2021', 1, 1)).toBe(
+			'Renamed Smith2020 → Jones2021 (1 citation in 1 file).',
+		)
+		expect(rename_notice_text('Smith2020', 'Jones2021', 3, 2)).toBe(
+			'Renamed Smith2020 → Jones2021 (3 citations in 2 files).',
+		)
 	})
 
 	it('card_affordance_copy differs for preview vs pin (line always readable)', () => {

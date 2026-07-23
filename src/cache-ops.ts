@@ -82,10 +82,16 @@ export type PluginCacheShape = {
 	papers_view: 'discover' | 'list'
 	/**
 	 * Text size (px) for discover-mode chip buttons — independent of
-	 * `card_font_size` (the floating citation card, shown everywhere else).
-	 * List mode inherits `card_font_size` instead; only discover's chips use this.
+	 * `card_font_size` (the floating citation card, shown everywhere else)
+	 * and of `list_font_size` below.
 	 */
 	panel_chip_font_size: number
+	/**
+	 * Text size (px) for list-mode rows in the paper panel — independent of
+	 * `card_font_size` and `panel_chip_font_size`. Row height scales with it
+	 * (see {@link list_row_height_px}).
+	 */
+	list_font_size: number
 	/**
 	 * Last-known vault file fingerprints for incremental rescan (SPEED S5).
 	 * Missing/empty → next rescan reads every markdown file (safe cold start).
@@ -112,6 +118,7 @@ export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
 	panel_double_debounce_enabled: false,
 	papers_view: 'discover',
 	panel_chip_font_size: 13,
+	list_font_size: 13,
 	path_fingerprints: {},
 	quiet_duplicate_notices: false,
 	export_bib_path: 'bibliography.bib',
@@ -124,6 +131,10 @@ export const CARD_FONT_SIZE_MAX = 20
 /** Allowed range for paper panel (discover-mode chip) text size (px) — independent of the card range above. */
 export const PANEL_CHIP_FONT_SIZE_MIN = 10
 export const PANEL_CHIP_FONT_SIZE_MAX = 20
+
+/** Allowed range for paper panel (list-mode row) text size (px) — independent of card/chip ranges above. */
+export const LIST_FONT_SIZE_MIN = 10
+export const LIST_FONT_SIZE_MAX = 20
 
 /**
  * Abstracts policy (SPEED S3): keep abstracts on `fields` for cards/export,
@@ -148,6 +159,15 @@ export function normalize_panel_chip_font_size(raw: unknown): number {
 		return DEFAULT_PLUGIN_CACHE.panel_chip_font_size
 	}
 	return Math.min(PANEL_CHIP_FONT_SIZE_MAX, Math.max(PANEL_CHIP_FONT_SIZE_MIN, Math.round(n)))
+}
+
+/** Clamp and coerce a raw setting value to a valid paper panel (list-mode row) text size. */
+export function normalize_list_font_size(raw: unknown): number {
+	const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN
+	if (!Number.isFinite(n)) {
+		return DEFAULT_PLUGIN_CACHE.list_font_size
+	}
+	return Math.min(LIST_FONT_SIZE_MAX, Math.max(LIST_FONT_SIZE_MIN, Math.round(n)))
 }
 
 /**
@@ -209,6 +229,7 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		panel_double_debounce_enabled: DEFAULT_PLUGIN_CACHE.panel_double_debounce_enabled,
 		papers_view: DEFAULT_PLUGIN_CACHE.papers_view,
 		panel_chip_font_size: DEFAULT_PLUGIN_CACHE.panel_chip_font_size,
+		list_font_size: DEFAULT_PLUGIN_CACHE.list_font_size,
 		path_fingerprints: {},
 		quiet_duplicate_notices: DEFAULT_PLUGIN_CACHE.quiet_duplicate_notices,
 		export_bib_path: DEFAULT_PLUGIN_CACHE.export_bib_path,
@@ -242,6 +263,9 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		papers_view: o.papers_view === 'discover' || o.papers_view === 'list' ? o.papers_view : base.papers_view,
 		panel_chip_font_size: normalize_panel_chip_font_size(
 			o.panel_chip_font_size !== undefined ? o.panel_chip_font_size : base.panel_chip_font_size,
+		),
+		list_font_size: normalize_list_font_size(
+			o.list_font_size !== undefined ? o.list_font_size : base.list_font_size,
 		),
 		path_fingerprints: normalize_path_fingerprints(o.path_fingerprints),
 		quiet_duplicate_notices: typeof o.quiet_duplicate_notices === 'boolean'
