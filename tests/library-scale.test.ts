@@ -9,6 +9,8 @@ import {
 	list_clashes_for_panel,
 	list_ids_for_panel,
 	list_ids_for_suggest,
+	list_row_height_px,
+	LIST_ROW_HEIGHT,
 	PANEL_EMPTY_PREVIEW,
 	PANEL_RESULT_CAP,
 	random_sample_ids,
@@ -145,6 +147,14 @@ describe('list_clashes_for_panel', () => {
 		expect(r.clashes).toEqual([])
 		expect(r.matched).toBe(0)
 		expect(r.truncated).toBe(false)
+	})
+})
+
+describe('list_row_height_px', () => {
+	it('scales with font size so large card fonts do not clip title descenders', () => {
+		expect(list_row_height_px(13)).toBeGreaterThanOrEqual(LIST_ROW_HEIGHT)
+		expect(list_row_height_px(20)).toBeGreaterThan(list_row_height_px(13))
+		expect(list_row_height_px(20)).toBe(Math.round(20 * 4.6))
 	})
 })
 

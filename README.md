@@ -41,9 +41,9 @@ With BibTeX Scholar, you can:
 
 - **Add BibTeX anywhere**: Insert BibTeX code blocks in any note.
 - **Cite anywhere**: Instantly cite papers via smart ``` `{ID}` ``` or ``` `[ID]` ``` inline formats with autocomplete
-- **Rich citation popover**: Hover for title, authors, abstract & quick actions (open associated paper note, attach PDF, search mentions, copy BibTeX/LaTeX keys, etc.)
-- **Global search/filter panel**: Find and filter papers from all your entries
-- **One-click copy**: Export all BibTeX entries for LaTeX manuscripts
+- **Rich citation popover**: Hover for title, authors, abstract & quick actions (open associated paper note, attach PDF, search mentions, copy BibTeX/LaTeX keys, etc.) — pin a card to keep it open across notes and drag it around, e.g. to compare two papers side by side
+- **Global search/filter panel**: Browse your library in a discover (random sample) or list (sortable, virtualized) view, filter/search, and spot citekey/DOI collisions or references missing a PDF
+- **Copy & export**: Copy BibTeX to the clipboard, or export it to a `.bib` file — for the whole library, one note, or a whole folder (everything it sources or cites)
 - **PDF & notes management**: Attach PDFs and link notes to each entry
 
 ## Getting started ⚙️
@@ -128,6 +128,9 @@ Citation details open in a **floating card** (not inline in the paragraph), so t
 - Move onto the card to keep it open; leave chip and card to close
 - Press **Esc** to dismiss without losing focus for typing (stays dismissed until you leave the chip)
 - Click **outside** the card to close
+- Click the pin button beside × to **pin** the card: it stays open even if you switch notes, and you can **drag it** by its title bar. A pinned card only closes when you unpin it, click its ×, or press Esc (which closes the front-most pin first if several are open). Pins don't survive restarting Obsidian.
+
+The bottom of the card always shows a short reminder of how to close it, so this isn't something you need to memorize.
 
 The card has 3 groups of utilities:
 
@@ -154,13 +157,15 @@ You can also use [Templater](https://github.com/SilentVoid13/Templater) plugin f
 
 Example template: [paper-note-template.md](/gallery/paper-note-template.md)
 
-### Copy all BibTeX
+### Copy & export BibTeX
 
-When writing LaTeX manuscript, it's very convenient to copy all BibTeX entries at once and place it to your `.bib` file. Just click the button ![img](/gallery/scroll-text.jpeg) on the left ribbon.
+When writing a LaTeX manuscript, it's very convenient to copy all BibTeX entries at once. Click the button ![img](/gallery/scroll-text.jpeg) on the left ribbon to copy your whole library to the clipboard, or open **Copy / export** from the paper panel's corner buttons (see [Paper panel](#paper-panel)) for the same clipboard actions plus writing a `.bib` file straight into your vault.
+
+Right-click a note in the file explorer for per-file actions: copy it as standard markdown (cites become links) or with `\autocite{}`, or uncache just that note's entries. Right-click a **folder** to export a `.bib` file for everything sourced from or cited anywhere in that folder — including citations to papers whose BibTeX block actually lives elsewhere in the vault.
 
 ### Excluding a note from BibTeX
 
-Add a `bibtex-ignore` property (checked/`true`) to a note's frontmatter to keep the plugin from ever reading it: its ```bibtex blocks are shown as plain text instead of being cached, and it's skipped by rescans, citekey-rename scans, and directory export. Useful for templates or draft notes with example/dummy BibTeX you don't want polluting your library. If the note was already cached before you added the property, run **Recache from vault** (paper panel corner button) once to drop its entries.
+Add a `bibtex-ignore` property (checked/`true`) to a note's frontmatter to keep the plugin from ever reading it: its ```bibtex blocks are shown as plain text instead of being cached, and the note is skipped by rescans, citekey-rename scans, and folder export. Useful for templates or draft notes with example/dummy BibTeX you don't want polluting your library. If the note was already cached before you added the property, run **Recache from vault** (paper panel's cache-management corner button) once to drop its entries.
 
 ### Paper panel
 
@@ -169,11 +174,15 @@ You can click ![img](/gallery/scan-search.jpeg) on the left ribbon to open the p
 - You can search with various queries separated with `;`: e.g. `John;2020`
 - You can filter specific fields: e.g. `author:John;year:2020`
 
+The switch at the top of the panel toggles between **Discover** (a random, re-rollable sample of your library — good for browsing) and **List** (every match, sortable A–Z or by **Most cited**, virtualized so it stays fast at any library size). Either view, hovering a citekey opens the same floating card described above.
+
 You can open multiple paper panels and draw them to the place you want.
 
 The compare-icon button in the panel recaches from the vault and lists citekey/DOI collisions.
 Enabling **Missing PDF panel** in settings adds a second toggle beside it that lists cached
 references with no matching PDF file — an occasional cleanup check, off by default.
+
+Two more icons sit in the bottom-right corner of the panel: one opens **cache management** (recache, hard reset, or explicitly uncache the current file / the whole cache), the other opens **copy / export** (see [Copy & export BibTeX](#copy--export-bibtex) above).
 
 ## Future plan 🤖
 

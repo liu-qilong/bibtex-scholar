@@ -11,7 +11,7 @@ import {
     list_clashes_for_panel,
     list_ids_for_panel,
     LIST_OVERSCAN,
-    LIST_ROW_HEIGHT,
+    list_row_height_px,
     MISSING_PDF_OVERSCAN,
     MISSING_PDF_ROW_HEIGHT,
     PANEL_RESULT_CAP,
@@ -70,6 +70,8 @@ export class PaperPanelView extends ItemView {
     private list_scroll_el: HTMLElement | null = null
     private list_rows_el: HTMLElement | null = null
     private list_ids_view: string[] = []
+    /** Live virtual row height (px) — scales with list font so title descenders are not clipped. */
+    private list_row_px = list_row_height_px()
     /** Discover mode's scrolling content region — status + chips scroll here; the footer stays pinned below it. */
     private discover_scroll_el: HTMLElement | null = null
 
@@ -391,10 +393,11 @@ export class PaperPanelView extends ItemView {
         }
 
         const font_px = normalize_card_font_size(this.plugin.cache.card_font_size)
+        this.list_row_px = list_row_height_px(font_px)
         const scroll = this.list_el.createEl('div', { cls: 'bibtex-panel-list-scroll' })
         scroll.style.fontSize = `${font_px}px`
         const spacer = scroll.createEl('div', { cls: 'bibtex-panel-list-spacer' })
-        spacer.style.height = `${ids.length * LIST_ROW_HEIGHT}px`
+        spacer.style.height = `${ids.length * this.list_row_px}px`
         const rows = scroll.createEl('div', { cls: 'bibtex-panel-list-rows' })
 
         this.list_scroll_el = scroll
@@ -489,10 +492,11 @@ export class PaperPanelView extends ItemView {
         const ids = this.list_ids_view
         if (!scroll || !rows_el || this.mode !== 'papers' || this.plugin.cache.papers_view !== 'list') return
 
+        const row_h = this.list_row_px
         const { start, end } = visible_window(
             scroll.scrollTop,
             scroll.clientHeight || 320,
-            LIST_ROW_HEIGHT,
+            row_h,
             ids.length,
             LIST_OVERSCAN,
         )
@@ -502,13 +506,13 @@ export class PaperPanelView extends ItemView {
         // (list mode repaints its visible window on every scroll tick).
         unmount_hover_hosts(rows_el)
         rows_el.empty()
-        rows_el.style.transform = `translateY(${start * LIST_ROW_HEIGHT}px)`
+        rows_el.style.transform = `translateY(${start * row_h}px)`
 
         for (let i = start; i < end; i++) {
             const id = ids[i]
             const entry = this.bibtex_dict[id]
             if (!entry) continue
-            this.add_list_row(rows_el, id, entry)
+            this.add_list_row(rows_el, id, entry, row_h)
         }
         this.plugin.perf.panel_rows_mounted = end - start
     }
@@ -519,9 +523,9 @@ export class PaperPanelView extends ItemView {
      * Click anywhere else in the row opens source — the chip's own click
      * toggles the card instead (stopPropagation, same as any other chip).
      */
-    private add_list_row(parent: HTMLElement, id: string, entry: BibtexElement) {
+    private add_list_row(parent: HTMLElement, id: string, entry: BibtexElement, row_h: number = this.list_row_px) {
         const row = parent.createEl('div', { cls: 'bibtex-panel-list-row' })
-        row.style.height = `${LIST_ROW_HEIGHT}px`
+        row.style.height = `${row_h}px`
         row.addEventListener('click', () => this.plugin.open_line(String(entry.source_path), entry.source_line ?? 0))
 
         row.createEl('div', { cls: 'bibtex-panel-list-title', text: entry.fields.title || id })
@@ -538,7 +542,8 @@ export class PaperPanelView extends ItemView {
             rest_parts.push(`${n} cite${n === 1 ? '' : 's'}`)
         }
         if (rest_parts.length > 0) {
-            meta.createEl('span', { cls: 'bibtex-panel-list-meta-rest', text: ` · ${rest_parts.join(' · ')}` })
+            // No leading " · " — flex gap on .bibtex-panel-list-meta separates chip from meta.
+            meta.createEl('span', { cls: 'bibtex-panel-list-meta-rest', text: rest_parts.join(' · ') })
         }
     }
 

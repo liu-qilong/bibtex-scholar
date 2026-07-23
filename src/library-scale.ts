@@ -29,8 +29,25 @@ export const MISSING_PDF_ROW_HEIGHT = 28
 /** Overscan rows above/below the missing-PDF viewport. */
 export const MISSING_PDF_OVERSCAN = 6
 
-/** Assumed row height (px) for list-mode's virtual layout (two-line row: title + meta). */
-export const LIST_ROW_HEIGHT = 52
+/**
+ * Design-time list row height (px) at {@link LIST_ROW_FONT_BASE}.
+ * Prefer {@link list_row_height_px} when the list scroll uses a live font size —
+ * fixed 56px + large card_font_size was clipping title descenders (g, y, p).
+ */
+export const LIST_ROW_HEIGHT = 60
+
+/** Font size (px) assumed by {@link LIST_ROW_HEIGHT} / CSS em metrics. */
+export const LIST_ROW_FONT_BASE = 13
+
+/**
+ * Virtual list row height for the current list font size.
+ * ~4.6em covers title (line-height 1.4) + compact meta + padding/gap with
+ * headroom so glyph descenders are not clipped by overflow:hidden.
+ */
+export function list_row_height_px(font_px: number = LIST_ROW_FONT_BASE): number {
+	const f = Number.isFinite(font_px) && font_px > 0 ? font_px : LIST_ROW_FONT_BASE
+	return Math.max(LIST_ROW_HEIGHT, Math.round(f * 4.6))
+}
 
 /** Overscan rows above/below the list-mode viewport. */
 export const LIST_OVERSCAN = 6
