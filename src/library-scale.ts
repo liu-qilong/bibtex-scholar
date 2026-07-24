@@ -23,11 +23,24 @@ export const CLASH_RESULT_CAP = 80
  */
 export const DISCOVER_RESULT_CAP = 140
 
-/** Assumed row height (px) for missing-PDF virtual list layout. */
+/**
+ * Design-time missing-PDF row height (px) at {@link LIST_ROW_FONT_BASE}.
+ * Prefer {@link missing_pdf_row_height_px} when the scroll uses a live font
+ * size — a flat height doesn't grow with card_font_size like the list does.
+ */
 export const MISSING_PDF_ROW_HEIGHT = 28
 
 /** Overscan rows above/below the missing-PDF viewport. */
 export const MISSING_PDF_OVERSCAN = 6
+
+/**
+ * Virtual missing-PDF row height for the current font size. Single-line row
+ * (unlike list mode's title+meta), so a smaller ratio than {@link list_row_height_px}.
+ */
+export function missing_pdf_row_height_px(font_px: number = LIST_ROW_FONT_BASE): number {
+	const f = Number.isFinite(font_px) && font_px > 0 ? font_px : LIST_ROW_FONT_BASE
+	return Math.max(MISSING_PDF_ROW_HEIGHT, Math.round(f * (MISSING_PDF_ROW_HEIGHT / LIST_ROW_FONT_BASE)))
+}
 
 /**
  * Design-time list row height (px) at {@link LIST_ROW_FONT_BASE}.

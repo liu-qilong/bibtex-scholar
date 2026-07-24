@@ -88,6 +88,9 @@ code.bibtex-source-tag.is-clashing {
     gap: 0.55em;
     width: min(32em, calc(100vw - 16px));
     max-height: min(70vh, 40em);
+    /* dvh shrinks with the on-screen keyboard (vh does not on iOS/most
+     * Android WebViews); unsupported browsers keep the vh line above. */
+    max-height: min(70dvh, 40em);
     padding: 0.85em;
     font-size: var(--bibtex-card-font-size);
     line-height: 1.35;
@@ -118,6 +121,10 @@ code.bibtex-source-tag.is-clashing {
 .bibtex-hover-card.is-floating.is-pinned .bibtex-card-header {
     cursor: grab;
     user-select: none;
+    /* Pointer-driven drag (hover.tsx on_header_pointer_down) must own the
+     * gesture on touch — without this, the browser's native scroll/pan
+     * competes with the drag on Android/iOS. */
+    touch-action: none;
 }
 
 .bibtex-hover-card.is-floating.is-pinned .bibtex-card-header:active {
@@ -128,6 +135,7 @@ code.bibtex-source-tag.is-clashing {
 .bibtex-hover-card.is-floating.is-wide {
     width: min(44em, calc(100vw - 16px));
     max-height: min(75vh, 44em);
+    max-height: min(75dvh, 44em);
 }
 
 .bibtex-hover-card.is-floating.is-wide .bibtex-card-field.is-abstract .bibtex-card-field-val {
@@ -277,6 +285,39 @@ code.bibtex-source-tag.is-clashing {
     opacity: 1;
     background: var(--background-modifier-hover) !important;
     color: var(--text-accent) !important;
+}
+
+/* Touch: 32px hit targets read fine with a mouse but are tight to tap
+ * accurately; grow pin/close/corner buttons toward the ~44px guidance on
+ * Obsidian's own mobile body class instead of guessing from pointer type. */
+.is-mobile .bibtex-card-pin,
+.is-mobile .bibtex-card-close {
+    width: max(var(--input-height, 2rem), 2.75em);
+    height: max(var(--input-height, 2rem), 2.75em);
+    min-width: max(var(--input-height, 2rem), 2.75em);
+    min-height: max(var(--input-height, 2rem), 2.75em) !important;
+    max-width: max(var(--input-height, 2rem), 2.75em);
+    max-height: max(var(--input-height, 2rem), 2.75em);
+}
+
+.is-mobile .bibtex-panel-corner-btn {
+    width: 2.75em;
+    height: 2.75em;
+}
+
+/* Corner buttons grew above (1.9em -> 2.75em); the gutter that keeps footer
+ * text and scroll content clear of them has to grow with it. */
+.is-mobile .bibtex-panel-root {
+    --bibtex-corner-actions-reserve: 6em;
+}
+
+/* Card action toolbar (id/bibtex/{ }/[ ]/cite/etc.) — height only, not width:
+ * these are text-label buttons that already wrap freely, unlike the icon
+ * squares above, so only the ~2.15em height needed bumping toward the
+ * touch-target floor used elsewhere. */
+.is-mobile .bibtex-hover-card .bibtex-card-btn,
+.is-mobile .bibtex-hover-card a button {
+    min-height: max(var(--input-height, 2rem), 2.75em);
 }
 
 /* Action toolbar — chunky controls (first card-polish feel) */
@@ -476,6 +517,11 @@ code.bibtex-source-tag.is-clashing {
  * and virtualized lists (list / missing-pdf mode) size to however tall the panel
  * actually is, instead of an arbitrary max-height. */
 .bibtex-panel-root {
+    /* Single source of truth for how much right-side gutter footer/scroll
+     * regions must reserve to clear the floating corner actions — keeps
+     * that reservation in sync with .bibtex-panel-corner-btn's actual size
+     * (desktop vs. .is-mobile override below) instead of guessing per rule. */
+    --bibtex-corner-actions-reserve: 4.5em;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -509,7 +555,7 @@ code.bibtex-source-tag.is-clashing {
     border: none;
     border-radius: var(--radius-s);
     background: transparent;
-    color: var(--text-faint);
+    color: var(--text-muted);
     cursor: var(--cursor);
 }
 
@@ -556,6 +602,19 @@ code.bibtex-source-tag.is-clashing {
 .bibtex-panel-search {
     flex: 1;
     min-width: 0;
+}
+
+/* Phone-width panel: the toggle + clash + missing-pdf buttons are fixed-width
+ * and fit on one line; search is the flexible element, so it's the one that
+ * drops to its own full-width line instead of getting crushed to a sliver. */
+.is-mobile .bibtex-panel-query-row {
+    flex-wrap: wrap;
+    row-gap: var(--size-4-2);
+}
+
+.is-mobile .bibtex-panel-search {
+    flex-basis: 100%;
+    order: 1;
 }
 
 /* Discover ↔ list view toggle — a real sliding switch: an inset skeuomorphic
@@ -654,7 +713,7 @@ code.bibtex-source-tag.is-clashing {
  * the same bottom-right area (see .bibtex-panel-corner-actions). */
 .bibtex-panel-discover-footer {
     color: var(--text-muted);
-    padding: 0.5em 4.5em 0.5em 0.25em;
+    padding: 0.5em var(--bibtex-corner-actions-reserve) 0.5em 0.25em;
     font-size: var(--font-ui-smaller, var(--font-ui-small));
     flex: 0 0 auto;
 }
@@ -728,6 +787,9 @@ code.bibtex-source-tag.is-clashing {
     overflow: auto;
     flex: 1 1 auto;
     min-height: 0;
+    /* Clears the floating corner actions (bottom-right) so the last visible
+     * row(s) don't render underneath them. */
+    padding-right: var(--bibtex-corner-actions-reserve);
 }
 
 .bibtex-panel-missing-pdf-spacer {
@@ -772,7 +834,7 @@ code.bibtex-source-tag.is-clashing {
     color: var(--text-muted);
     font-size: var(--font-ui-smaller, var(--font-ui-small));
     line-height: 1.3;
-    padding: 0.5em 4.5em 0.5em 0.75em;
+    padding: 0.5em var(--bibtex-corner-actions-reserve) 0.5em 0.75em;
     border-top: 1px solid var(--background-modifier-border);
     flex: 0 0 auto;
 }
@@ -789,6 +851,9 @@ code.bibtex-source-tag.is-clashing {
     overflow: auto;
     flex: 1 1 auto;
     min-height: 0;
+    /* Clears the floating corner actions (bottom-right) so the last visible
+     * row(s) don't render underneath them. */
+    padding-right: var(--bibtex-corner-actions-reserve);
 }
 
 .bibtex-panel-list-spacer {

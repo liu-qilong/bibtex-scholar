@@ -28,6 +28,9 @@ import { card_affordance_copy } from 'src/ux-copy'
 /** Long-press duration (ms) on a Live Preview chip to drop into raw-text edit mode. */
 export const CHIP_LONG_PRESS_MS = 500
 
+/** Minimum pointer travel (px) before a header-down starts moving a pinned card — absorbs tap jitter (touch). */
+export const PIN_DRAG_THRESHOLD_PX = 5
+
 /** True when two field maps have the same keys and string values (widget eq / A5). */
 export function fields_shallow_equal(
 	a: Record<string, unknown>,
@@ -62,10 +65,23 @@ export const pin_registry = new PinRegistry<PinPayload>()
  * action buttons stays the reading order in both placements; only the
  * distance between that cluster and the chip changes.
  */
+/**
+ * `window.innerWidth/innerHeight` do not shrink for the on-screen keyboard on
+ * iOS/most Android WebViews — only `visualViewport` does. Fall back for
+ * environments without it (older WebViews).
+ */
+function get_viewport(): { width: number, height: number } {
+    const vv = window.visualViewport
+    if (vv) {
+        return { width: vv.width, height: vv.height }
+    }
+    return { width: window.innerWidth, height: window.innerHeight }
+}
+
 function position_floating_card(anchor: HTMLElement, card: HTMLElement) {
     const ar = anchor.getBoundingClientRect()
     const cr = card.getBoundingClientRect()
-    const viewport = { width: window.innerWidth, height: window.innerHeight }
+    const viewport = get_viewport()
 
     const placement = compute_card_placement(ar, cr, viewport)
     const { top, left } = compute_card_position(ar, cr, viewport, placement)
@@ -621,6 +637,9 @@ const PreviewCard = ({
         const raf = window.requestAnimationFrame(update)
         window.addEventListener('resize', update)
         window.addEventListener('scroll', on_scroll, true)
+        // innerHeight doesn't shrink for the on-screen keyboard — visualViewport
+        // does, and is the only thing that fires a resize when it opens/closes.
+        window.visualViewport?.addEventListener('resize', update)
 
         const card_el = card_ref.current
         let ro: ResizeObserver | null = null
@@ -633,6 +652,7 @@ const PreviewCard = ({
             window.cancelAnimationFrame(raf)
             window.removeEventListener('resize', update)
             window.removeEventListener('scroll', on_scroll, true)
+            window.visualViewport?.removeEventListener('resize', update)
             ro?.disconnect()
         }
     }, [anchor, paper_id, dense])
@@ -730,13 +750,22 @@ const PinnedCard = ({
         const start_y = e.clientY
         const start_pos = { ...drag_pos_ref.current }
         const size = { width: card.offsetWidth, height: card.offsetHeight }
+        let moved = false
 
         const on_move = (ev: PointerEvent) => {
-            const viewport = { width: window.innerWidth, height: window.innerHeight }
+            const dx = ev.clientX - start_x
+            const dy = ev.clientY - start_y
+            // Below threshold: don't move yet — absorbs tap jitter near the
+            // header (e.g. reaching for a nearby button) so it doesn't drag.
+            if (!moved && Math.hypot(dx, dy) < PIN_DRAG_THRESHOLD_PX) {
+                return
+            }
+            moved = true
+            const viewport = get_viewport()
             const next = clamp_card_position(
                 {
-                    top: start_pos.top + (ev.clientY - start_y),
-                    left: start_pos.left + (ev.clientX - start_x),
+                    top: start_pos.top + dy,
+                    left: start_pos.left + dx,
                 },
                 size,
                 viewport,
@@ -755,7 +784,10 @@ const PinnedCard = ({
                 // already released
             }
             // Single registry write — avoids re-rendering the card body every move.
-            pin_registry.move(paper_id, drag_pos_ref.current)
+            // Skip entirely if the drag never crossed the threshold (a tap, not a drag).
+            if (moved) {
+                pin_registry.move(paper_id, drag_pos_ref.current)
+            }
         }
         header_el.addEventListener('pointermove', on_move)
         header_el.addEventListener('pointerup', on_up)

@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting, normalizePath } from 'obsidian'
+import { App, Notice, Platform, PluginSettingTab, Setting, normalizePath } from 'obsidian'
 import {
 	CARD_FONT_SIZE_MAX,
 	CARD_FONT_SIZE_MIN,
@@ -212,22 +212,26 @@ export class BibtexScholarSetting extends PluginSettingTab {
 					})
 			})
 
-		new Setting(containerEl)
-			.setName('Double hover debounce in paper panel')
-			.setDesc(
-				'Wait twice as long '
-				+ `(${OPEN_DEBOUNCE_MS * 2}ms instead of ${OPEN_DEBOUNCE_MS}ms) before a hover opens the `
-				+ 'citation card in the paper panel, to reduce accidental opens while skimming. '
-				+ 'Inline cites and codeblocks are unchanged.',
-			)
-			.addToggle((toggle) => {
-				toggle
-					.setValue(Boolean(this.plugin.cache.panel_double_debounce_enabled))
-					.onChange(async (value) => {
-						this.plugin.cache.panel_double_debounce_enabled = value
-						await this.plugin.save_cache()
-					})
-			})
+		// Only affects the paper panel's mouseenter debounce (see hover.tsx) — touch opens
+		// via an unconditional tap/click, so this toggle is a no-op on mobile. Hide it there.
+		if (!Platform.isMobile) {
+			new Setting(containerEl)
+				.setName('Double hover debounce in paper panel')
+				.setDesc(
+					'Wait twice as long '
+					+ `(${OPEN_DEBOUNCE_MS * 2}ms instead of ${OPEN_DEBOUNCE_MS}ms) before a hover opens the `
+					+ 'citation card in the paper panel, to reduce accidental opens while skimming. '
+					+ 'Inline cites and codeblocks are unchanged.',
+				)
+				.addToggle((toggle) => {
+					toggle
+						.setValue(Boolean(this.plugin.cache.panel_double_debounce_enabled))
+						.onChange(async (value) => {
+							this.plugin.cache.panel_double_debounce_enabled = value
+							await this.plugin.save_cache()
+						})
+				})
+		}
 
 		new Setting(containerEl).setName('Diagnostics').setHeading()
 

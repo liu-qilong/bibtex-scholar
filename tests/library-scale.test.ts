@@ -11,6 +11,8 @@ import {
 	list_ids_for_suggest,
 	list_row_height_px,
 	LIST_ROW_HEIGHT,
+	missing_pdf_row_height_px,
+	MISSING_PDF_ROW_HEIGHT,
 	PANEL_EMPTY_PREVIEW,
 	PANEL_RESULT_CAP,
 	random_sample_ids,
@@ -155,6 +157,14 @@ describe('list_row_height_px', () => {
 		expect(list_row_height_px(13)).toBeGreaterThanOrEqual(LIST_ROW_HEIGHT)
 		expect(list_row_height_px(20)).toBeGreaterThan(list_row_height_px(13))
 		expect(list_row_height_px(20)).toBe(Math.round(20 * 4.6))
+	})
+})
+
+describe('missing_pdf_row_height_px', () => {
+	it('scales with font size so touch targets grow with a larger card font', () => {
+		expect(missing_pdf_row_height_px(13)).toBeGreaterThanOrEqual(MISSING_PDF_ROW_HEIGHT)
+		expect(missing_pdf_row_height_px(20)).toBeGreaterThan(missing_pdf_row_height_px(13))
+		expect(missing_pdf_row_height_px(20)).toBe(Math.round(20 * (MISSING_PDF_ROW_HEIGHT / 13)))
 	})
 })
 

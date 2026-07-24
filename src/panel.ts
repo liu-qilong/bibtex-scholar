@@ -13,7 +13,7 @@ import {
     LIST_OVERSCAN,
     list_row_height_px,
     MISSING_PDF_OVERSCAN,
-    MISSING_PDF_ROW_HEIGHT,
+    missing_pdf_row_height_px,
     PANEL_RESULT_CAP,
     random_sample_ids,
     visible_window,
@@ -56,6 +56,8 @@ export class PaperPanelView extends ItemView {
     private missing_pdf_scroll_el: HTMLElement | null = null
     private missing_pdf_rows_el: HTMLElement | null = null
     private missing_pdf_ids_view: string[] = []
+    /** Live virtual row height (px) — scales with card font, mirrors {@link list_row_px}. */
+    private missing_pdf_row_px = missing_pdf_row_height_px()
 
     /** Switches the papers list between discover (random/capped chips) and list (virtualized rows). */
     view_toggle_btn: HTMLElement
@@ -683,10 +685,11 @@ export class PaperPanelView extends ItemView {
             return
         }
 
+        this.missing_pdf_row_px = missing_pdf_row_height_px(font_px)
         const scroll = this.list_el.createEl('div', { cls: 'bibtex-panel-missing-pdf-scroll' })
         scroll.style.fontSize = `${font_px}px`
         const spacer = scroll.createEl('div', { cls: 'bibtex-panel-missing-pdf-spacer' })
-        spacer.style.height = `${ids.length * MISSING_PDF_ROW_HEIGHT}px`
+        spacer.style.height = `${ids.length * this.missing_pdf_row_px}px`
         const rows = scroll.createEl('div', { cls: 'bibtex-panel-missing-pdf-rows' })
 
         this.missing_pdf_scroll_el = scroll
@@ -705,28 +708,29 @@ export class PaperPanelView extends ItemView {
         const ids = this.missing_pdf_ids_view
         if (!scroll || !rows_el || this.mode !== 'missing-pdf') return
 
+        const row_h = this.missing_pdf_row_px
         const { start, end } = visible_window(
             scroll.scrollTop,
             scroll.clientHeight || 320,
-            MISSING_PDF_ROW_HEIGHT,
+            row_h,
             ids.length,
             MISSING_PDF_OVERSCAN,
         )
 
         rows_el.empty()
-        rows_el.style.transform = `translateY(${start * MISSING_PDF_ROW_HEIGHT}px)`
+        rows_el.style.transform = `translateY(${start * row_h}px)`
 
         for (let i = start; i < end; i++) {
             const id = ids[i]
             const entry = this.bibtex_dict[id]
             if (!entry) continue
-            this.add_missing_pdf_row(rows_el, entry, i + 1)
+            this.add_missing_pdf_row(rows_el, entry, i + 1, row_h)
         }
     }
 
-    add_missing_pdf_row(parent: HTMLElement, bibtex: BibtexElement, n: number) {
+    add_missing_pdf_row(parent: HTMLElement, bibtex: BibtexElement, n: number, row_h: number = this.missing_pdf_row_px) {
         const row = parent.createEl('div', { cls: 'bibtex-panel-clash-member bibtex-panel-missing-pdf-row' })
-        row.style.height = `${MISSING_PDF_ROW_HEIGHT}px`
+        row.style.height = `${row_h}px`
         row.createEl('span', { cls: 'bibtex-panel-clash-num', text: `[${n}] ` })
 
         const key = row.createEl('span', { cls: 'bibtex-panel-clash-link', text: `'${bibtex.fields.id}'` })
