@@ -72,6 +72,40 @@ export function same_paper(a: BibtexField, b: BibtexField): boolean {
 }
 
 /**
+ * Greedily match cached entries that vanished from a file's current text
+ * against entries newly present in it — a citekey rename in progress.
+ * `resolve_owner_path` should return the source_path of whatever cache entry
+ * currently owns a candidate new id, if any; a candidate already owned by a
+ * different file is rejected (that id is genuinely taken, not just renamed).
+ * `via` is `'doi'` only when both sides carry the same immutable DOI;
+ * otherwise the match is fuzzy (title/author/year).
+ */
+export function match_citekey_renames(
+    cached: [string, BibtexField][],
+    current: BibtexField[],
+    file_path: string,
+    resolve_owner_path: (id: string) => string | undefined,
+): { old_id: string, new_id: string, via: 'doi' | 'fuzzy' }[] {
+    const current_ids = new Set(current.map((f) => f.id))
+    const used_new = new Set<string>()
+    const out: { old_id: string, new_id: string, via: 'doi' | 'fuzzy' }[] = []
+    for (const [old_id, fields_old] of cached) {
+        if (current_ids.has(old_id)) continue
+        for (const fields of current) {
+            if (fields.id === old_id || used_new.has(fields.id)) continue
+            if (!same_paper(fields_old, fields)) continue
+            const owner_path = resolve_owner_path(fields.id)
+            if (owner_path !== undefined && owner_path !== file_path) continue
+            const via = fields_old.doi && fields.doi ? 'doi' : 'fuzzy'
+            out.push({ old_id, new_id: fields.id, via })
+            used_new.add(fields.id)
+            break
+        }
+    }
+    return out
+}
+
+/**
  * A paint-time "duplicate" is actually an in-place rename-in-progress when the
  * conflicting owner lives in this same file and its old citekey has already
  * disappeared from the file's current text — i.e. nothing else in this note

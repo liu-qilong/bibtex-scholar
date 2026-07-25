@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
 	find_bibtex_block_line_range,
 	is_pending_same_file_rename,
+	match_citekey_renames,
 	normalize_id,
 	replace_bibtex_fence_citekey,
 	replace_inline_citekey,
 	type BibtexElement,
+	type BibtexField,
 } from 'src/bibtex'
 
 describe('normalize_id', () => {
@@ -64,6 +66,89 @@ describe('is_pending_same_file_rename', () => {
 	it('is false when there is no owner entry', () => {
 		const current_ids = new Set(['Jones2021'])
 		expect(is_pending_same_file_rename(undefined, 'Smith2020', 'Jones2021', 'notes/a.md', current_ids)).toBe(false)
+	})
+})
+
+describe('match_citekey_renames', () => {
+	const owned_by_file = (_id: string): string | undefined => undefined
+
+	it('matches a vanished cached entry to a new entry via fuzzy title/author/year', () => {
+		const cached: [string, BibtexField][] = [
+			['Smith2020', { type: 'article', id: 'Smith2020', title: 'Deep Learning', author: 'Smith', year: '2020' }],
+		]
+		const current: BibtexField[] = [
+			{ type: 'article', id: 'Smith2020b', title: 'Deep Learning', author: 'Smith', year: '2020' },
+		]
+		expect(match_citekey_renames(cached, current, 'notes/a.md', owned_by_file)).toEqual([
+			{ old_id: 'Smith2020', new_id: 'Smith2020b', via: 'fuzzy' },
+		])
+	})
+
+	it('reports "doi" confidence when both sides share the same DOI', () => {
+		const cached: [string, BibtexField][] = [
+			['Smith2020', { type: 'article', id: 'Smith2020', title: 'X', doi: '10.1/x' }],
+		]
+		const current: BibtexField[] = [
+			{ type: 'article', id: 'Smith2020b', title: 'Y', doi: '10.1/x' },
+		]
+		expect(match_citekey_renames(cached, current, 'notes/a.md', owned_by_file)).toEqual([
+			{ old_id: 'Smith2020', new_id: 'Smith2020b', via: 'doi' },
+		])
+	})
+
+	it('proposes nothing when no current entry matches (same_paper false)', () => {
+		const cached: [string, BibtexField][] = [
+			['Smith2020', { type: 'article', id: 'Smith2020', title: 'Deep Learning', author: 'Smith', year: '2020' }],
+		]
+		const current: BibtexField[] = [
+			{ type: 'article', id: 'Jones2021', title: 'Something Else', author: 'Jones', year: '2021' },
+		]
+		expect(match_citekey_renames(cached, current, 'notes/a.md', owned_by_file)).toEqual([])
+	})
+
+	it('skips a cached id that is still present in the current text', () => {
+		const cached: [string, BibtexField][] = [
+			['Smith2020', { type: 'article', id: 'Smith2020', title: 'Deep Learning', author: 'Smith', year: '2020' }],
+		]
+		const current: BibtexField[] = [
+			{ type: 'article', id: 'Smith2020', title: 'Deep Learning', author: 'Smith', year: '2020' },
+		]
+		expect(match_citekey_renames(cached, current, 'notes/a.md', owned_by_file)).toEqual([])
+	})
+
+	it('only lets the first matching cached entry claim a given new id', () => {
+		const cached: [string, BibtexField][] = [
+			['Smith2020', { type: 'article', id: 'Smith2020', title: 'Deep Learning', author: 'Smith', year: '2020' }],
+			['Smith2020dup', { type: 'article', id: 'Smith2020dup', title: 'Deep Learning', author: 'Smith', year: '2020' }],
+		]
+		const current: BibtexField[] = [
+			{ type: 'article', id: 'Smith2020b', title: 'Deep Learning', author: 'Smith', year: '2020' },
+		]
+		expect(match_citekey_renames(cached, current, 'notes/a.md', owned_by_file)).toEqual([
+			{ old_id: 'Smith2020', new_id: 'Smith2020b', via: 'fuzzy' },
+		])
+	})
+
+	it('rejects a candidate id already owned by a different file', () => {
+		const cached: [string, BibtexField][] = [
+			['Smith2020', { type: 'article', id: 'Smith2020', title: 'Deep Learning', author: 'Smith', year: '2020' }],
+		]
+		const current: BibtexField[] = [
+			{ type: 'article', id: 'Smith2020b', title: 'Deep Learning', author: 'Smith', year: '2020' },
+		]
+		expect(match_citekey_renames(cached, current, 'notes/a.md', () => 'notes/other.md')).toEqual([])
+	})
+
+	it('accepts a candidate id owned by this same file', () => {
+		const cached: [string, BibtexField][] = [
+			['Smith2020', { type: 'article', id: 'Smith2020', title: 'Deep Learning', author: 'Smith', year: '2020' }],
+		]
+		const current: BibtexField[] = [
+			{ type: 'article', id: 'Smith2020b', title: 'Deep Learning', author: 'Smith', year: '2020' },
+		]
+		expect(match_citekey_renames(cached, current, 'notes/a.md', () => 'notes/a.md')).toEqual([
+			{ old_id: 'Smith2020', new_id: 'Smith2020b', via: 'fuzzy' },
+		])
 	})
 })
 

@@ -1,5 +1,5 @@
 import { App, Notice, Plugin, TFile, TFolder, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bibtex, make_bibtex, entry_source, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, find_bibtex_block_line_range, find_clashes, same_paper, is_pending_same_file_rename, replace_bibtex_fence_citekey, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
+import { parse_bibtex, make_bibtex, entry_source, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, find_bibtex_block_line_range, find_clashes, match_citekey_renames, is_pending_same_file_rename, replace_bibtex_fence_citekey, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
 import {
 	audit_bibtex_dict,
 	classify_path_fingerprints,
@@ -908,12 +908,7 @@ export default class BibtexScholar extends Plugin {
 		const prev_fp = this.cache.path_fingerprints ?? {}
 
 		const classified = hard
-			? {
-				new: vault_paths.slice(),
-				changed: [] as string[],
-				unchanged: [] as string[],
-				deleted: Object.keys(prev_fp).filter((p) => !current_fp[p]),
-			}
+			? { ...classify_path_fingerprints(vault_paths, current_fp, prev_fp), new: vault_paths.slice(), changed: [], unchanged: [] }
 			: classify_path_fingerprints(vault_paths, current_fp, prev_fp)
 
 		const to_read = hard
@@ -1088,30 +1083,14 @@ export default class BibtexScholar extends Plugin {
 			current.push(...await parse_bibtex(match[1]))
 		}
 
-		const current_ids = new Set(current.map((f) => f.id))
-		const cached = Object.entries(this.cache.bibtex_dict)
+		const cached: [string, BibtexField][] = Object.entries(this.cache.bibtex_dict)
 			.filter(([, e]) => e.source_path === file.path)
+			.map(([id, e]) => [id, e.fields])
 
-		const used_new = new Set<string>()
-		const out: { old_id: string, new_id: string, via: 'doi' | 'fuzzy' }[] = []
-
-		for (const [old_id, entry] of cached) {
-			if (current_ids.has(old_id)) continue
-			for (const fields of current) {
-				if (fields.id === old_id || used_new.has(fields.id)) continue
-				if (!same_paper(entry.fields, fields)) continue
-				const other_id = resolve_id(this.id_index, fields.id)
-				const other = other_id !== undefined ? this.cache.bibtex_dict[other_id] : undefined
-				if (other && other.source_path !== file.path) continue
-				// Same immutable DOI on both sides is high confidence; otherwise
-				// this only matched on fuzzy title/author/year.
-				const via = entry.fields.doi && fields.doi ? 'doi' : 'fuzzy'
-				out.push({ old_id, new_id: fields.id, via })
-				used_new.add(fields.id)
-				break
-			}
-		}
-		return out
+		return match_citekey_renames(cached, current, file.path, (id) => {
+			const other_id = resolve_id(this.id_index, id)
+			return other_id !== undefined ? this.cache.bibtex_dict[other_id]?.source_path : undefined
+		})
 	}
 
 	/**
