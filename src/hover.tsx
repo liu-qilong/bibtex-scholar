@@ -17,7 +17,7 @@ import { EditorSelection } from '@codemirror/state'
 import { type EditorView, WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
-import { display_bibtex_text } from 'src/tex-display'
+import { display_bibtex_plain_text, display_bibtex_segments, display_bibtex_text } from 'src/tex-display'
 import { normalize_card_font_size } from 'src/cache-ops'
 import { clamp_card_position, compute_card_placement, compute_card_position } from 'src/citation-card-layout'
 import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
@@ -105,7 +105,6 @@ export const copy_to_clipboard = (text: string) => {
         console.error('Failed to copy text:', err)
     })
 }
-
 
 /**
  * Return keyboard focus to the active note editor after a modal / card teardown.
@@ -367,7 +366,7 @@ const PinIcon = () => (
     </svg>
 )
 
-/** Classic "two stacked squares" copy glyph — inline after field text, not a strip control. */
+/** Classic “two stacked squares” copy glyph — inline after field text, not a strip control. */
 const CopyIcon = () => (
     <svg
         className='bibtex-field-copy-icon'
@@ -498,8 +497,9 @@ const CitationCardBody = ({
         return () => owner.unload()
     }, [])
     const paper_id = bibtex.fields.id
-    // Display-only: TeX specials → Unicode; raw fields stay for copy/export.
-    const title = display_bibtex_text(bibtex.fields.title || paper_id)
+    // Display-only: TeX specials → Unicode, <i>/<em> → real italics; raw fields stay for copy/export.
+    const title_segments = display_bibtex_segments(bibtex.fields.title || paper_id)
+    const title_plain = display_bibtex_plain_text(bibtex.fields.title || paper_id)
     const year = bibtex.fields.year
 
     const open_mentions = async () => {
@@ -528,7 +528,9 @@ const CitationCardBody = ({
         <>
             <header className='bibtex-card-header' onPointerDown={on_header_pointer_down}>
                 <div className='bibtex-card-header-text'>
-                    <div className='bibtex-card-title' title={title}>{title}</div>
+                    <div className='bibtex-card-title' title={title_plain}>
+                        {title_segments.map((seg, i) => (seg.italic ? <em key={i}>{seg.text}</em> : seg.text))}
+                    </div>
                     <div className='bibtex-card-meta'>
                         <code className='bibtex-card-id'>{paper_id}</code>
                         {year ? <span className='bibtex-card-year'>{year}</span> : null}
