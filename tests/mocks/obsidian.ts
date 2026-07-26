@@ -7,10 +7,41 @@
  */
 import { StateEffect, StateField } from '@codemirror/state'
 
+/** Minimal contentEl with Obsidian-like createEl/empty for Modal subclasses in tests. */
+function make_content_el(): HTMLElement & { createEl: Function; empty: Function } {
+	const el = document.createElement('div') as HTMLElement & { createEl: Function; empty: Function }
+	el.createEl = (tag: string, opts?: { text?: string; cls?: string }) => {
+		const child = document.createElement(tag)
+		if (opts?.text != null) child.textContent = opts.text
+		if (opts?.cls) child.className = opts.cls
+		el.appendChild(child)
+		return child
+	}
+	el.empty = () => {
+		el.replaceChildren()
+	}
+	return el
+}
+
 export class Modal {
-	constructor(_app?: unknown) {}
-	open() {}
-	close() {}
+	app: unknown
+	contentEl: HTMLElement & { createEl: Function; empty: Function }
+
+	constructor(app?: unknown) {
+		this.app = app
+		this.contentEl = make_content_el()
+	}
+
+	open() {
+		this.onOpen()
+	}
+
+	close() {
+		this.onClose()
+	}
+
+	onOpen() {}
+	onClose() {}
 }
 export class Notice {
 	constructor(_msg?: string, _timeout?: number) {}
@@ -20,7 +51,23 @@ export class Setting {
 	setName() { return this }
 	setDesc() { return this }
 	addText() { return this }
-	addButton() { return this }
+	addButton(cb?: (btn: {
+		setButtonText: (t: string) => unknown
+		setCta: () => unknown
+		setWarning: () => unknown
+		onClick: (fn: () => unknown) => unknown
+	}) => unknown) {
+		if (cb) {
+			const btn = {
+				setButtonText() { return btn },
+				setCta() { return btn },
+				setWarning() { return btn },
+				onClick() { return btn },
+			}
+			cb(btn)
+		}
+		return this
+	}
 	addDropdown() { return this }
 	addTextArea() { return this }
 	addSlider() { return this }

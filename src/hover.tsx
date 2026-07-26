@@ -9,7 +9,7 @@
  * - Live Preview: {@link HoverWidget} (CodeMirror replace decoration).
  * - Reading view / panel: {@link render_hover} / {@link HoverRenderChild}.
  */
-import { App, Component, MarkdownRenderer, Notice, Modal, MarkdownRenderChild } from 'obsidian'
+import { App, Component, MarkdownRenderer, Notice, Modal, MarkdownRenderChild, Setting } from 'obsidian'
 import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -104,6 +104,95 @@ export const copy_to_clipboard = (text: string) => {
     }).catch((err) => {
         console.error('Failed to copy text:', err)
     })
+}
+
+
+/**
+ * Return keyboard focus to the active note editor after a modal / card teardown.
+ *
+ * Native `window.confirm` leaves Electron with no typing target once the card
+ * button that held focus is unmounted (F1 help → close was the user workaround).
+ * Call this after Obsidian modals close and after uncache dismisses the card.
+ *
+ * Uses nested `setTimeout(0)` (not rAF) so focus lands after Modal close + React
+ * unmount of the focused card button — and so unit tests can flush with timers.
+ */
+export function restore_editor_focus(app: App): void {
+	const focus = () => {
+		const ws = app.workspace as {
+			activeEditor?: { editor?: { focus?: () => void } }
+		}
+		const ed = ws.activeEditor?.editor
+		if (ed && typeof ed.focus === 'function') {
+			ed.focus()
+			return
+		}
+		// Fallback: CM content root in the active leaf (or any visible editor).
+		const cm = document.querySelector(
+			'.workspace-leaf.mod-active .cm-content, .cm-content',
+		) as HTMLElement | null
+		if (cm && typeof cm.focus === 'function') {
+			cm.focus()
+		}
+	}
+	window.setTimeout(() => {
+		window.setTimeout(focus, 0)
+	}, 0)
+}
+
+/**
+ * Lightweight confirm dialog (Obsidian Modal — not `window.confirm`).
+ * Always restores editor focus on close (OK or Cancel).
+ */
+export class ConfirmActionModal extends Modal {
+	private title_text: string
+	private body_text: string
+	private confirm_label: string
+	private danger: boolean
+	private on_confirm: () => void | Promise<void>
+
+	constructor(
+		app: App,
+		opts: {
+			title: string
+			body: string
+			confirm_label?: string
+			danger?: boolean
+			on_confirm: () => void | Promise<void>
+		},
+	) {
+		super(app)
+		this.title_text = opts.title
+		this.body_text = opts.body
+		this.confirm_label = opts.confirm_label ?? 'Confirm'
+		this.danger = opts.danger === true
+		this.on_confirm = opts.on_confirm
+	}
+
+	onOpen() {
+		const { contentEl } = this
+		contentEl.empty()
+		contentEl.createEl('h4', { text: this.title_text })
+		contentEl.createEl('p', { text: this.body_text })
+
+		new Setting(contentEl)
+			.addButton((btn) => btn.setButtonText('Cancel').onClick(() => this.close()))
+			.addButton((btn) => {
+				btn.setButtonText(this.confirm_label).setCta().onClick(async () => {
+					await this.on_confirm()
+					this.close()
+				})
+				if (this.danger) {
+					btn.setWarning()
+				}
+				return btn
+			})
+	}
+
+	onClose() {
+		this.contentEl.empty()
+		restore_editor_focus(this.app)
+	}
 }
 
 /** Modal: pick a PDF and write it into the vault under `folder/fname`. */
@@ -495,10 +584,18 @@ const CitationCardBody = ({
                         title='Remove from plugin cache'
                         danger
                         onClick={() => {
-                            if (window.confirm(`Uncache ${paper_id}?`)) {
-                                void plugin.uncache_bibtex_with_id(paper_id)
-                                on_close()
-                            }
+                            // Obsidian Modal + restore_editor_focus — never window.confirm
+                            // (native dialog + card unmount leaves CM with no typing target).
+                            new ConfirmActionModal(app, {
+                                title: 'Uncache entry',
+                                body: `Remove ${paper_id} from the plugin cache? Source BibTeX and notes are not deleted.`,
+                                confirm_label: 'Uncache',
+                                danger: true,
+                                on_confirm: async () => {
+                                    await plugin.uncache_bibtex_with_id(paper_id)
+                                    on_close()
+                                },
+                            }).open()
                         }}
                     />
                 </div>

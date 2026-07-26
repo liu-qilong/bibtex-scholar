@@ -12,9 +12,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BibtexElement } from 'src/bibtex'
 import { citation_popup, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
 import {
+	ConfirmActionModal,
 	HoverRenderChild,
 	HoverWidget,
 	render_hover,
+	restore_editor_focus,
 	unmount_card_manager,
 	unmount_hover,
 	unmount_hover_hosts,
@@ -33,7 +35,7 @@ const bibtex: BibtexElement = {
 	source_path: 'refs/widgets.md',
 }
 
-function make_fake_app(portal_root: HTMLElement) {
+function make_fake_app(portal_root: HTMLElement, active_editor?: { focus: () => void }) {
 	return {
 		workspace: {
 			containerEl: portal_root,
@@ -42,6 +44,9 @@ function make_fake_app(portal_root: HTMLElement) {
 			getLeftLeaf: () => null,
 			revealLeaf: async () => {},
 			setActiveLeaf: () => {},
+			activeEditor: active_editor
+				? { editor: active_editor }
+				: undefined,
 		},
 		metadataCache: {
 			getFirstLinkpathDest: () => null,
@@ -316,6 +321,77 @@ describe('citation popup DOM behavior', () => {
 
 		expect(card()).toBeNull()
 		expect(document.activeElement).toBe(focused_before)
+	})
+
+	it('restore_editor_focus focuses workspace.activeEditor.editor', async () => {
+		vi.useFakeTimers()
+		const focus = vi.fn()
+		const portal_root = document.createElement('div')
+		document.body.appendChild(portal_root)
+		const app = make_fake_app(portal_root, { focus })
+
+		restore_editor_focus(app as any)
+		await act(async () => {
+			await vi.runAllTimersAsync()
+		})
+		expect(focus).toHaveBeenCalledTimes(1)
+		vi.useRealTimers()
+	})
+
+	it('uncache opens ConfirmActionModal (not window.confirm) and restores editor focus on close', async () => {
+		vi.useFakeTimers()
+		const focus = vi.fn()
+		const uncache = vi.fn(async () => {})
+		const portal_root = document.createElement('div')
+		document.body.appendChild(portal_root)
+		const app = make_fake_app(portal_root, { focus })
+		const plugin = { ...make_fake_plugin(), uncache_bibtex_with_id: uncache }
+
+		const confirm_spy = vi.spyOn(window, 'confirm')
+		const open_spy = vi.spyOn(ConfirmActionModal.prototype, 'open')
+
+		try {
+			const host = document.createElement('span')
+			document.body.appendChild(host)
+			await act(async () => {
+				render_hover(host, bibtex, plugin as any, app as any, true, false)
+			})
+
+			const btn = Array.from(portal_root.querySelectorAll('.bibtex-card-btn')).find(
+				(el) => el.textContent?.trim() === 'uncache',
+			) as HTMLButtonElement | undefined
+			expect(btn).toBeTruthy()
+
+			await act(async () => {
+				fireEvent.click(btn!)
+			})
+
+			expect(confirm_spy).not.toHaveBeenCalled()
+			expect(open_spy).toHaveBeenCalled()
+
+			// Drive the confirm path + close (focus restore lives in onClose).
+			const modal = new ConfirmActionModal(app as any, {
+				title: 'Uncache entry',
+				body: 'test',
+				confirm_label: 'Uncache',
+				danger: true,
+				on_confirm: async () => {
+					await uncache('Doe2020Widgets')
+				},
+			})
+			await act(async () => {
+				await (modal as unknown as { on_confirm: () => Promise<void> }).on_confirm()
+				modal.close()
+				await vi.runAllTimersAsync()
+			})
+
+			expect(uncache).toHaveBeenCalled()
+			expect(focus).toHaveBeenCalled()
+		} finally {
+			confirm_spy.mockRestore()
+			open_spy.mockRestore()
+			vi.useRealTimers()
+		}
 	})
 
 	it('`[id]` (expand) opens on mount with no debounce', async () => {
