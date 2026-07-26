@@ -1,5 +1,6 @@
 import { addIcon, ItemView, Notice, WorkspaceLeaf, SearchComponent, setIcon, type IconName } from 'obsidian'
 import type { BibtexDict, BibtexElement, Clash } from 'src/bibtex'
+import { display_bibtex_text } from 'src/tex-display'
 import { normalize_card_font_size, normalize_list_font_size, normalize_panel_chip_font_size, probe_missing_pdf_chunked, type ScanHit } from 'src/cache-ops'
 import { CacheOpsModal, CopyExportModal } from 'src/command-modals'
 import { render_hover, unmount_hover_hosts } from 'src/hover'
@@ -530,7 +531,10 @@ export class PaperPanelView extends ItemView {
         row.style.height = `${row_h}px`
         row.addEventListener('click', () => this.plugin.open_line(String(entry.source_path), entry.source_line ?? 0))
 
-        row.createEl('div', { cls: 'bibtex-panel-list-title', text: entry.fields.title || id })
+        row.createEl('div', {
+            cls: 'bibtex-panel-list-title',
+            text: display_bibtex_text(entry.fields.title || id),
+        })
 
         const meta = row.createEl('div', { cls: 'bibtex-panel-list-meta' })
         const chip_host = meta.createEl('span', { cls: 'bibtex-panel-list-chip' })
@@ -740,7 +744,7 @@ export class PaperPanelView extends ItemView {
 
         const title = row.createEl('span', {
             cls: 'bibtex-panel-clash-link is-path',
-            text: `[${bibtex.fields.title || bibtex.source_path}]`,
+            text: `[${display_bibtex_text(String(bibtex.fields.title || bibtex.source_path))}]`,
             attr: { title: String(bibtex.source_path) },
         })
         title.addEventListener('click', () => this.plugin.open_line(String(bibtex.source_path), 0))

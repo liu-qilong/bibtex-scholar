@@ -451,6 +451,60 @@ code.bibtex-source-tag.is-clashing {
     border-radius: var(--radius-s, 4px);
 }
 
+/*
+ * Inline copy glyph after the DOI text (not a chrome button, not end-of-row).
+ * Markdown renderer wraps content in block <p>/<div>; force inline so the icon
+ * sits at the end of the line like a trailing character.
+ */
+.bibtex-card-field-val.has-inline-copy > div {
+    display: inline;
+}
+
+.bibtex-card-field-val.has-inline-copy .bibtex-markdown-rendered p,
+.bibtex-card-field-val.has-inline-copy > div p {
+    display: inline;
+    margin: 0;
+}
+
+/* Dim trailing icon — sized near text x-height; brightens on hover, green flash on click. */
+.bibtex-field-copy {
+    display: inline;
+    margin: 0 0 0 1em;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-faint);
+    opacity: 0.35;
+    cursor: pointer;
+    /* Align with lowercase baseline band rather than full cap height. */
+    vertical-align: -0.05em;
+    line-height: 1;
+    font-size: 1em;
+    transition: opacity 0.15s ease, color 0.15s ease;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.bibtex-field-copy:hover,
+.bibtex-field-copy:focus-visible {
+    opacity: 0.95;
+    color: var(--text-muted);
+    outline: none;
+}
+
+.bibtex-field-copy.is-flash {
+    opacity: 1;
+    color: var(--color-green, #3cb371);
+    transition: opacity 0.08s ease, color 0.08s ease;
+}
+
+.bibtex-field-copy-icon {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.12em;
+}
+
 .bibtex-markdown-rendered p {
     font-size: inherit;
     margin: 0;

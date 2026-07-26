@@ -11,6 +11,7 @@ import {
 import { type BibtexDict } from 'src/bibtex'
 import { list_ids_for_suggest } from 'src/library-scale'
 import { find_prompt_trigger } from 'src/prompt-trigger'
+import { display_bibtex_text } from 'src/tex-display'
 
 /**
  * Inline cite autocomplete.
@@ -73,8 +74,9 @@ export class EditorPrompt extends EditorSuggest<string> {
 	renderSuggestion(id: string, el: HTMLElement): void {
 		const bibtex = this.bibtex_dict[id]
 		el.createEl('code', { text: bibtex.fields.id, cls: 'bibtex-prompt-id' })
-		el.createEl('div', { text: bibtex.fields.title, cls: 'bibtex-prompt-title' })
-		el.createEl('small', { text: bibtex.fields.author, cls: 'bibtex-prompt-author' })
+		// Display-only TeX → Unicode; insert still uses the raw citekey.
+		el.createEl('div', { text: display_bibtex_text(bibtex.fields.title ?? ''), cls: 'bibtex-prompt-title' })
+		el.createEl('small', { text: display_bibtex_text(bibtex.fields.author ?? ''), cls: 'bibtex-prompt-author' })
 	}
 
 	selectSuggestion(id: string, _evt: MouseEvent | KeyboardEvent): void {

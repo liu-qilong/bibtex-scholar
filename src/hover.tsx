@@ -10,13 +10,14 @@
  * - Reading view / panel: {@link render_hover} / {@link HoverRenderChild}.
  */
 import { App, Component, MarkdownRenderer, Notice, Modal, MarkdownRenderChild } from 'obsidian'
-import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { EditorSelection } from '@codemirror/state'
 import { type EditorView, WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
+import { display_bibtex_text } from 'src/tex-display'
 import { normalize_card_font_size } from 'src/cache-ops'
 import { clamp_card_position, compute_card_placement, compute_card_position } from 'src/citation-card-layout'
 import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
@@ -277,6 +278,74 @@ const PinIcon = () => (
     </svg>
 )
 
+/** Classic "two stacked squares" copy glyph — inline after field text, not a strip control. */
+const CopyIcon = () => (
+    <svg
+        className='bibtex-field-copy-icon'
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        focusable="false"
+    >
+        <rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path
+            d="M4 16V6a2 2 0 0 1 2-2h10"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+        />
+    </svg>
+)
+
+/**
+ * Dim inline copy glyph at the end of a field value (DOI).
+ * Not a chrome button — plain icon that brightens on hover and flashes green on click.
+ */
+const FieldCopyIcon = ({ text, label }: { text: string; label: string }) => {
+    const [flash, set_flash] = useState(false)
+    const flash_timer = useRef<number | null>(null)
+
+    useEffect(() => {
+        return () => {
+            if (flash_timer.current != null) {
+                window.clearTimeout(flash_timer.current)
+            }
+        }
+    }, [])
+
+    const do_copy = (e: ReactMouseEvent | ReactKeyboardEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        copy_to_clipboard(text)
+        set_flash(true)
+        if (flash_timer.current != null) {
+            window.clearTimeout(flash_timer.current)
+        }
+        flash_timer.current = window.setTimeout(() => {
+            flash_timer.current = null
+            set_flash(false)
+        }, 450)
+    }
+
+    return (
+        <span
+            className={flash ? 'bibtex-field-copy is-flash' : 'bibtex-field-copy'}
+            role="button"
+            tabIndex={0}
+            title={label}
+            aria-label={label}
+            onClick={do_copy}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    do_copy(e)
+                }
+            }}
+        >
+            <CopyIcon />
+        </span>
+    )
+}
+
 /**
  * One field value rendered through Obsidian's own MarkdownRenderer — reuses the
  * vault's math/link rendering instead of bundling a second markdown+katex pipeline.
@@ -340,7 +409,8 @@ const CitationCardBody = ({
         return () => owner.unload()
     }, [])
     const paper_id = bibtex.fields.id
-    const title = bibtex.fields.title || paper_id
+    // Display-only: TeX specials → Unicode; raw fields stay for copy/export.
+    const title = display_bibtex_text(bibtex.fields.title || paper_id)
     const year = bibtex.fields.year
 
     const open_mentions = async () => {
@@ -436,24 +506,39 @@ const CitationCardBody = ({
 
             <div className='bibtex-card-fields'>
                 {ordered_field_entries(bibtex.fields).map(([key, value]) => {
-                    let display = value
-                    if (key.toLowerCase().includes('url') || key.toLowerCase() === 'doi') {
-                        const href = key.toLowerCase() === 'doi' && !value.startsWith('http')
+                    // Friendly face only — never rewrite the cached/export form.
+                    const friendly = display_bibtex_text(value)
+                    const key_low = key.toLowerCase()
+                    let display = friendly
+                    if (key_low.includes('url') || key_low === 'doi') {
+                        const href = key_low === 'doi' && !value.startsWith('http')
                             ? `https://doi.org/${value}`
                             : value
-                        display = `[${value}](${href})`
+                        // Link label is human-readable; href keeps the raw field.
+                        display = `[${friendly}](${href})`
                     }
-                    const dense = key.toLowerCase() === 'abstract' ? ' is-abstract' : ''
+                    const dense = key_low === 'abstract' ? ' is-abstract' : ''
+                    // Inline copy glyph at end of text (not strip, not a chrome button). DOI = raw field.
+                    const show_copy = key_low === 'doi' && value.trim().length > 0
                     return (
                         <div key={key} className={`bibtex-card-field${dense}`}>
                             <div className='bibtex-card-field-key'>{key}</div>
-                            <div className='bibtex-markdown-rendered bibtex-card-field-val'>
+                            <div
+                                className={
+                                    show_copy
+                                        ? 'bibtex-card-field-val bibtex-markdown-rendered has-inline-copy'
+                                        : 'bibtex-card-field-val bibtex-markdown-rendered'
+                                }
+                            >
                                 <MarkdownField
                                     app={app}
                                     text={display}
                                     source_path={String(bibtex.source_path)}
                                     owner={owner_ref.current!}
                                 />
+                                {show_copy ? (
+                                    <FieldCopyIcon text={value.trim()} label="Copy DOI" />
+                                ) : null}
                             </div>
                         </div>
                     )
