@@ -3,7 +3,15 @@
  * Pure: no Obsidian APIs — caps, slim search fields, list windowing math.
  */
 
-import { match_query, type BibtexDict, type BibtexElement, type Clash, type ClashHit } from 'src/bibtex'
+import {
+	FREE_TEXT_MATCH_FIELDS,
+	match_query,
+	query_matches_citekey,
+	type BibtexDict,
+	type BibtexElement,
+	type Clash,
+	type ClashHit,
+} from 'src/bibtex'
 
 /** Empty paper-panel list: show this many sorted ids, not the whole library. */
 export const PANEL_EMPTY_PREVIEW = 50
@@ -67,18 +75,10 @@ export const LIST_OVERSCAN = 6
 
 /**
  * Free-text (no `key:`) match only scans these fields.
+ * Alias of {@link FREE_TEXT_MATCH_FIELDS} — single source of truth in bibtex.ts.
  * Long fields like abstract stay available via explicit `abstract:…` queries.
  */
-export const FREE_TEXT_SEARCH_FIELDS = [
-	'id',
-	'title',
-	'author',
-	'year',
-	'doi',
-	'journal',
-	'booktitle',
-	'url',
-] as const
+export const FREE_TEXT_SEARCH_FIELDS = FREE_TEXT_MATCH_FIELDS
 
 export type LibraryListKind = 'empty_preview' | 'search'
 
@@ -99,6 +99,7 @@ function sorted_ids(dict: BibtexDict): string[] {
  * Paper panel listing policy:
  * - empty / whitespace query → first {@link PANEL_EMPTY_PREVIEW} ids (sorted), never full library
  * - non-empty query → match_query hits, hard-capped at {@link PANEL_RESULT_CAP}
+ *   ranked with citekey matches first (see {@link query_matches_citekey}), alpha within each group
  */
 export function list_ids_for_panel(dict: BibtexDict, query: string): LibraryListResult {
 	const q = query.trim()
@@ -113,16 +114,15 @@ export function list_ids_for_panel(dict: BibtexDict, query: string): LibraryList
 		}
 	}
 
-	const ids: string[] = []
-	let matched = 0
+	const key_hits: string[] = []
+	const other_hits: string[] = []
 	for (const id of sorted_ids(dict)) {
 		const entry = dict[id]
 		if (!entry || !match_query(entry, q)) continue
-		matched++
-		if (ids.length < PANEL_RESULT_CAP) {
-			ids.push(id)
-		}
+		;(query_matches_citekey(entry, q) ? key_hits : other_hits).push(id)
 	}
+	const matched = key_hits.length + other_hits.length
+	const ids = [...key_hits, ...other_hits].slice(0, PANEL_RESULT_CAP)
 	return {
 		ids,
 		matched,
@@ -134,29 +134,54 @@ export function list_ids_for_panel(dict: BibtexDict, query: string): LibraryList
 /**
  * EditorSuggest listing: same match rules, capped at {@link SUGGEST_RESULT_CAP}.
  * Empty query still returns a capped prefix so `{` alone is usable on small libs
- * without dumping 10k rows.
+ * without dumping 10k rows. Non-empty query ranks citekey matches first (see
+ * {@link query_matches_citekey}), alpha within each group.
  */
 export function list_ids_for_suggest(dict: BibtexDict, query: string): LibraryListResult {
 	const q = query.trim()
-	const ids: string[] = []
-	let matched = 0
-
-	for (const id of sorted_ids(dict)) {
-		const entry = dict[id]
-		if (!entry) continue
-		if (q.length > 0 && !match_query(entry, q)) continue
-		matched++
-		if (ids.length < SUGGEST_RESULT_CAP) {
-			ids.push(id)
+	if (q.length === 0) {
+		const all = sorted_ids(dict)
+		const ids = all.slice(0, SUGGEST_RESULT_CAP)
+		return {
+			ids,
+			matched: all.length,
+			truncated: all.length > ids.length,
+			kind: 'empty_preview',
 		}
 	}
 
+	const key_hits: string[] = []
+	const other_hits: string[] = []
+	for (const id of sorted_ids(dict)) {
+		const entry = dict[id]
+		if (!entry || !match_query(entry, q)) continue
+		;(query_matches_citekey(entry, q) ? key_hits : other_hits).push(id)
+	}
+	const matched = key_hits.length + other_hits.length
+	const ids = [...key_hits, ...other_hits].slice(0, SUGGEST_RESULT_CAP)
 	return {
 		ids,
 		matched,
 		truncated: matched > ids.length,
-		kind: q.length === 0 ? 'empty_preview' : 'search',
+		kind: 'search',
 	}
+}
+
+/**
+ * Cheap existence check for EditorSuggest's `onTrigger` — short-circuits on
+ * the first match instead of building the capped id list that
+ * {@link list_ids_for_suggest} does, since that caller only needs a boolean
+ * to decide whether to open the suggest popup at all (the actual capped list
+ * is fetched separately by `getSuggestions`, which does need it).
+ */
+export function has_any_match(dict: BibtexDict, query: string): boolean {
+	const q = query.trim()
+	for (const id of Object.keys(dict)) {
+		const entry = dict[id]
+		if (!entry) continue
+		if (q.length === 0 || match_query(entry, q)) return true
+	}
+	return false
 }
 
 /**
@@ -241,6 +266,37 @@ export function visible_window(
 	const visible = Math.ceil(viewport_h / safe_row) + overscan * 2
 	const end = Math.min(total, start + visible)
 	return { start, end }
+}
+
+/**
+ * True when a virtualized window actually needs repainting. `list_ref` is an
+ * identity token for the current list (e.g. the rows container element) —
+ * comparing it alongside `{start, end}` means a stale cached range from a
+ * previous query/sort can never wrongly suppress a real paint, since a fresh
+ * list always gets a new `list_ref`. `prev === null` (first paint) always repaints.
+ */
+export function should_repaint_window<T>(
+	prev: { list_ref: T; start: number; end: number } | null,
+	next: { list_ref: T; start: number; end: number },
+): boolean {
+	if (!prev) return true
+	return prev.list_ref !== next.list_ref || prev.start !== next.start || prev.end !== next.end
+}
+
+/**
+ * Which currently-mounted ids should be unmounted (fell out of the window)
+ * and which are newly visible (need mounting), for windowed row reuse —
+ * ids present in both stay untouched (same DOM node, same live hover chip).
+ */
+export function diff_window_ids(mounted_ids: Iterable<string>, next_ids: string[]): { added: string[]; removed: string[] } {
+	const next_set = new Set(next_ids)
+	const removed: string[] = []
+	for (const id of mounted_ids) {
+		if (!next_set.has(id)) removed.push(id)
+	}
+	const mounted_set = new Set(mounted_ids)
+	const added = next_ids.filter((id) => !mounted_set.has(id))
+	return { added, removed }
 }
 
 /** True when mounting `n` full hover hosts would be reckless without a cap. */

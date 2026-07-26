@@ -50,4 +50,23 @@ describe('find_prompt_trigger', () => {
 		const line = '`{Smith2020}` and `{Doe2021}`'
 		expect(find_prompt_trigger(line, 27, has_doe)).toMatchObject({ query: 'Doe2021' })
 	})
+
+	it('allows spaces in the query so multi-token fuzzy search reaches the matcher', () => {
+		// Without spaces in the capture group, `{antibio magepix` never stays open
+		// after the space — panel search worked; the { suggest did not.
+		const has_fuzzy = (query: string) =>
+			query.includes('antibio') || query.includes('magepix') || query === ''
+		const line = '`{antibio magepix'
+		const cursor = line.length // caret at end of partial cite
+		const result = find_prompt_trigger(line, cursor, has_fuzzy)
+		expect(result?.query).toBe('antibio magepix')
+		expect(result?.content_start).toBe(2)
+		expect(result?.content_end).toBe(cursor)
+	})
+
+	it('still refuses JSON-like spans when has_candidate is false (space-tolerant pattern)', () => {
+		const has_no_match = () => false
+		// Cursor after "key" (content boundary only when full query is "key" without space run)
+		expect(find_prompt_trigger('`{key: value}`', 5, has_no_match)).toBeNull()
+	})
 })

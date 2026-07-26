@@ -139,7 +139,7 @@ export const LIST_FONT_SIZE_MAX = 20
 /**
  * Abstracts policy (SPEED S3): keep abstracts on `fields` for cards/export,
  * but free-text search does not scan them unless the query uses `abstract:…`
- * (see `match_query` / `FREE_TEXT_SEARCH_FIELDS`).
+ * (see `match_query` / `FREE_TEXT_MATCH_FIELDS`).
  */
 export const ABSTRACTS_IN_HOT_CACHE = true
 

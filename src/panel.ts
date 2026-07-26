@@ -1,12 +1,14 @@
 import { addIcon, ItemView, Notice, WorkspaceLeaf, SearchComponent, setIcon, type IconName } from 'obsidian'
 import type { BibtexDict, BibtexElement, Clash } from 'src/bibtex'
-import { display_bibtex_text } from 'src/tex-display'
 import { normalize_card_font_size, normalize_list_font_size, normalize_panel_chip_font_size, probe_missing_pdf_chunked, type ScanHit } from 'src/cache-ops'
+import { Debouncer } from 'src/debounce'
+import { render_display_text } from 'src/tex-display'
 import { CacheOpsModal, CopyExportModal } from 'src/command-modals'
 import { render_hover, unmount_hover_hosts } from 'src/hover'
 import {
     CLASH_RESULT_CAP,
     compare_by_mention_count,
+    diff_window_ids,
     DISCOVER_RESULT_CAP,
     filtered_ids,
     list_clashes_for_panel,
@@ -17,6 +19,7 @@ import {
     missing_pdf_row_height_px,
     PANEL_RESULT_CAP,
     random_sample_ids,
+    should_repaint_window,
     visible_window,
     type LibraryListResult,
 } from 'src/library-scale'
@@ -35,6 +38,9 @@ addIcon(
 
 /** A view mode swaps what the panel's list shows; only one is active at a time. */
 type PanelMode = 'papers' | 'clash' | 'missing-pdf'
+
+/** Search-box debounce — coalesces rapid keystrokes into one scan+repaint instead of one per key. */
+const SEARCH_DEBOUNCE_MS = 130
 
 /**
  * Represents the paper panel view in the Obsidian app.
@@ -75,8 +81,21 @@ export class PaperPanelView extends ItemView {
     private list_ids_view: string[] = []
     /** Live virtual row height (px) — scales with list font so title descenders are not clipped. */
     private list_row_px = list_row_height_px()
+    /**
+     * Rows currently mounted in list mode, keyed by id — lets
+     * {@link paint_list_window} keep a row's DOM (and its live hover chip)
+     * untouched across scroll ticks when that id stays in the visible window,
+     * instead of tearing down and remounting the whole window every tick.
+     */
+    private list_row_els: Map<string, HTMLElement> = new Map()
+    /** Last painted `{start, end}` for the current `list_rows_el` — repaint is a no-op if unchanged. */
+    private list_paint_range: { list_ref: HTMLElement; start: number; end: number } | null = null
+    /** Same no-op-repaint guard as {@link list_paint_range}, for the missing-PDF window. */
+    private missing_pdf_paint_range: { list_ref: HTMLElement; start: number; end: number } | null = null
     /** Discover mode's scrolling content region — status + chips scroll here; the footer stays pinned below it. */
     private discover_scroll_el: HTMLElement | null = null
+    /** Coalesces rapid search-box keystrokes; cleared query bypasses it (see onOpen's onChange). */
+    private search_debouncer = new Debouncer(SEARCH_DEBOUNCE_MS)
 
     constructor(leaf: WorkspaceLeaf, plugin: BibtexScholar) {
         super(leaf)
@@ -123,7 +142,21 @@ export class PaperPanelView extends ItemView {
         const search_wrap = query_row.createEl('div', { cls: 'bibtex-panel-search' })
         new SearchComponent(search_wrap).onChange((query) => {
             if (this.mode !== 'papers') return
-            this.show_papers(query)
+            // Clearing the query jumps back to the full/preview list immediately —
+            // debouncing that specific transition would read as sluggish. Every
+            // other keystroke coalesces so a fast typist doesn't trigger a full
+            // scan + repaint per character.
+            if (query.trim().length === 0) {
+                this.search_debouncer.cancel()
+                this.show_papers(query)
+                return
+            }
+            this.search_debouncer.trigger(() => {
+                // onClose cancels this debouncer, so only a mode switch (not a
+                // closed panel) can still make this callback stale.
+                if (this.mode !== 'papers') return
+                this.show_papers(query)
+            })
         })
 
         this.clash_btn = query_row.createEl('button', {
@@ -172,6 +205,7 @@ export class PaperPanelView extends ItemView {
     }
 
     async onClose() {
+        this.search_debouncer.cancel()
         this.missing_pdf_probe_epoch++
         this.cite_index_build_epoch++
         if (this.list_el) {
@@ -184,8 +218,11 @@ export class PaperPanelView extends ItemView {
         unmount_hover_hosts(this.list_el)
         this.missing_pdf_scroll_el = null
         this.missing_pdf_rows_el = null
+        this.missing_pdf_paint_range = null
         this.list_scroll_el = null
         this.list_rows_el = null
+        this.list_row_els = new Map()
+        this.list_paint_range = null
         this.discover_scroll_el = null
         this.list_el.empty()
         // list_el itself becomes a flex pass-through so an inner scroll div can fill
@@ -504,19 +541,45 @@ export class PaperPanelView extends ItemView {
             LIST_OVERSCAN,
         )
 
-        // Rows carry a live citekey chip (hover card) — unmount before wiping so a
-        // fast scroll doesn't leak chip_registry / citation_popup registrations
-        // (list mode repaints its visible window on every scroll tick).
-        unmount_hover_hosts(rows_el)
-        rows_el.empty()
+        // No-op if the visible window hasn't moved since the last paint (many scroll
+        // events round to the same row window).
+        const next_range = { list_ref: rows_el, start, end }
+        if (!should_repaint_window(this.list_paint_range, next_range)) {
+            return
+        }
+        this.list_paint_range = next_range
+
         rows_el.style.transform = `translateY(${start * row_h}px)`
 
-        for (let i = start; i < end; i++) {
-            const id = ids[i]
+        // Keep rows whose id is still visible untouched (same DOM node, same live
+        // hover chip) — only mount ids newly entering the window and unmount ids
+        // that left it, instead of tearing down and rebuilding the whole window.
+        const next_ids = ids.slice(start, end)
+        const { removed } = diff_window_ids(this.list_row_els.keys(), next_ids)
+        for (const id of removed) {
+            const row = this.list_row_els.get(id)
+            if (!row) continue
+            unmount_hover_hosts(row)
+            row.remove()
+            this.list_row_els.delete(id)
+        }
+
+        const next_rows: HTMLElement[] = []
+        for (const id of next_ids) {
+            const existing = this.list_row_els.get(id)
+            if (existing) {
+                next_rows.push(existing)
+                continue
+            }
             const entry = this.bibtex_dict[id]
             if (!entry) continue
-            this.add_list_row(rows_el, id, entry, row_h)
+            const row = this.add_list_row(rows_el, id, entry, row_h)
+            this.list_row_els.set(id, row)
+            next_rows.push(row)
         }
+        // Single reorder call: browsers move already-attached nodes rather than
+        // recreating them, so persisted rows are repositioned, not rebuilt.
+        rows_el.replaceChildren(...next_rows)
         this.plugin.perf.panel_rows_mounted = end - start
     }
 
@@ -526,15 +589,13 @@ export class PaperPanelView extends ItemView {
      * Click anywhere else in the row opens source — the chip's own click
      * toggles the card instead (stopPropagation, same as any other chip).
      */
-    private add_list_row(parent: HTMLElement, id: string, entry: BibtexElement, row_h: number = this.list_row_px) {
+    private add_list_row(parent: HTMLElement, id: string, entry: BibtexElement, row_h: number = this.list_row_px): HTMLElement {
         const row = parent.createEl('div', { cls: 'bibtex-panel-list-row' })
         row.style.height = `${row_h}px`
         row.addEventListener('click', () => this.plugin.open_line(String(entry.source_path), entry.source_line ?? 0))
 
-        row.createEl('div', {
-            cls: 'bibtex-panel-list-title',
-            text: display_bibtex_text(entry.fields.title || id),
-        })
+        const title_el = row.createEl('div', { cls: 'bibtex-panel-list-title' })
+        render_display_text(title_el, entry.fields.title || id)
 
         const meta = row.createEl('div', { cls: 'bibtex-panel-list-meta' })
         const chip_host = meta.createEl('span', { cls: 'bibtex-panel-list-chip' })
@@ -551,6 +612,7 @@ export class PaperPanelView extends ItemView {
             // No leading " · " — flex gap on .bibtex-panel-list-meta separates chip from meta.
             meta.createEl('span', { cls: 'bibtex-panel-list-meta-rest', text: rest_parts.join(' · ') })
         }
+        return row
     }
 
     /** List clashes with a hard mount cap, same policy as {@link show_papers}. */
@@ -721,6 +783,12 @@ export class PaperPanelView extends ItemView {
             MISSING_PDF_OVERSCAN,
         )
 
+        const next_range = { list_ref: rows_el, start, end }
+        if (!should_repaint_window(this.missing_pdf_paint_range, next_range)) {
+            return
+        }
+        this.missing_pdf_paint_range = next_range
+
         rows_el.empty()
         rows_el.style.transform = `translateY(${start * row_h}px)`
 
@@ -744,9 +812,11 @@ export class PaperPanelView extends ItemView {
 
         const title = row.createEl('span', {
             cls: 'bibtex-panel-clash-link is-path',
-            text: `[${display_bibtex_text(String(bibtex.fields.title || bibtex.source_path))}]`,
             attr: { title: String(bibtex.source_path) },
         })
+        title.append('[')
+        render_display_text(title, String(bibtex.fields.title || bibtex.source_path))
+        title.append(']')
         title.addEventListener('click', () => this.plugin.open_line(String(bibtex.source_path), 0))
     }
 

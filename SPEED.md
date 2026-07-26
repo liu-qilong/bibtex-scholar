@@ -29,8 +29,9 @@ Update this file as work lands. If a session dies, **this file is the source of 
 | Rename vault scan | `src/vault-scan.ts` | Chunked, cancelable |
 | Idle/unload audit | `src/idle-audit.ts` | No leaked work |
 | Panel/suggest caps | `src/library-scale.ts` | Hard mount caps (S1) |
-| Slim free-text match | `src/bibtex.ts` `match_query` | No abstract on every keystroke |
+| Slim free-text match | `src/bibtex.ts` `match_query` | No abstract on every keystroke; TeX→Unicode + accent-fold + token AND; word-level Levenshtein (length-scaled budget) via `token_matches_haystack`; per-entry corpus cached by object identity (S8) |
 | Scale report command | `main` → `format_scale_report` | Visible counters (S2) |
+| List-mode virtualized repaint | `src/panel.ts` `paint_list_window`, `src/library-scale.ts` `should_repaint_window`/`diff_window_ids` | Scroll/keystroke repaint is a no-op when the window is unchanged; only ids entering/leaving the window are (re)mounted (S8) |
 
 ---
 
@@ -58,6 +59,7 @@ Update this file as work lands. If a session dies, **this file is the source of 
 | **S5** | **Incremental rescan** (fingerprints; merge; hard reset) | **done** | Daily-driver large vault |
 | **S6** | Reverse indexes (citekey→paths; path→citekeys) | **done** | Fast rename / retarget |
 | **S7** | Virtualize missing-PDF (+ optional cache) | **done** | Safe occasional audit |
+| **S8** | Hot-path search/render perf: per-entry haystack cache, search-box debounce, suggest double-scan dedupe, keyed list-row reuse | **in_progress** | Faster typing on large libraries |
 
 Status: `todo` | `in_progress` | `done` | `blocked`
 
@@ -106,6 +108,16 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 - [x] Virtualized rows (`visible_window` + scroll paint)
 - [x] Optional cached result + Recheck button
 
+### S8 checklist
+- [x] Per-entry free-text search corpus cached by object identity (`search_corpus_cache` in `src/bibtex.ts`) — `match_query` no longer rebuilds/normalizes an entry's slim corpus on every keystroke, only once per entry object. Safe because `upsert_entry`/`rebuild_dict_from_hits` always construct a new entry object on real content changes and never mutate `.fields` in place.
+- [x] Search-box debounce (`src/debounce.ts` `Debouncer`, 130ms trailing) wired into `panel.ts`'s `SearchComponent.onChange` — clearing the query still fires immediately (no debounce on "back to the full list"); `onClose` cancels any pending call.
+- [x] EditorSuggest per-keystroke double scan deduped: `onTrigger` now uses `has_any_match` (short-circuits on first *match*) instead of a second full `list_ids_for_suggest` call — `getSuggestions` still does the one real capped-list scan. Note: on a *miss* (nothing matches) `has_any_match` still walks the whole dict same as before; the win there is dropping the redundant `sorted_ids` allocate+sort, not short-circuiting — profile misses separately if they show up as hot.
+- [x] List-mode scroll/keystroke repaint no longer tears down and rebuilds the whole visible window every tick: `should_repaint_window` no-ops when `{list_ref, start, end}` is unchanged; `diff_window_ids` + a `Map<id, HTMLElement>` (`list_row_els`) keep rows whose id stays visible untouched (same DOM node, same live hover chip) — only ids entering/leaving the window are mounted/unmounted. Missing-PDF window got the same no-op guard (no row-diff — those rows have no hover chip, so the win is smaller and the plan marked it lower priority).
+- [ ] **Explicitly not done, by design:** `list_ids_for_panel`/`list_ids_for_suggest` still scan every entry even after their mount cap is hit — the exact `matched` count is load-bearing UI copy ("347 matches — showing first 80") and is asserted exactly in tests. Do not add an early-exit here without an explicit UX sign-off on approximating/truncating that count.
+- [ ] **Deferred, by design:** discover/clash mode chip remount on every keystroke was *not* virtualized — `docs/one-root-per-chip.md`/this file's S1 checklist already records discover mode as deliberately capped-not-virtualized (chips need real listeners). A within-cap by-id diff (same technique as list mode, minus virtualization) would be the next safe step if this shows up as hot in practice; not implemented yet.
+- [ ] **Deferred, measure first:** `display_bibtex_text` per-field memoization — likely moot now that Step 6 means unchanged rows don't re-render at all; only worth doing if profiling on a real TeX-heavy library still shows it hot.
+- [x] Citekey matches ranked above other-field matches in panel search and EditorSuggest (`query_matches_citekey` in `src/bibtex.ts`; wired into `list_ids_for_panel`/`list_ids_for_suggest` in `src/library-scale.ts`) — alpha order preserved within each rank group. List mode's explicit A–Z/Most-cited sort is untouched (user-selected ordering, not implicit relevance).
+
 ---
 
 ## Non-goals
@@ -137,7 +149,8 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 | `src/cache-ops.ts` | slim cache, fingerprints, merge, PDF probe |
 | `src/vault-scan.ts` | chunked scans + cite reverse index |
 | `src/main.ts` | rescan; rename scan via cite index |
-| `tests/*` | S1–S7 pure helpers + 10k smoke |
+| `src/debounce.ts` | clock-injectable trailing debouncer (S8) |
+| `tests/*` | S1–S8 pure helpers + 10k smoke |
 | `docs/stability-trust.md` | budgets |
 
 ---
@@ -154,6 +167,7 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 | 2026-07-19 | **S6+S7 done:** cite reverse index (build on first rename scan; restrict later); missing-PDF chunked probe + virtual list + cache/Recheck. Program S1–S7 complete. |
 | 2026-07-22 | Follow-up (outside S1–S7, tracked in `docs/one-root-per-chip.md`): citekey matching made case-insensitive (`src/citekey-index.ts`); one-root-per-chip landed — chips are plain DOM, one shared React root renders the (0-or-1) open card instead of one root per chip. `tsc` + `npm test` (122 tests) + `npm run build` green; **no manual Obsidian pass yet** — see checklist in `docs/one-root-per-chip.md` §6. |
 | 2026-07-22 | **S1 follow-up done (list mode only):** paper panel split into two views — **discover** (renamed condensed chips: capped `DISCOVER_RESULT_CAP`=140, randomized empty-query preview + re-roll, clash/missing-PDF coloring; not virtualized, by design) and **list** (new: unbounded, virtualized plain-DOM rows via `visible_window`, sortable A–Z or by mention count). Mention-count sort reuses the existing `cite_index` reverse index rather than a new probe — `scan_inline_cites_chunked`'s `old_id` is now optional so it can warm the index without a rename target (`BibtexScholar.ensure_cite_index()`); `cite_index_count_for()` added (O(1), vs. the display-oriented `cite_index_paths_for()`) so panel sorting doesn't sort+spread a path set per id per render. `tsc` + `npm test` (132 tests) + `npm run build` green; **no manual Obsidian pass yet** — toggle persistence, randomize-again, coloring, and scroll virtualization are all unverified outside jsdom-adjacent unit tests (panel.ts itself has no test file, same as the pre-existing clash/missing-pdf panel code). |
+| 2026-07-26 | **S8 in progress:** per-entry search corpus cache (WeakMap by object identity) cut a 10k-entry synthetic benchmark from ~33ms/keystroke to ~7ms/keystroke steady-state (measured via a throwaway `list_ids_for_panel` timing script, not committed); search-box debounce (130ms trailing, immediate on query-clear); EditorSuggest `onTrigger` double-scan deduped via `has_any_match`; list-mode scroll/keystroke repaint now diffs the visible window by id instead of tearing down and rebuilding it every tick (`should_repaint_window` + `diff_window_ids` in `src/library-scale.ts`). Deliberately **not** done: early-exit on the capped scan loops (matched-count is load-bearing UI copy), discover-mode virtualization (SPEED.md already records that as a non-goal — chips need real listeners), and `display_bibtex_text` memoization (measure-first, likely moot after the row-diff change). `tsc` + `npm test` (315 tests) + `npm run build` green; **no manual Obsidian pass yet** for the debounce feel or scroll behavior under real pointer input. |
 
 ---
 
@@ -161,6 +175,6 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 
 1. Read **SPEED.md** Status column.
 2. `git status` / branch; note WIP may be uncommitted.
-3. `npm test` baseline (expect ≥100 tests).
-4. Program **S1–S7 complete**. Follow-ups only if new pain appears (~~true panel chip virtualization~~ — done for list mode, 2026-07-22; abstract cold store, S6 durable index).
+3. `npm test` baseline (expect ≥315 tests).
+4. Program **S1–S7 complete; S8 in progress** (search/render hot-path perf — see S8 checklist for what's done vs. deliberately deferred).
 5. On slice done: Status → `done`, session log line, update trust doc if needed.

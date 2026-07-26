@@ -12,17 +12,26 @@ export type PromptTriggerMatch = {
 	content_end: number
 }
 
-const TRIGGER_PATTERN = /(`)([{\[])([^}\]`\ ]*)([}\]]?)(`?)/g
+/**
+ * Capture the free-text query inside `` `{…` `` / `` `[…` ``.
+ *
+ * Spaces are **allowed** so multi-token fuzzy search reaches {@link match_query}
+ * (`antibio magepix`). Forbidden: `}`, `]`, backtick (span delimiters).
+ * Previously ` ` was excluded, so typing a space closed the suggest and never
+ * ran title/author fuzzy matching — the panel path was fine; the tooltip was not.
+ */
+const TRIGGER_PATTERN = /(`)([{\[])([^}\]`]*)([}\]]?)(`?)/g
 
 /**
- * Find a `` `{id<cursor>` `` / `` `[id<cursor>` `` trigger on `line` at `cursor_ch`.
+ * Find a `` `{query<cursor>` `` / `` `[query<cursor>` `` trigger on `line` at `cursor_ch`.
  *
- * `has_candidate(query)` gates the match: the id charset is otherwise unconstrained,
+ * `has_candidate(query)` gates the match: the query charset is otherwise unconstrained,
  * so this pattern also matches ordinary backtick code spans that happen to start with
  * `{`/`[` (JSON snippets, array literals, etc.) — very common in research notes.
  * Without the gate, landing the cursor there (e.g. a normal click to edit that code)
  * pops the suggestion modal and steals the next click meant for the editor. Only
- * trigger when at least one cached citekey could plausibly match `query`.
+ * trigger when at least one cached entry could plausibly match `query` (same
+ * {@link list_ids_for_suggest} / {@link match_query} rules as the paper panel).
  */
 export function find_prompt_trigger(
 	line: string,

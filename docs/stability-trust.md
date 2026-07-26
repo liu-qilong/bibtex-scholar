@@ -43,6 +43,9 @@ Focus areas: **cursor management**, **cache durability**, **data integrity**, **
 | Uncache uses Obsidian `ConfirmActionModal` (not `window.confirm`) and `restore_editor_focus` so card dismiss does not leave typing dead | `src/hover.tsx` | `tests/hover-popup.test.tsx` |
 | `HoverWidget.destroy(dom)` unmounts via the DOM node CM passes in — not instance fields — so decoration rebuilds that reuse DOM via `eq` still clean up `chip_registry` / popup listeners when the widget is later removed | `src/hover.tsx` (`HoverWidget`) | `tests/hover-popup.test.tsx` |
 | Directory BibTeX export: matches by real path segment (`"notes/"` prefix), not a same-prefixed sibling folder (`"notes-archive/"`); union of entries sourced under the folder *and* entries cited by any note under it even when sourced elsewhere; renders only the requested ids, sorted | `src/cache-ops.ts` (`ids_under_path`, `format_bibtex_for_ids`), `src/vault-scan.ts` (`cite_index_all_cites`), `src/main.ts` (`export_directory_bibtex`) | `tests/cache-ops.test.ts`, `tests/vault-scan.test.ts` |
+| Per-entry free-text search corpus is cached by entry object identity (self-invalidating: `upsert_entry` always swaps in a new object on real changes, never mutates `.fields`) — a stale entry's cache slot is simply unreachable, never returns a stale hit | `src/bibtex.ts` (`match_query`, `search_corpus_cache`) | `tests/library-scale.test.ts` |
+| `Debouncer` is a clock-injectable trailing debounce (same convention as `CitationPopupController`'s `PopupClock`): rapid triggers coalesce into one call after the delay; `cancel()` before the deadline never fires | `src/debounce.ts` | `tests/debounce.test.ts` |
+| `should_repaint_window` keys on both `{start, end}` and a list-identity token, so a stale cached range from a previous query/sort can never suppress a real repaint (a fresh list always gets a new identity token); `diff_window_ids` only reports ids that actually entered/left a window | `src/library-scale.ts` | `tests/library-scale.test.ts` |
 
 ## Runtime patches (main plugin)
 
@@ -70,9 +73,10 @@ Notes on the ongoing scale work live in **`SPEED.md`**. Budgets set so far:
 | Budget | Target | Mechanism |
 |--------|--------|-----------|
 | Paper panel discover-mode mounts | search ≤ **80** chips (`PANEL_RESULT_CAP`); empty-query random preview ≤ **140** (`DISCOVER_RESULT_CAP`), not virtualized by design (chips need real listeners to hover) | `list_ids_for_panel`, `random_sample_ids` |
-| Paper panel list-mode mounts | unbounded id list, but DOM stays viewport-sized via `visible_window` (same technique as missing-PDF) | `filtered_ids`, panel `paint_list_window` |
-| EditorSuggest rows | ≤ **50** (`SUGGEST_RESULT_CAP`) | `list_ids_for_suggest` |
-| Free-text search fields | slim catalog only (not abstract) | `match_query` |
+| Paper panel list-mode mounts | unbounded id list, but DOM stays viewport-sized via `visible_window` (same technique as missing-PDF); repaint is a no-op when the window is unchanged, and only ids entering/leaving the window are (re)mounted (not the whole window every scroll tick) | `filtered_ids`, panel `paint_list_window`, `should_repaint_window`/`diff_window_ids` |
+| EditorSuggest rows | ≤ **50** (`SUGGEST_RESULT_CAP`); `onTrigger` uses a short-circuiting existence check instead of a second full capped-list scan per keystroke | `list_ids_for_suggest`, `has_any_match` |
+| Free-text search fields | slim catalog only (not abstract); TeX→Unicode + accent-fold + multi-token AND; per-entry corpus cached by object identity so it's normalized once, not on every keystroke | `match_query` + `normalize_for_search` |
+| Panel search box | 130ms trailing debounce (immediate on query-clear) coalesces rapid keystrokes into one scan + repaint | `src/debounce.ts` (`Debouncer`), `panel.ts` |
 | Durable entry payload | no double-stored `source`; abstracts on `fields` | `slim_entry` / `entry_source` |
 | Soft rescan file reads | only new/changed paths (mtime+size fp) | `path_fingerprints` / `classify_path_fingerprints` |
 | Rename cite scan (warm index) | only known citing paths (+ active file) | `CitePathIndex` |

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { BibtexDict, BibtexElement, Clash } from 'src/bibtex'
-import { match_query } from 'src/bibtex'
+import { match_query, query_matches_citekey } from 'src/bibtex'
 import {
 	CLASH_RESULT_CAP,
 	compare_by_mention_count,
+	diff_window_ids,
 	DISCOVER_RESULT_CAP,
 	filtered_ids,
+	has_any_match,
 	list_clashes_for_panel,
 	list_ids_for_panel,
 	list_ids_for_suggest,
@@ -16,6 +18,7 @@ import {
 	PANEL_EMPTY_PREVIEW,
 	PANEL_RESULT_CAP,
 	random_sample_ids,
+	should_repaint_window,
 	SUGGEST_RESULT_CAP,
 	is_unsafe_full_mount,
 	visible_window,
@@ -52,6 +55,134 @@ describe('match_query slim free-text', () => {
 
 	it('still matches abstract via explicit key:value', () => {
 		expect(match_query(e, 'abstract:unique-abstract-token-xyz')).toBe(true)
+	})
+
+	it('matches Unicode / ASCII / TeX forms via search normalize (accent-fold)', () => {
+		const accented = entry('Mueller2019', {
+			title: 'Learning with M{\\"u}ller trees',
+			author: 'G{\\"u}nter M{\\"u}ller',
+		})
+		expect(match_query(accented, 'Müller')).toBe(true)
+		expect(match_query(accented, 'Muller')).toBe(true)
+		expect(match_query(accented, 'Günter')).toBe(true)
+		// Raw TeX still matches (normalized on both sides).
+		expect(match_query(accented, 'M{\\"u}ller')).toBe(true)
+	})
+
+	it('matches multi-word free-text order-independently within the entry', () => {
+		const e2 = entry('DiffX2', {
+			title: 'Differential Transformer',
+			author: 'Alice Smith',
+			year: '2020',
+		})
+		expect(match_query(e2, 'transformer differential')).toBe(true)
+		// Entry-level: tokens may live in different slim fields.
+		expect(match_query(e2, 'smith 2020')).toBe(true)
+		expect(match_query(e2, 'differential smith')).toBe(true)
+		// Missing token → no match.
+		expect(match_query(e2, 'smith 2019')).toBe(false)
+	})
+
+	it('key:value still accent-folds and token-ANDs within that field', () => {
+		const accented = entry('Mueller2019b', {
+			title: 'Other',
+			author: 'G{\\"u}nter M{\\"u}ller',
+		})
+		expect(match_query(accented, 'author:Muller')).toBe(true)
+		expect(match_query(accented, 'author:Gunter Muller')).toBe(true)
+		expect(match_query(accented, 'title:Muller')).toBe(false)
+	})
+
+	it('semicolon still ANDs independent clauses', () => {
+		const e2 = entry('DiffX3', {
+			title: 'Differential Transformer',
+			author: 'Alice Smith',
+			year: '2020',
+		})
+		expect(match_query(e2, 'differential;smith')).toBe(true)
+		expect(match_query(e2, 'differential;jones')).toBe(false)
+	})
+
+	it('treats colons in titles as free-text, not as key:value', () => {
+		const e2 = entry('Vaswani2017', {
+			title: 'Attention Is All You Need: Transformers',
+			author: 'Ashish Vaswani',
+		})
+		// Phrase with colon must still match (not parsed as field "Attention Is All You Need").
+		expect(match_query(e2, 'Attention Is All You Need: Transformers')).toBe(true)
+		expect(match_query(e2, 'need: transformers')).toBe(true)
+		expect(match_query(e2, 'vaswani transformers')).toBe(true)
+	})
+
+	it('field-like key absent on entry does not free-text-fallback', () => {
+		const e2 = entry('BookOnly', {
+			title: 'Nature of Learning',
+			// no journal field
+		})
+		// Must not match just because "Nature" appears in the title.
+		expect(match_query(e2, 'journal:Nature')).toBe(false)
+	})
+
+	it('fuzzy: antibiofilm / magepix paper — partials, typos, any order', () => {
+		const paper = entry('CeballosGarzon-antibiofilm_2025', {
+			title:
+				'Antibiofilm activity of manogepix, ibrexafungerp, amphotericin B, rezafungin, and caspofungin against <i>Candida</i> spp. biofilms of reference and clinical strains',
+			author: 'Ceballos-Garzon, Andres and Lebrat, Julien and Holzapfel, Marion and Josa, Diego F. and Welsch, Jeremy and Mercer, Derry',
+			year: '2025',
+			journal: 'Antimicrobial Agents and Chemotherapy',
+			doi: '10.1128/aac.00137-25',
+		})
+		// Full + typo
+		expect(match_query(paper, 'antibiofilm magepix')).toBe(true)
+		// Prefix stub + typo (user-reported shape)
+		expect(match_query(paper, 'antibio magepix')).toBe(true)
+		// Out of order
+		expect(match_query(paper, 'magepix antibio')).toBe(true)
+		expect(match_query(paper, 'manoge antibio')).toBe(true)
+		// Prefix typo on a long word (full-word length-gate used to miss this)
+		expect(match_query(paper, 'antbio manogepix')).toBe(true)
+		expect(match_query(paper, 'manogepix')).toBe(true)
+		// Unrelated typo should not match
+		expect(match_query(paper, 'antibiofilm completelyunrelatedtypozz')).toBe(false)
+	})
+
+	it('caches the free-text corpus per entry object without leaking stale content across a new object', () => {
+		// Same entry object queried repeatedly must stay consistent (cache reused, not stale-wrong).
+		const e2 = entry('CacheX', { title: 'Original Title Xyzzy' })
+		expect(match_query(e2, 'Xyzzy')).toBe(true)
+		expect(match_query(e2, 'Xyzzy')).toBe(true) // second call hits the cache
+		expect(match_query(e2, 'Nonexistentword')).toBe(false)
+
+		// A distinct object (as upsert_entry always constructs on real field changes)
+		// with different content must not reuse the old object's cached corpus.
+		const e3 = entry('CacheX', { title: 'Completely Different Wobble' })
+		expect(match_query(e3, 'Xyzzy')).toBe(false)
+		expect(match_query(e3, 'Wobble')).toBe(true)
+	})
+})
+
+describe('query_matches_citekey', () => {
+	it('true when the free-text query matches within the citekey', () => {
+		const e = entry('Smith2020', { title: 'Unrelated Title' })
+		expect(query_matches_citekey(e, 'Smith2020')).toBe(true)
+		expect(query_matches_citekey(e, 'smith')).toBe(true)
+	})
+
+	it('false when the query only matches other fields, not the citekey', () => {
+		const e = entry('DiffX', { title: 'Differential Transformer' })
+		expect(query_matches_citekey(e, 'Differential')).toBe(false)
+	})
+
+	it('false for a query that is entirely key:value clauses (no free-text component)', () => {
+		const e = entry('Smith2020', { author: 'Smith' })
+		expect(query_matches_citekey(e, 'author:Smith')).toBe(false)
+	})
+
+	it('multi-clause query only counts as a key match if every free-text clause hits the citekey', () => {
+		const e = entry('Smith2020', { title: 'Other' })
+		// "Smith2020" hits the citekey, "Other" does not -> not a pure key match.
+		expect(query_matches_citekey(e, 'Smith2020;Other')).toBe(false)
+		expect(query_matches_citekey(e, 'Smith2020;2020')).toBe(true)
 	})
 })
 
@@ -93,6 +224,25 @@ describe('list_ids_for_panel', () => {
 		expect(r.matched).toBe(5)
 		expect(r.truncated).toBe(false)
 	})
+
+	it('ranks citekey matches above other-field matches, even out of alpha order', () => {
+		const d: BibtexDict = {}
+		// Alphabetically "AAA..." would sort before "ZZZ...", but only the
+		// second entry matches via its citekey — it should be ranked first.
+		d['AAA_Other'] = entry('AAA_Other', { title: 'Mentions Smith2020 in the title' })
+		d['ZZZ_Smith2020'] = entry('ZZZ_Smith2020', { title: 'Unrelated' })
+		const r = list_ids_for_panel(d, 'Smith2020')
+		expect(r.ids).toEqual(['ZZZ_Smith2020', 'AAA_Other'])
+	})
+
+	it('keeps alpha order within each rank group', () => {
+		const d: BibtexDict = {}
+		d['Zebra_key'] = entry('Zebra_key', {}) // citekey match
+		d['Alpha_key'] = entry('Alpha_key', {}) // citekey match
+		d['Middle'] = entry('Middle', { title: 'key mention in title' }) // other-field match
+		const r = list_ids_for_panel(d, 'key')
+		expect(r.ids).toEqual(['Alpha_key', 'Zebra_key', 'Middle'])
+	})
 })
 
 describe('list_ids_for_suggest', () => {
@@ -110,6 +260,46 @@ describe('list_ids_for_suggest', () => {
 		const r = list_ids_for_suggest(d, 'NeedleHere')
 		expect(r.ids).toHaveLength(3)
 		expect(r.truncated).toBe(false)
+	})
+
+	it('ranks citekey matches above other-field matches, even out of alpha order', () => {
+		const d: BibtexDict = {}
+		d['AAA_Other'] = entry('AAA_Other', { title: 'Mentions Smith2020 in the title' })
+		d['ZZZ_Smith2020'] = entry('ZZZ_Smith2020', { title: 'Unrelated' })
+		const r = list_ids_for_suggest(d, 'Smith2020')
+		expect(r.ids).toEqual(['ZZZ_Smith2020', 'AAA_Other'])
+	})
+})
+
+describe('has_any_match', () => {
+	it('agrees with list_ids_for_suggest(...).ids.length > 0 across a small mixed fixture', () => {
+		const d = dict_of(20, (i) =>
+			entry(`Q${i}`, { title: i < 3 ? 'NeedleHere' : 'Hay' }),
+		)
+		expect(has_any_match(d, 'NeedleHere')).toBe(list_ids_for_suggest(d, 'NeedleHere').ids.length > 0)
+		expect(has_any_match(d, 'NoSuchTokenAnywhere')).toBe(list_ids_for_suggest(d, 'NoSuchTokenAnywhere').ids.length > 0)
+		expect(has_any_match(d, '')).toBe(list_ids_for_suggest(d, '').ids.length > 0)
+	})
+
+	it('true on empty query for a non-empty dict, false for an empty dict', () => {
+		expect(has_any_match(dict_of(5), '')).toBe(true)
+		expect(has_any_match({}, '')).toBe(false)
+	})
+
+	it('short-circuits without scanning the whole dict once a match is found', () => {
+		const d = dict_of(10_000, (i) =>
+			entry(`Q${String(i).padStart(5, '0')}`, { title: i === 0 ? 'NeedleHere' : 'Hay' }),
+		)
+		let reads = 0
+		const counting_proxy = new Proxy(d, {
+			get(target, prop, receiver) {
+				reads++
+				return Reflect.get(target, prop, receiver)
+			},
+		})
+		expect(has_any_match(counting_proxy, 'NeedleHere')).toBe(true)
+		// Only the first entry (which matches) should have been read, not all 10k.
+		expect(reads).toBeLessThan(10)
 	})
 })
 
@@ -274,5 +464,57 @@ describe('10k smoke (scale)', () => {
 		expect(suggest.ids.length).toBeLessThanOrEqual(SUGGEST_RESULT_CAP)
 		// free-text id match should find the one paper
 		expect(suggest.ids).toContain('Paper0001')
+	})
+})
+
+describe('should_repaint_window', () => {
+	it('first paint (prev null) always repaints', () => {
+		const list_ref = {}
+		expect(should_repaint_window(null, { list_ref, start: 0, end: 20 })).toBe(true)
+	})
+
+	it('same list_ref and same range is a no-op', () => {
+		const list_ref = {}
+		const prev = { list_ref, start: 5, end: 25 }
+		expect(should_repaint_window(prev, { list_ref, start: 5, end: 25 })).toBe(false)
+	})
+
+	it('same list_ref but shifted range repaints', () => {
+		const list_ref = {}
+		const prev = { list_ref, start: 5, end: 25 }
+		expect(should_repaint_window(prev, { list_ref, start: 6, end: 26 })).toBe(true)
+	})
+
+	it('different list_ref (fresh query/sort) repaints even with identical bounds', () => {
+		const prev = { list_ref: {}, start: 0, end: 20 }
+		// Same {start, end} as prev, but a different list_ref — must not be
+		// mistaken for "nothing changed" (guards a just-emptied/rebuilt list).
+		expect(should_repaint_window(prev, { list_ref: {}, start: 0, end: 20 })).toBe(true)
+	})
+})
+
+describe('diff_window_ids', () => {
+	it('ids in both old and new window are neither added nor removed', () => {
+		const { added, removed } = diff_window_ids(['A', 'B', 'C'], ['B', 'C', 'D'])
+		expect(added).toEqual(['D'])
+		expect(removed).toEqual(['A'])
+	})
+
+	it('no overlap: everything old is removed, everything new is added', () => {
+		const { added, removed } = diff_window_ids(['A', 'B'], ['C', 'D'])
+		expect(added).toEqual(['C', 'D'])
+		expect(removed).toEqual(['A', 'B'])
+	})
+
+	it('identical windows: nothing added or removed', () => {
+		const { added, removed } = diff_window_ids(['A', 'B'], ['A', 'B'])
+		expect(added).toEqual([])
+		expect(removed).toEqual([])
+	})
+
+	it('empty mounted set: everything is added, nothing removed', () => {
+		const { added, removed } = diff_window_ids([], ['A', 'B'])
+		expect(added).toEqual(['A', 'B'])
+		expect(removed).toEqual([])
 	})
 })

@@ -1,6 +1,7 @@
 import { App, Modal, ButtonComponent, Setting, Notice, requestUrl } from 'obsidian'
 import type BibtexScholar from 'src/main'
 import { copy_to_clipboard } from 'src/hover'
+import { normalize_for_search, search_tokens, token_matches_haystack } from 'src/tex-display'
 
 /**
  * Represents a single BibTeX entry field.
@@ -548,9 +549,9 @@ export function source_tag_state(reasons: ClashReason[] | undefined): {
 /**
  * Fields scanned for free-text (no `key:`) queries.
  * Abstracts and other long fields are opt-in via `abstract:…` / `key:value`.
- * Kept here so match_query stays free of library-scale imports (circular risk).
+ * Exported so library-scale helpers share the same list (no second source of truth).
  */
-const FREE_TEXT_MATCH_FIELDS = [
+export const FREE_TEXT_MATCH_FIELDS = [
     'id',
     'title',
     'author',
@@ -561,13 +562,55 @@ const FREE_TEXT_MATCH_FIELDS = [
     'url',
 ] as const
 
+/** Left side of `key:value` must look like a BibTeX field name (not "Attention: …"). */
+const FIELD_KEY_RE = /^[a-z][a-z0-9_]*$/i
+
+/**
+ * Keys that intentionally select a field. Anything else with a colon
+ * (e.g. title fragment `need: transformers`) falls through to free-text.
+ * Includes slim free-text fields plus common opt-in fields.
+ */
+const KNOWN_QUERY_KEYS = new Set<string>([
+    ...FREE_TEXT_MATCH_FIELDS,
+    'abstract',
+    'type',
+    'volume',
+    'number',
+    'pages',
+    'publisher',
+    'keywords',
+    'editor',
+    'series',
+    'address',
+    'month',
+    'note',
+    'isbn',
+    'issn',
+    'eprint',
+    'school',
+    'institution',
+    'organization',
+    'howpublished',
+    'chapter',
+    'edition',
+])
+
 /**
  * Check if a BibTeX entry matches a search query.
  * Format: <query>;<query>;...
  * Each query could be a string or a <key>:<value> pair. Only the paper that matches all queries will be considered a match.
  *
- * Free-text tokens search a slim field set only (not abstract) so 10k libraries
- * stay cheap on every keystroke. Use `abstract:foo` to search abstracts.
+ * Matching pipeline (shared by panel, list mode, and EditorSuggest):
+ * 1. TeX specials → Unicode, accent-fold, lowercase, strip HTML ({@link normalize_for_search})
+ * 2. Free-text: whitespace tokens, all must match (order-independent) in the
+ *    entry-level slim-field corpus (so `smith 2020` hits author+year)
+ * 3. Per token: exact substring first, then word-level Levenshtein within a
+ *    length-scaled budget (`magepix` ≈ `manogepix`) — see {@link token_matches_haystack}
+ * 4. `key:value`: same token rules, but only within that field (abstract opt-in)
+ *
+ * Free-text still ignores abstract unless `abstract:…` so 10k libraries stay
+ * cheap on every keystroke. The free-text corpus itself is precomputed once
+ * per entry object and reused across keystrokes — see {@link search_corpus_cache}.
  *
  * @param bibtex - The BibTeX entry to check.
  * @param query - The search query to match against.
@@ -577,42 +620,129 @@ const FREE_TEXT_MATCH_FIELDS = [
  * match_query(bibtex, 'CVPR')
  * match_query(bibtex, 'author:John Doe;year:2020')
  * match_query(bibtex, 'abstract:differential attention')
+ * match_query(bibtex, 'Muller')  // hits M{\"u}ller / Müller
+ * match_query(bibtex, 'antibiofilm magepix')  // typo-tolerant
  * ```
  */
+
+/**
+ * Per-entry free-text search corpus cache, keyed by entry object identity.
+ * `upsert_entry`/`rebuild_dict_from_hits` always construct a new entry object
+ * on real field changes and never mutate `.fields` in place, so a stale entry
+ * simply becomes unreachable (and GC'd) instead of returning a stale hit.
+ */
+const search_corpus_cache = new WeakMap<BibtexElement, string>()
+
 export function match_query(bibtex: BibtexElement, query: string): boolean {
+    function field_has_all_tokens(raw: string, tokens: string[]): boolean {
+        if (tokens.length === 0) {
+            return true
+        }
+        const hay = normalize_for_search(raw)
+        return tokens.every((t) => token_matches_haystack(t, hay))
+    }
+
+    /**
+     * Slim free-text corpus: one haystack per entry, fields separated so edges never glue.
+     * Cached per entry object — {@link upsert_entry} always swaps in a new object on
+     * real changes, so the cache self-invalidates by identity (see {@link search_corpus_cache}).
+     */
+    function slim_corpus(): string {
+        const cached = search_corpus_cache.get(bibtex)
+        if (cached !== undefined) {
+            return cached
+        }
+        const parts: string[] = []
+        for (const key of FREE_TEXT_MATCH_FIELDS) {
+            const raw = bibtex.fields[key]
+            if (raw != null && String(raw).length > 0) {
+                parts.push(normalize_for_search(String(raw)))
+            }
+        }
+        const corpus = parts.join('\n')
+        search_corpus_cache.set(bibtex, corpus)
+        return corpus
+    }
+
     function match_query_single(q: string): boolean {
-        const q_low_trim = q.toLowerCase().trim()
-        if (q_low_trim.length === 0) {
+        const trimmed = q.trim()
+        if (trimmed.length === 0) {
             return true
         }
 
-        if (q_low_trim.includes(':')) {
-            // <key>:<value> — any field, including abstract
-            let [key, value] = q_low_trim.split(':')
-            key = key.trim()
-            value = value.trim()
-            if (key in bibtex.fields) {
-                return String(bibtex.fields[key]).toLowerCase().includes(value)
+        // key:value — only for known field names (author:, abstract:, …).
+        // Titles often contain colons ("Attention: All You Need"); those fall through to free-text.
+        // First colon splits; value may contain further colons (DOIs, URLs).
+        const colon = trimmed.indexOf(':')
+        if (colon > 0) {
+            const key_raw = trimmed.slice(0, colon).trim()
+            const key = key_raw.toLowerCase()
+            const value = trimmed.slice(colon + 1).trim()
+            if (FIELD_KEY_RE.test(key_raw) && KNOWN_QUERY_KEYS.has(key)) {
+                if (key in bibtex.fields) {
+                    return field_has_all_tokens(String(bibtex.fields[key]), search_tokens(value))
+                }
+                // Explicit field query but this entry has no such field (journal: on a book).
+                // Do not free-text-fallback, or "journal:Nature" would hit titles containing Nature.
+                return false
             }
-            return false
+            // else: colon in free text (title phrase) → fall through
         }
 
-        // Free-text: slim catalog fields only (see FREE_TEXT_MATCH_FIELDS)
-        for (const key of FREE_TEXT_MATCH_FIELDS) {
-            const raw = bibtex.fields[key]
-            if (raw != null && String(raw).toLowerCase().includes(q_low_trim)) {
-                return true
-            }
+        // Free-text: entry-level token AND over slim fields only (exact + fuzzy).
+        const tokens = search_tokens(trimmed)
+        if (tokens.length === 0) {
+            return true
         }
-        return false
+        const corpus = slim_corpus()
+        return tokens.every((t) => token_matches_haystack(t, corpus))
     }
 
-    for (let q of query.split(';')) {
+    for (const q of query.split(';')) {
         if (q.length > 0 && !match_query_single(q)) {
             return false
         }
     }
     return true
+}
+
+/**
+ * True if every free-text clause of `query` (i.e. not an explicit `key:value`
+ * aimed at another field) also matches within the entry's citekey alone.
+ * Callers already know the entry matches via {@link match_query} — this just
+ * ranks *why*, so citekey matches can be sorted above matches that only hit
+ * other fields (title/author/…). A query that is entirely `key:value` clauses
+ * has no free-text component to test, so it never counts as a key match.
+ *
+ * @example
+ * ```
+ * query_matches_citekey(bibtex, 'Smith2020')       // true if the citekey itself contains "Smith2020"
+ * query_matches_citekey(bibtex, 'author:Smith')    // false — no free-text clause
+ * ```
+ */
+export function query_matches_citekey(bibtex: BibtexElement, query: string): boolean {
+    const id_hay = normalize_for_search(bibtex.fields.id ?? '')
+    let saw_free_text = false
+
+    for (const q of query.split(';')) {
+        const trimmed = q.trim()
+        if (trimmed.length === 0) continue
+
+        const colon = trimmed.indexOf(':')
+        if (colon > 0) {
+            const key_raw = trimmed.slice(0, colon).trim()
+            if (FIELD_KEY_RE.test(key_raw) && KNOWN_QUERY_KEYS.has(key_raw.toLowerCase())) {
+                continue // explicit field clause — doesn't count toward key-match ranking
+            }
+        }
+
+        saw_free_text = true
+        const tokens = search_tokens(trimmed)
+        if (!tokens.every((t) => token_matches_haystack(t, id_hay))) {
+            return false
+        }
+    }
+    return saw_free_text
 }
 
 /**

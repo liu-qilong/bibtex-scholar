@@ -9,15 +9,19 @@ import {
 	type EditorSuggestTriggerInfo,
 } from 'obsidian'
 import { type BibtexDict } from 'src/bibtex'
-import { list_ids_for_suggest } from 'src/library-scale'
+import { has_any_match, list_ids_for_suggest } from 'src/library-scale'
 import { find_prompt_trigger } from 'src/prompt-trigger'
-import { display_bibtex_text } from 'src/tex-display'
+import { render_display_text } from 'src/tex-display'
 
 /**
  * Inline cite autocomplete.
  *
  * Triggers while typing `` `{…` `` (compact chip) or `` `[…` `` (expanded card).
  * Obsidian auto-closes backticks, so the live match is often `{<cursor>` / `[<cursor>`.
+ *
+ * Suggestions use {@link list_ids_for_suggest} → {@link match_query} (same fuzzy /
+ * multi-token rules as the paper panel). The trigger pattern must allow spaces in
+ * the query or multi-word searches never open (see `prompt-trigger.ts`).
  */
 export type SuggestStatsSink = (stats: { returned: number, matched: number }) => void
 
@@ -47,7 +51,7 @@ export class EditorPrompt extends EditorSuggest<string> {
 		const found = find_prompt_trigger(
 			line,
 			cursor.ch,
-			(query) => list_ids_for_suggest(this.bibtex_dict, query).ids.length > 0,
+			(query) => has_any_match(this.bibtex_dict, query),
 		)
 		if (!found) {
 			return null
@@ -74,9 +78,9 @@ export class EditorPrompt extends EditorSuggest<string> {
 	renderSuggestion(id: string, el: HTMLElement): void {
 		const bibtex = this.bibtex_dict[id]
 		el.createEl('code', { text: bibtex.fields.id, cls: 'bibtex-prompt-id' })
-		// Display-only TeX → Unicode; insert still uses the raw citekey.
-		el.createEl('div', { text: display_bibtex_text(bibtex.fields.title ?? ''), cls: 'bibtex-prompt-title' })
-		el.createEl('small', { text: display_bibtex_text(bibtex.fields.author ?? ''), cls: 'bibtex-prompt-author' })
+		// Display-only TeX → Unicode (+ <i>/<em> → real italics); insert still uses the raw citekey.
+		render_display_text(el.createEl('div', { cls: 'bibtex-prompt-title' }), bibtex.fields.title ?? '')
+		render_display_text(el.createEl('small', { cls: 'bibtex-prompt-author' }), bibtex.fields.author ?? '')
 	}
 
 	selectSuggestion(id: string, _evt: MouseEvent | KeyboardEvent): void {
