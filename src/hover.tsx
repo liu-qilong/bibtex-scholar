@@ -716,11 +716,14 @@ const MarkdownField = ({
     text,
     source_path,
     owner,
+    /** Optional native tooltip applied to every rendered <a> (e.g. “Open DOI”). */
+    link_title,
 }: {
     app: App
     text: string
     source_path: string
     owner: Component
+    link_title?: string
 }) => {
     const el_ref = useRef<HTMLDivElement | null>(null)
 
@@ -730,8 +733,18 @@ const MarkdownField = ({
             return
         }
         el.replaceChildren()
-        void MarkdownRenderer.render(app, text, el, source_path, owner)
-    }, [app, text, source_path, owner])
+        void MarkdownRenderer.render(app, text, el, source_path, owner).then(() => {
+            if (!link_title || !el_ref.current) {
+                return
+            }
+            // Array.from: TS target/lib may lack NodeListOf iterators.
+            const anchors = Array.from(el_ref.current.querySelectorAll('a'))
+            for (const a of anchors) {
+                a.setAttribute('title', link_title)
+                a.setAttribute('aria-label', link_title)
+            }
+        })
+    }, [app, text, source_path, owner, link_title])
 
     return <div ref={el_ref} />
 }
@@ -857,13 +870,16 @@ const CitationCardBody = ({
                     // Friendly face only — never rewrite the cached/export form.
                     const friendly = display_bibtex_text(value)
                     const key_low = key.toLowerCase()
+                    const is_link_field = key_low === 'doi' || key_low.includes('url')
                     let display = friendly
-                    if (key_low.includes('url') || key_low === 'doi') {
+                    let open_title: string | undefined
+                    if (is_link_field) {
                         const href = key_low === 'doi' && !value.startsWith('http')
                             ? `https://doi.org/${value}`
                             : value
                         // Link label is human-readable; href keeps the raw field.
                         display = `[${friendly}](${href})`
+                        open_title = key_low === 'doi' ? 'Open DOI' : 'Open URL'
                     }
                     const dense = key_low === 'abstract' ? ' is-abstract' : ''
                     // Always Unicode display form (TeX specials folded, braces/tags
@@ -871,14 +887,15 @@ const CitationCardBody = ({
                     // encoding is only for the action-strip “bibtex” control.
                     const copy_text = display_bibtex_plain_text(String(value)).trim()
                     // Trailing glyph for link-like fields (clear “copy this identifier”).
-                    const show_link_copy_glyph =
-                        (key_low === 'doi' || key_low.includes('url')) && copy_text.length > 0
+                    const show_link_copy_glyph = is_link_field && copy_text.length > 0
+                    const copy_title = key_low === 'doi' ? 'Copy DOI' : key_low.includes('url') ? 'Copy URL' : `Copy ${key}`
                     return (
                         <div key={key} className={`bibtex-card-field${dense}`}>
                             <div className="bibtex-card-field-key">{key}</div>
                             {/*
 							 * Value cell is full-width (layout only). Copy hits a
 							 * text-hugging surface so empty row space stays free for pin-drag.
+							 * DOI/URL: link = open (own tooltip); glyph = copy (own tooltip).
 							 */}
                             <div
                                 className={
@@ -887,21 +904,33 @@ const CitationCardBody = ({
                                         : 'bibtex-card-field-val bibtex-markdown-rendered'
                                 }
                             >
-                                <CopySurface
-                                    className="bibtex-card-field-copy-surface is-copyable"
-                                    text={copy_text}
-                                    label={`Copy ${key}`}
-                                >
-                                    <MarkdownField
-                                        app={app}
-                                        text={display}
-                                        source_path={String(bibtex.source_path)}
-                                        owner={owner_ref.current!}
-                                    />
-                                </CopySurface>
                                 {show_link_copy_glyph ? (
-                                    <FieldCopyIcon text={copy_text} label={`Copy ${key}`} />
-                                ) : null}
+                                    <>
+                                        <span className="bibtex-card-field-link-wrap">
+                                            <MarkdownField
+                                                app={app}
+                                                text={display}
+                                                source_path={String(bibtex.source_path)}
+                                                owner={owner_ref.current!}
+                                                link_title={open_title}
+                                            />
+                                        </span>
+                                        <FieldCopyIcon text={copy_text} label={copy_title} />
+                                    </>
+                                ) : (
+                                    <CopySurface
+                                        className="bibtex-card-field-copy-surface is-copyable"
+                                        text={copy_text}
+                                        label={copy_title}
+                                    >
+                                        <MarkdownField
+                                            app={app}
+                                            text={display}
+                                            source_path={String(bibtex.source_path)}
+                                            owner={owner_ref.current!}
+                                        />
+                                    </CopySurface>
+                                )}
                             </div>
                         </div>
                     )

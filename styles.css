@@ -757,20 +757,20 @@ code.bibtex-source-tag.is-clashing {
 }
 
 /*
- * Trailing copy glyph after DOI/URL text. Markdown wraps content in block
- * <p>/<div>; force inline so the icon sits at the end of the line.
+ * DOI/URL: link + trailing copy glyph. Separate hit targets so tooltips stay
+ * distinct (“Open DOI” on the link vs “Copy DOI” on the glyph).
  */
-.bibtex-card-field-val.has-inline-copy .bibtex-card-field-copy-surface {
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-link-wrap {
     display: inline;
     max-width: calc(100% - 1.5em);
 }
 
-.bibtex-card-field-val.has-inline-copy .bibtex-card-field-copy-surface > div {
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-link-wrap > div {
     display: inline;
 }
 
-.bibtex-card-field-val.has-inline-copy .bibtex-card-field-copy-surface p,
-.bibtex-card-field-val.has-inline-copy .bibtex-card-field-copy-surface > div p {
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-link-wrap p,
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-link-wrap > div p {
     display: inline;
     margin: 0;
 }
