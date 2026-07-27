@@ -41,6 +41,9 @@ describe('convert_tex_special', () => {
 		expect(convert_tex_special('\\c{c}')).toBe('ç')
 		expect(convert_tex_special('\\c c')).toBe('ç')
 		expect(convert_tex_special('\\v{s}')).toBe('š')
+		expect(convert_tex_special('\\v{z}')).toBe('ž')
+		expect(convert_tex_special('\\v{S}')).toBe('Š')
+		expect(convert_tex_special("\\'{c}")).toBe('ć')
 		expect(convert_tex_special('\\u{o}')).toBe('ŏ')
 		expect(convert_tex_special('\\H{o}')).toBe('ő')
 		expect(convert_tex_special('\\k{a}')).toBe('ą')
@@ -86,6 +89,28 @@ describe('display_bibtex_text', () => {
 		expect(display_bibtex_text("Schr{\\\"o}dinger")).toBe('Schrödinger')
 		expect(display_bibtex_text("{\\'E}cole")).toBe('École')
 		expect(display_bibtex_text('Ja{\\c{c}}on')).toBe('Jaçon')
+		// User-reported caron / acute (braced special groups)
+		expect(display_bibtex_text("{\\'{c}}")).toBe('ć')
+		expect(display_bibtex_text('{\\v{z}}')).toBe('ž')
+		expect(display_bibtex_text('{\\v{s}}')).toBe('š')
+		expect(display_bibtex_text('{\\v{S}}')).toBe('Š')
+	})
+
+	it('converts bare TeX accents mid-string (no outer special braces)', () => {
+		// Common in some exports / author strings — used to strip `{z}` as
+		// protective and leave a broken "\\vz" / "\\'c".
+		expect(display_bibtex_text('\\v{z}')).toBe('ž')
+		expect(display_bibtex_text("\\'{c}")).toBe('ć')
+		expect(display_bibtex_text('\\v{s}')).toBe('š')
+		expect(display_bibtex_text('\\v{S}')).toBe('Š')
+		expect(display_bibtex_text("Gaji\\'{c}")).toBe('Gajić')
+		expect(display_bibtex_text('\\v{Z}ivkovi\\\'{c}')).toBe('Živković')
+	})
+
+	it('converts specials inside protective braces that do not start with \\', () => {
+		// Leading space → not a special group; must still find bare accents inside.
+		expect(display_bibtex_text('{ \\v{z} }')).toBe(' ž ')
+		expect(display_bibtex_text("{ \\'{c} }")).toBe(' ć ')
 	})
 
 	it('strips protective / case-preservation braces', () => {
@@ -98,6 +123,8 @@ describe('display_bibtex_text', () => {
 	it('combines protective braces with specials inside', () => {
 		expect(display_bibtex_text("{M{\\\"u}ller}")).toBe('Müller')
 		expect(display_bibtex_text("The {{\\'E}cole} Method")).toBe('The École Method')
+		expect(display_bibtex_text("Author {\\v{Z}}ivkovi{\\'{c}}")).toBe('Author Živković')
+		expect(display_bibtex_text("K{\\v{r}}{\\'{i}}{\\v{z}}ek")).toBe('Křížek')
 	})
 
 	it('keeps unknown specials braced so nothing is invented', () => {

@@ -181,35 +181,38 @@ function apply_accent(mark: string, base: string): string {
 }
 
 /**
- * Convert the body of a special-character group (content inside `{…}`, which
- * begins with `\`). Returns Unicode on success, or `null` to keep the original
- * braced form when the command is unrecognized.
+ * Parse one TeX special starting at `start` (must point at `\`).
+ * Returns Unicode + index after the command, or `null` if unrecognized.
+ *
+ * Consumes only the command itself (not trailing prose), so bare mid-string
+ * accents like `Gaji\'{c}` / `\v{z}ivkovic` work without eating the rest.
  */
-export function convert_tex_special(body: string): string | null {
-	if (!body.startsWith('\\') || body.length < 2) {
+export function consume_tex_special(
+	s: string,
+	start: number,
+): { text: string; next: number } | null {
+	if (s[start] !== '\\' || start + 1 >= s.length) {
 		return null
 	}
 
-	const i = 1 // after '\'
-	const ch = body[i]
+	const i = start + 1 // after '\'
+	const ch = s[i]
 
 	// --- Escaped single characters: \& \% \$ \# \_ \{ \} \  \, ---
 	if (ch in ESCAPED_CHAR) {
-		const rest = body.slice(i + 1)
-		return ESCAPED_CHAR[ch] + (rest ? display_bibtex_text(rest) : '')
+		return { text: ESCAPED_CHAR[ch], next: i + 1 }
 	}
 
 	// --- Non-letter accents: \'e  \'{e}  \"{u}  \`a  \^o  \~n  \=o  \.z ---
 	if (ACCENT_SYMBOL.has(ch)) {
-		const got = take_arg(body, i + 1)
+		const got = take_arg(s, i + 1)
 		if (!got) {
 			// Bare `\~` / `\^` sometimes appear as spacing/escapes.
-			if (ch === '~') return '~'
-			if (ch === '^') return '^'
+			if (ch === '~') return { text: '~', next: i + 1 }
+			if (ch === '^') return { text: '^', next: i + 1 }
 			return null
 		}
-		const rest = body.slice(got.next)
-		return apply_accent(ACCENT_MARK[ch], got.arg) + (rest ? display_bibtex_text(rest) : '')
+		return { text: apply_accent(ACCENT_MARK[ch], got.arg), next: got.next }
 	}
 
 	// --- Letter-named commands: read the full command name first ---
@@ -218,11 +221,11 @@ export function convert_tex_special(body: string): string | null {
 	}
 
 	let name_end = i
-	while (name_end < body.length && /[a-zA-Z]/.test(body[name_end])) {
+	while (name_end < s.length && /[a-zA-Z]/.test(s[name_end])) {
 		name_end++
 	}
-	const name = body.slice(i, name_end)
-	const after = body.slice(name_end)
+	const name = s.slice(i, name_end)
+	const after = s.slice(name_end)
 
 	// Named symbols (\ae, \ss, \ldots, \i, \o, …) — only when no TeX argument
 	// follows for names that are also letter-accents. \c{c} is an accent; \o alone is ø.
@@ -231,23 +234,41 @@ export function convert_tex_special(body: string): string | null {
 		const is_accent_with_arg =
 			name.length === 1 && ACCENT_LETTER.has(name) && has_tex_arg(after)
 		if (!is_accent_with_arg) {
-			const rendered_rest = after ? display_bibtex_text(after.replace(/^\s+/, '')) : ''
-			return symbol[1] + rendered_rest
+			return { text: symbol[1], next: name_end }
 		}
 	}
 
-	// Single-letter accents with argument: \c{c}, \v{s}, \u{o}, \H{o}, …
+	// Single-letter accents with argument: \c{c}, \v{s}, \u{o}, \H{o}, \'{c}, …
 	if (name.length === 1 && ACCENT_LETTER.has(name) && has_tex_arg(after)) {
-		const got = take_arg(body, name_end)
+		const got = take_arg(s, name_end)
 		if (!got) {
 			return null
 		}
-		const rest = body.slice(got.next)
-		return apply_accent(ACCENT_MARK[name], got.arg) + (rest ? display_bibtex_text(rest) : '')
+		return { text: apply_accent(ACCENT_MARK[name], got.arg), next: got.next }
 	}
 
 	// Unknown multi-letter command (\unknowncmd, \textbf{…}, …)
 	return null
+}
+
+/**
+ * Convert the body of a special-character group (content inside `{…}`, which
+ * begins with `\`). Returns Unicode on success, or `null` to keep the original
+ * braced form when the command is unrecognized.
+ *
+ * If the body is a command plus trailing text (`\v{z}foo`), the command is
+ * converted and the rest is run through {@link display_bibtex_text}.
+ */
+export function convert_tex_special(body: string): string | null {
+	if (!body.startsWith('\\') || body.length < 2) {
+		return null
+	}
+	const got = consume_tex_special(body, 0)
+	if (!got) {
+		return null
+	}
+	const rest = body.slice(got.next)
+	return rest ? got.text + display_bibtex_text(rest) : got.text
 }
 
 /**
@@ -266,6 +287,7 @@ function has_tex_arg(after: string): boolean {
  * Render a BibTeX field value for humans.
  *
  * - Special-character groups `{…}` starting with `\` → Unicode where known
+ * - Bare TeX specials mid-string (`\v{z}`, `\'{c}`) → Unicode (same commands)
  * - Other braces (case protection / grouping) → stripped, contents kept
  * - Unbalanced or unknown specials → left unchanged so data is not inventively altered
  *
@@ -275,8 +297,8 @@ export function display_bibtex_text(raw: string): string {
 	if (!raw) {
 		return raw
 	}
-	// Fast path: nothing brace-like to rewrite.
-	if (!raw.includes('{')) {
+	// Fast path: nothing brace- or backslash-like to rewrite.
+	if (!raw.includes('{') && !raw.includes('\\')) {
 		return raw
 	}
 
@@ -299,13 +321,25 @@ export function display_bibtex_text(raw: string): string {
 					out += raw.slice(i, end + 1)
 				}
 			} else {
-				// Protective / grouping braces — drop them, render inside.
+				// Protective / grouping braces — drop them, render inside
+				// (may still contain bare `\v{z}` / `{\'e}` nested specials).
 				out += display_bibtex_text(inner)
 			}
 			i = end + 1
 			continue
 		}
-		// Bare TeX outside the brace+backslash scheme is left alone (encoding stays raw).
+		if (raw[i] === '\\') {
+			const got = consume_tex_special(raw, i)
+			if (got) {
+				out += got.text
+				i = got.next
+				continue
+			}
+			// Unknown bare command — keep the backslash literally.
+			out += raw[i]
+			i++
+			continue
+		}
 		out += raw[i]
 		i++
 	}
