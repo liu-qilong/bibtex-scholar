@@ -451,10 +451,19 @@ describe('filtered_ids', () => {
 		expect(ids).toHaveLength(90) // more than PANEL_RESULT_CAP, none dropped
 	})
 
-	it('custom compare determines order', () => {
+	it('custom compare determines order when query is empty', () => {
 		const d = dict_of(20)
 		const ids = filtered_ids(d, '', (a, b) => b.localeCompare(a))
 		expect(ids[0] > ids[1]).toBe(true)
+	})
+
+	it('non-empty query ranks by relevance like list_ids_for_panel (not bare alpha)', () => {
+		const d: BibtexDict = {}
+		d['Exact'] = entry('Exact', { title: 'The UNITE database' })
+		d['Prefix'] = entry('Prefix', { title: 'Across the United States' })
+		const ids = filtered_ids(d, 'UNITE')
+		expect(ids[0]).toBe('Exact')
+		expect(ids).toEqual(list_ids_for_panel(d, 'UNITE').ids)
 	})
 })
 

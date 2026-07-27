@@ -96,17 +96,30 @@ function sorted_ids(dict: BibtexDict): string[] {
 }
 
 /**
- * Rank matched ids by {@link query_match_score} (desc), then alpha.
- * Citekey exact/prefix hits outrank title-only and weak fuzzy/substring hits.
+ * Every match for a non-empty free-text query, ranked by {@link query_match_score}
+ * (desc) then `tiebreak`. Single ranking path shared by panel discover, panel
+ * list mode, and `{`/`[` EditorSuggest — membership is always {@link match_query}.
  */
-function ranked_search_ids(dict: BibtexDict, q: string, cap: number): LibraryListResult {
+function scored_matches(
+	dict: BibtexDict,
+	q: string,
+	tiebreak: (a: string, b: string) => number = (a, b) => a.localeCompare(b),
+): { id: string; score: number }[] {
 	const scored: { id: string; score: number }[] = []
 	for (const id of Object.keys(dict)) {
 		const entry = dict[id]
 		if (!entry || !match_query(entry, q)) continue
 		scored.push({ id, score: query_match_score(entry, q) })
 	}
-	scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+	scored.sort((a, b) => b.score - a.score || tiebreak(a.id, b.id))
+	return scored
+}
+
+/**
+ * Ranked + capped search hits (discover / EditorSuggest mount caps).
+ */
+function ranked_search_ids(dict: BibtexDict, q: string, cap: number): LibraryListResult {
+	const scored = scored_matches(dict, q)
 	const matched = scored.length
 	const ids = scored.slice(0, cap).map((s) => s.id)
 	return {
@@ -193,10 +206,13 @@ export function random_sample_ids(ids: string[], cap: number, rng: () => number 
 }
 
 /**
- * Unbounded sorted + filtered id list — backs list mode, which virtualizes
- * instead of hard-capping. Same `match_query` filtering as {@link list_ids_for_panel},
- * just without a mount cap. `compare` defaults to alpha (same as every other
- * panel list); pass {@link compare_by_mention_count} for "Most cited" sort.
+ * Unbounded filtered id list — backs list mode, which virtualizes instead of
+ * hard-capping.
+ *
+ * - empty query → every id, ordered by `compare` only (browse / A–Z / most-cited)
+ * - non-empty query → same {@link match_query} + {@link query_match_score} ranking
+ *   as {@link list_ids_for_panel} / {@link list_ids_for_suggest}; `compare` is
+ *   only the score tiebreak (so list mode search order matches the `{` tooltip)
  */
 export function filtered_ids(
 	dict: BibtexDict,
@@ -204,14 +220,10 @@ export function filtered_ids(
 	compare: (a: string, b: string) => number = (a, b) => a.localeCompare(b),
 ): string[] {
 	const q = query.trim()
-	const all = Object.keys(dict).sort(compare)
 	if (q.length === 0) {
-		return all
+		return Object.keys(dict).sort(compare)
 	}
-	return all.filter((id) => {
-		const entry = dict[id]
-		return entry != null && match_query(entry, q)
-	})
+	return scored_matches(dict, q, compare).map((s) => s.id)
 }
 
 /** Descending mention count, alpha tiebreak — comparator for {@link filtered_ids}. */

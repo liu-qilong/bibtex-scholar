@@ -1,10 +1,10 @@
 /**
  * Full expectations matrix for every code path that runs library search.
  *
- * Paths under test (must stay equivalent on match rules):
+ * Paths under test (must stay equivalent on match rules *and* ranking):
  * 1. match_query              — pure matcher
  * 2. list_ids_for_panel       — paper panel discover-mode search
- * 3. filtered_ids             — paper panel list-mode search
+ * 3. filtered_ids             — paper panel list-mode search (uncapped; same score order)
  * 4. list_ids_for_suggest     — `{` / `[` EditorSuggest rows
  * 5. find_prompt_trigger      — gates the `{` tooltip open (must allow spaces + fuzzy)
  *
@@ -223,6 +223,23 @@ describe('path parity: panel vs suggest return same membership for matrix querie
 				{ query, in_panel, in_suggest, in_list },
 				`parity for ${JSON.stringify(query)}`,
 			).toEqual({ query, in_panel: true, in_suggest: true, in_list: true })
+		}
+	})
+
+	it('for every MUST_HIT query, discover / list / suggest agree on ranked order of shared hits', () => {
+		for (const { query } of MUST_HIT) {
+			const panel = list_ids_for_panel(dict, query).ids
+			const suggest = list_ids_for_suggest(dict, query).ids
+			const list = filtered_ids(dict, query)
+			// Cap only differs (panel 80 / suggest 50 / list unbounded) — prefix of
+			// the longer list must match the shorter capped lists.
+			const n = Math.min(panel.length, suggest.length, list.length)
+			expect(panel.slice(0, n), `panel vs list order for ${JSON.stringify(query)}`).toEqual(
+				list.slice(0, n),
+			)
+			expect(suggest.slice(0, n), `suggest vs list order for ${JSON.stringify(query)}`).toEqual(
+				list.slice(0, n),
+			)
 		}
 	})
 

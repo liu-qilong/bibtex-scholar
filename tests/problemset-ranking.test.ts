@@ -10,7 +10,7 @@ import {
 	MATCH_Q,
 } from 'src/tex-display'
 import { match_query, type BibtexDict, type BibtexElement } from 'src/bibtex'
-import { list_ids_for_panel, list_ids_for_suggest } from 'src/library-scale'
+import { filtered_ids, list_ids_for_panel, list_ids_for_suggest } from 'src/library-scale'
 
 function entry(id: string, fields: Record<string, string> = {}): BibtexElement {
 	return {
@@ -66,8 +66,10 @@ function expect_first(dict: BibtexDict, query: string, id: string) {
 	)
 	const panel = list_ids_for_panel(dict, query)
 	const suggest = list_ids_for_suggest(dict, query)
+	const list = filtered_ids(dict, query)
 	expect(panel.ids[0], `panel first for ${JSON.stringify(query)}`).toBe(id)
 	expect(suggest.ids[0], `suggest first for ${JSON.stringify(query)}`).toBe(id)
+	expect(list[0], `list-mode first for ${JSON.stringify(query)}`).toBe(id)
 }
 
 describe('search ranking regressions (UNITE / liush)', () => {

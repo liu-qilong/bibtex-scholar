@@ -96,6 +96,12 @@ export class PaperPanelView extends ItemView {
     private discover_scroll_el: HTMLElement | null = null
     /** Coalesces rapid search-box keystrokes; cleared query bypasses it (see onOpen's onChange). */
     private search_debouncer = new Debouncer(SEARCH_DEBOUNCE_MS)
+    /**
+     * Live papers-mode search text. Kept on the view so view toggle / clash /
+     * missing-PDF round-trips can re-render with the same query the box still
+     * shows (calling `show_papers()` with no args must not drop a typed query).
+     */
+    private papers_query = ''
 
     constructor(leaf: WorkspaceLeaf, plugin: BibtexScholar) {
         super(leaf)
@@ -141,6 +147,9 @@ export class PaperPanelView extends ItemView {
 
         const search_wrap = query_row.createEl('div', { cls: 'bibtex-panel-search' })
         new SearchComponent(search_wrap).onChange((query) => {
+            // Always remember what the box shows — even in clash/missing-pdf — so
+            // returning to papers mode can re-apply the same query.
+            this.papers_query = query
             if (this.mode !== 'papers') return
             // Clearing the query jumps back to the full/preview list immediately —
             // debouncing that specific transition would read as sluggish. Every
@@ -148,14 +157,14 @@ export class PaperPanelView extends ItemView {
             // scan + repaint per character.
             if (query.trim().length === 0) {
                 this.search_debouncer.cancel()
-                this.show_papers(query)
+                this.show_papers()
                 return
             }
             this.search_debouncer.trigger(() => {
                 // onClose cancels this debouncer, so only a mode switch (not a
                 // closed panel) can still make this callback stale.
                 if (this.mode !== 'papers') return
-                this.show_papers(query)
+                this.show_papers()
             })
         })
 
@@ -301,11 +310,17 @@ export class PaperPanelView extends ItemView {
         void this.show_missing_pdf(false)
     }
 
-    /** Dispatches to whichever papers-list view is active (persisted in plugin cache). */
-    show_papers(query: string = '') {
+    /**
+     * Dispatches to whichever papers-list view is active (persisted in plugin cache).
+     * Always uses {@link papers_query} — the live SearchComponent text — so list/
+     * discover, clash return, and missing-PDF return all see the same filter as
+     * the `{` suggest path (via {@link list_ids_for_panel} / {@link filtered_ids}).
+     */
+    show_papers() {
         // Any fresh dispatch (typing, view toggle, back-from-clash/missing-pdf) supersedes
         // an in-flight "Most cited" index build — see on_sort_change's epoch check.
         this.cite_index_build_epoch++
+        const query = this.papers_query
         if (this.plugin.cache.papers_view === 'list') {
             this.show_list(query)
         } else {
@@ -316,8 +331,8 @@ export class PaperPanelView extends ItemView {
     /**
      * Discover view: browse, not search. Empty query shows a random capped
      * sample (re-rollable) with clash/missing-PDF coloring; a non-empty
-     * query falls back to the same sorted/capped search every other panel
-     * list uses — randomness only applies to the browse state.
+     * query uses {@link list_ids_for_panel} (same match_query + score ranking
+     * as `{` suggest) — randomness only applies to the browse state.
      */
     show_discover(query: string = '') {
         this.clear_list()
