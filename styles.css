@@ -51,6 +51,48 @@ If your plugin does not need CSS, delete this file.
     border-color: transparent !important;
 }
 
+/*
+ * Live Preview only: keep chips on the text baseline so an end-of-line chip
+ * does not inflate the line box or leave the next soft-wrapped line looking
+ * indented (a common side effect of tall inline-flex + CM widget buffers —
+ * see codemirror/dev#989). Panel chips keep the larger min-height above.
+ */
+.bibtex-cm-widget,
+.bibtex-cm-widget .bibtex-hover,
+.bibtex-cm-widget .bibtex-hover-chip {
+    display: inline;
+    vertical-align: baseline;
+    line-height: inherit;
+    margin: 0;
+    padding: 0;
+    border: none;
+    /* Avoid an extra wrap opportunity from nested inline boxes. */
+    white-space: nowrap;
+}
+
+.bibtex-cm-widget .bibtex-hover button {
+    display: inline-block;
+    vertical-align: baseline;
+    /* Match body line metrics — do not use --input-height here. */
+    min-height: 0;
+    height: auto;
+    line-height: 1.2;
+    padding: 0 0.35em;
+    margin: 0;
+    box-sizing: border-box;
+    /* Slightly under body so the chip sits in the line, not on top of it. */
+    font-size: 0.92em;
+}
+
+/* Zero-size buffers next to our chips still participate in wrap decisions
+ * if they keep height: 1em; collapse them so wrap breaks on real text only. */
+.markdown-source-view.mod-cm6 .cm-line:has(.bibtex-cm-widget) > .cm-widgetBuffer {
+    height: 0 !important;
+    width: 0 !important;
+    vertical-align: baseline !important;
+    overflow: hidden;
+}
+
 /* Reading-view inline cite whose key is not in the plugin cache (no toast spam). */
 code.bibtex-cite-unknown {
     color: var(--text-muted);
