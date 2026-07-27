@@ -62,6 +62,7 @@ function make_fake_plugin() {
 		cache: {
 			card_font_size: 13,
 			card_wide: false,
+			action_strip_layout: 'rows',
 			note_folder: 'note',
 			pdf_folder: 'pdf',
 			template_path: '',
@@ -138,7 +139,7 @@ describe('citation popup DOM behavior', () => {
 		expect(chip_button().hasAttribute('title')).toBe(false)
 	})
 
-	it('open preview card shows a unified affordance line (Esc / click outside), not only an ⓘ', async () => {
+	it('open preview card shows Pin/Close chrome + Esc hint near the cursor edge', async () => {
 		const { chip_button, card } = mount()
 		await act(async () => {
 			fireEvent.click(chip_button())
@@ -146,8 +147,10 @@ describe('citation popup DOM behavior', () => {
 		const footer = card()?.querySelector('.bibtex-card-affordance')
 		expect(footer).not.toBeNull()
 		expect(footer!.classList.contains('is-pinned')).toBe(false)
+		expect(footer!.querySelector('.bibtex-card-pin')).toBeTruthy()
+		expect(footer!.querySelector('.bibtex-card-close')?.textContent?.trim()).toBe('Close')
 		expect(footer!.textContent).toMatch(/Esc/i)
-		expect(footer!.textContent).toMatch(/click outside/i)
+		expect(footer!.textContent).toMatch(/outside/i)
 		expect(footer!.textContent).not.toBe('ⓘ')
 		expect(footer?.getAttribute('title')).toMatch(/panel/i)
 	})
@@ -338,6 +341,37 @@ describe('citation popup DOM behavior', () => {
 		vi.useRealTimers()
 	})
 
+	it('action strip uses the configured layout class and block buttons', async () => {
+		const portal_root = document.createElement('div')
+		document.body.appendChild(portal_root)
+		const app = make_fake_app(portal_root)
+		const plugin = make_fake_plugin()
+		plugin.cache.action_strip_layout = 'rows'
+
+		const host = document.createElement('span')
+		document.body.appendChild(host)
+		await act(async () => {
+			render_hover(host, bibtex, plugin as any, app as any, true, false)
+		})
+
+		const bar = portal_root.querySelector('.bibtex-hover-button-bar') as HTMLElement | null
+		expect(bar).toBeTruthy()
+		expect(bar!.classList.contains('is-layout-rows')).toBe(true)
+		expect(bar!.getAttribute('data-layout')).toBe('rows')
+		// Copy / Open / Change captions; change row is key + wide uncache
+		const labels = Array.from(bar!.querySelectorAll('.bibtex-card-btn-group-label')).map(
+			(el) => el.textContent?.trim(),
+		)
+		expect(labels).toEqual(['Copy', 'Open', 'Change'])
+		expect(bar!.querySelector('.is-change')).toBeTruthy()
+		expect(bar!.querySelector('.bibtex-card-btn.is-priority-primary')?.textContent?.trim()).toBe('uncache')
+		expect(bar!.querySelector('.bibtex-card-btn.is-priority-secondary')?.textContent?.trim()).toBe('key')
+		expect(portal_root.querySelectorAll('a.bibtex-card-file-link').length).toBe(2)
+
+		host.remove()
+		portal_root.remove()
+	})
+
 	it('uncache opens ConfirmActionModal (not window.confirm) and restores editor focus on close', async () => {
 		vi.useFakeTimers()
 		const focus = vi.fn()
@@ -452,7 +486,8 @@ describe('citation popup DOM behavior', () => {
 		const footer = card()!.querySelector('.bibtex-card-affordance')
 		expect(footer).not.toBeNull()
 		expect(footer!.classList.contains('is-pinned')).toBe(true)
-		expect(footer!.textContent).toMatch(/Pinned/i)
+		expect(footer!.textContent).toMatch(/Unpin/i)
+		expect(footer!.textContent).toMatch(/Close/i)
 		expect(footer!.textContent).toMatch(/Esc/i)
 		expect(footer!.textContent).toMatch(/drag/i)
 		expect(footer!.getAttribute('title')).toMatch(/notes/i)

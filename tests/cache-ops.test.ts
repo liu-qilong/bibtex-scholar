@@ -126,6 +126,16 @@ describe('cache-ops / data integrity', () => {
 		expect(normalize_plugin_cache({ card_wide: 'yes' } as unknown).card_wide).toBe(false)
 	})
 
+	it('normalize_plugin_cache defaults action_strip_layout to rows, preserves known ids, migrates retired layouts', () => {
+		expect(normalize_plugin_cache(undefined).action_strip_layout).toBe('rows')
+		expect(normalize_plugin_cache({ action_strip_layout: 'grouped' }).action_strip_layout).toBe('grouped')
+		expect(normalize_plugin_cache({ action_strip_layout: 'rows' }).action_strip_layout).toBe('rows')
+		// classic / grid dropped — migrate to rows
+		expect(normalize_plugin_cache({ action_strip_layout: 'classic' } as unknown).action_strip_layout).toBe('rows')
+		expect(normalize_plugin_cache({ action_strip_layout: 'grid' } as unknown).action_strip_layout).toBe('rows')
+		expect(normalize_plugin_cache({ action_strip_layout: 'mosaic' } as unknown).action_strip_layout).toBe('rows')
+	})
+
 	it('normalize_plugin_cache defaults missing_pdf_enabled to off, preserves true', () => {
 		expect(normalize_plugin_cache(undefined).missing_pdf_enabled).toBe(false)
 		expect(normalize_plugin_cache({ missing_pdf_enabled: true }).missing_pdf_enabled).toBe(true)

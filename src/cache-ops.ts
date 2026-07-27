@@ -60,6 +60,29 @@ export async function collect_hits_from_markdown(path: string, text: string): Pr
 /** path → lean fingerprint string (`mtimeMs:size`). */
 export type PathFingerprintMap = Record<string, string>
 
+/**
+ * Citation-card action strip layout (prototype branch: action-strip-layouts).
+ * - `rows` — command rows: fixed-width block tiles, one row per multi-button group
+ * - `grouped` — legacy toolbar: flex-wrap with side dividers between groups
+ *
+ * Dropped after review: `classic` / `grid` (visually disorganized). Old saved
+ * values migrate to `rows` via {@link normalize_action_strip_layout}.
+ */
+export type ActionStripLayout = 'rows' | 'grouped'
+
+export const ACTION_STRIP_LAYOUTS: readonly ActionStripLayout[] = [
+	'rows',
+	'grouped',
+] as const
+
+export function normalize_action_strip_layout(raw: unknown): ActionStripLayout {
+	if (raw === 'rows' || raw === 'grouped') {
+		return raw
+	}
+	// Retired prototypes (classic, grid) and garbage → preferred default.
+	return 'rows'
+}
+
 export type PluginCacheShape = {
 	bibtex_dict: BibtexDict
 	note_folder: string
@@ -70,6 +93,11 @@ export type PluginCacheShape = {
 	card_font_size: number
 	/** When true, floating citation cards use a wider max width. */
 	card_wide: boolean
+	/**
+	 * Prototype: how the citation card action strip lays out across widths.
+	 * Switch in Settings → Citation card while iterating layouts.
+	 */
+	action_strip_layout: ActionStripLayout
 	/** When true, the paper panel offers a toggle listing entries with no matching PDF. */
 	missing_pdf_enabled: boolean
 	/** When true, citation cards in the paper panel's dense chip list wait 2x the open debounce before a hover opens them. */
@@ -114,6 +142,9 @@ export const DEFAULT_PLUGIN_CACHE: PluginCacheShape = {
 	fetch_mode: 'doi',
 	card_font_size: 13,
 	card_wide: false,
+	// Prototype default: segmented command rows (most predictable across widths).
+	// Flip in Settings while comparing; `grouped` is the pre-prototype toolbar.
+	action_strip_layout: 'rows',
 	missing_pdf_enabled: false,
 	panel_double_debounce_enabled: false,
 	papers_view: 'discover',
@@ -225,6 +256,7 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 		fetch_mode: DEFAULT_PLUGIN_CACHE.fetch_mode,
 		card_font_size: DEFAULT_PLUGIN_CACHE.card_font_size,
 		card_wide: DEFAULT_PLUGIN_CACHE.card_wide,
+		action_strip_layout: DEFAULT_PLUGIN_CACHE.action_strip_layout,
 		missing_pdf_enabled: DEFAULT_PLUGIN_CACHE.missing_pdf_enabled,
 		panel_double_debounce_enabled: DEFAULT_PLUGIN_CACHE.panel_double_debounce_enabled,
 		papers_view: DEFAULT_PLUGIN_CACHE.papers_view,
@@ -256,6 +288,9 @@ export function normalize_plugin_cache(raw: unknown): PluginCacheShape {
 			o.card_font_size !== undefined ? o.card_font_size : base.card_font_size,
 		),
 		card_wide: typeof o.card_wide === 'boolean' ? o.card_wide : base.card_wide,
+		action_strip_layout: normalize_action_strip_layout(
+			o.action_strip_layout !== undefined ? o.action_strip_layout : base.action_strip_layout,
+		),
 		missing_pdf_enabled: typeof o.missing_pdf_enabled === 'boolean' ? o.missing_pdf_enabled : base.missing_pdf_enabled,
 		panel_double_debounce_enabled: typeof o.panel_double_debounce_enabled === 'boolean'
 			? o.panel_double_debounce_enabled

@@ -84,29 +84,39 @@ export function rename_notice_text(old_id: string, new_id: string, total: number
 }
 
 /**
- * Always-visible footer on floating citation cards (preview vs pinned).
- * Short line is readable at a glance; `detail` is the optional title tooltip.
+ * Hint text beside interactive Pin / Close on the citation card chrome.
+ * Actions themselves are real buttons in the affordance strip (not this string).
  */
 export type CardAffordanceCopy = {
-	/** One-line status / dismiss rules (always visible). */
-	line: string
-	/** Longer explanation on hover of the footer only. */
+	/** Short mode hint after Pin · Close (Esc / drag, etc.). */
+	hint: string
+	/** Longer explanation on hover of the controls strip. */
 	detail: string
+	/**
+	 * @deprecated Prefer {@link hint}; kept as an alias so older tests/callers
+	 * that expected a single `line` still compile during the chrome redesign.
+	 */
+	line: string
 }
 
 export function card_affordance_copy(pinned: boolean): CardAffordanceCopy {
 	if (pinned) {
+		const hint = 'Esc · drag title to move'
 		return {
-			line: 'Pinned · Esc closes · drag header to move',
+			hint,
+			line: hint,
 			detail:
 				'Stays open when you change notes. Esc closes the front pin only. '
-				+ 'Drag the title bar to reposition.',
+				+ 'Drag the title to reposition. Use Unpin or Close in this strip.',
 		}
 	}
+	const hint = 'Esc · click outside'
 	return {
-		line: 'Esc · click outside to close',
+		hint,
+		line: hint,
 		detail:
 			'Leave the chip and card, press Esc, or click outside. '
+			+ 'Pin keeps the card open across notes. '
 			+ 'In the paper panel, scrolling the list also closes the card.',
 	}
 }

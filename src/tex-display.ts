@@ -382,7 +382,12 @@ export function display_bibtex_segments(raw: string): DisplaySegment[] {
 	return segments
 }
 
-/** Flattened plain text of {@link display_bibtex_segments} — for `title=` tooltips and other plain-text-only spots. */
+/**
+ * Flattened plain Unicode of {@link display_bibtex_segments}.
+ * Use for tooltips and **clipboard** from the card UI (TeX → Unicode, tags
+ * stripped). Do not use for BibTeX export / “copy bibtex” — those keep the raw
+ * stored encoding.
+ */
 export function display_bibtex_plain_text(raw: string): string {
 	return display_bibtex_segments(raw).map((seg) => seg.text).join('')
 }

@@ -1,15 +1,18 @@
 import { App, Notice, Platform, PluginSettingTab, Setting, normalizePath } from 'obsidian'
 import {
+	ACTION_STRIP_LAYOUTS,
 	CARD_FONT_SIZE_MAX,
 	CARD_FONT_SIZE_MIN,
 	entry_count,
 	LIST_FONT_SIZE_MAX,
 	LIST_FONT_SIZE_MIN,
+	normalize_action_strip_layout,
 	normalize_card_font_size,
 	normalize_list_font_size,
 	normalize_panel_chip_font_size,
 	PANEL_CHIP_FONT_SIZE_MAX,
 	PANEL_CHIP_FONT_SIZE_MIN,
+	type ActionStripLayout,
 } from 'src/cache-ops'
 import { OPEN_DEBOUNCE_MS } from 'src/citation-popup'
 import { format_diagnostics_report } from 'src/idle-audit'
@@ -131,6 +134,30 @@ export class BibtexScholarSetting extends PluginSettingTab {
 					.setValue(Boolean(this.plugin.cache.card_wide))
 					.onChange(async (value) => {
 						this.plugin.cache.card_wide = value
+						await this.plugin.save_cache()
+					})
+			})
+
+		const strip_layout = normalize_action_strip_layout(this.plugin.cache.action_strip_layout)
+		const strip_labels: Record<ActionStripLayout, string> = {
+			rows: 'Rows — command rows (fixed block tiles)',
+			grouped: 'Grouped — legacy toolbar with dividers',
+		}
+		new Setting(containerEl)
+			.setName('Action strip layout (prototype)')
+			.setDesc(
+				'How the citation card’s action buttons arrange. '
+				+ 'Rows is the command-center prototype; Grouped is the previous toolbar. '
+				+ 'See docs/action-strip-prototypes.md.',
+			)
+			.addDropdown((dropdown) => {
+				for (const id of ACTION_STRIP_LAYOUTS) {
+					dropdown.addOption(id, strip_labels[id])
+				}
+				dropdown
+					.setValue(strip_layout)
+					.onChange(async (value) => {
+						this.plugin.cache.action_strip_layout = normalize_action_strip_layout(value)
 						await this.plugin.save_cache()
 					})
 			})

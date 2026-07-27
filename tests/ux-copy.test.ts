@@ -59,17 +59,16 @@ describe('ux-copy / user-facing messages', () => {
 		)
 	})
 
-	it('card_affordance_copy differs for preview vs pin (line always readable)', () => {
+	it('card_affordance_copy differs for preview vs pin (hint always readable)', () => {
 		const preview = card_affordance_copy(false)
-		expect(preview.line).toMatch(/Esc/)
-		expect(preview.line).toMatch(/click outside/i)
-		expect(preview.line).not.toMatch(/Pinned/)
-		expect(preview.detail.length).toBeGreaterThan(preview.line.length)
+		expect(preview.hint).toMatch(/Esc/)
+		expect(preview.hint).toMatch(/outside/i)
+		expect(preview.hint).not.toMatch(/Pinned/)
+		expect(preview.detail.length).toBeGreaterThan(preview.hint.length)
 
 		const pinned = card_affordance_copy(true)
-		expect(pinned.line).toMatch(/Pinned/)
-		expect(pinned.line).toMatch(/Esc/)
-		expect(pinned.line).toMatch(/drag/i)
+		expect(pinned.hint).toMatch(/Esc/)
+		expect(pinned.hint).toMatch(/drag/i)
 		expect(pinned.detail).toMatch(/notes/i)
 	})
 })

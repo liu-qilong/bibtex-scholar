@@ -133,7 +133,8 @@ code.bibtex-source-tag.is-clashing {
     /* dvh shrinks with the on-screen keyboard (vh does not on iOS/most
      * Android WebViews); unsupported browsers keep the vh line above. */
     max-height: min(70dvh, 40em);
-    padding: 0.85em;
+    /* Tighter top so Pin/Close sit near the card edge; keep side/bottom room. */
+    padding: 0.45em 0.85em 0.85em;
     font-size: var(--bibtex-card-font-size);
     line-height: 1.35;
     background-color: var(--background-primary);
@@ -185,27 +186,38 @@ code.bibtex-source-tag.is-clashing {
 }
 
 /*
- * When the card opens above the chip (not enough room below), only the
- * scrollable field list (title/abstract/etc, "the contents") moves to the
- * far edge — header and action toolbar stay adjacent, in their normal
- * header-then-actions order, and that whole cluster relocates as a unit to
- * the edge closest to the cursor that spawned the card. Using `order` here
- * (instead of reversing the whole flex container) is what keeps title →
- * info tokens → action buttons in that reading order in both placements.
+ * When the card opens above the chip, only the scrollable field list moves to
+ * the far edge. Chrome (controls → title → actions) stays on the near-cursor
+ * edge. Within chrome when flipped, the affordance reorders last so Pin/Close
+ * sit on the outermost near-chip edge.
  */
-.bibtex-hover-card.is-floating.is-flipped .bibtex-card-fields,
-.bibtex-hover-card.is-floating.is-flipped .bibtex-card-affordance {
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-fields {
     order: -1;
 }
 
-.bibtex-hover-card.is-floating.is-flipped .bibtex-hover-button-bar {
-    border-bottom: none;
-    padding-bottom: 0;
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-affordance {
+    order: 1;
 }
 
-.bibtex-hover-card.is-floating.is-flipped .bibtex-card-header {
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-chrome {
     border-top: 1px solid var(--background-modifier-border);
-    padding-top: 0.65em;
+    padding-top: 0.55em;
+}
+
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-affordance {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+    border-top: 1px solid var(--background-modifier-border);
+    margin-top: 0.15em;
+    padding-top: 0.28em;
+    align-self: stretch;
+}
+
+.bibtex-hover-card.is-floating:not(.is-flipped) .bibtex-card-chrome .bibtex-hover-button-bar {
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 0.45em;
+    margin-top: 0;
 }
 
 @keyframes bibtex-card-in {
@@ -213,93 +225,150 @@ code.bibtex-source-tag.is-clashing {
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Header */
-.bibtex-card-header {
+/* Near-chip chrome: thin controls → key → title → action strip. */
+.bibtex-card-chrome {
+    --bibtex-chrome-gap: 0.4em;
+    --bibtex-action-label: 4em;
+    --bibtex-action-label-gutter: 0.85em;
+    --bibtex-action-tile-inset: calc(
+        var(--bibtex-action-label) + var(--bibtex-action-label-gutter)
+    );
+    /*
+     * Title measure (typesetting): ~45–75 characters per line (Bringhurst /
+     * Baymard / USWDS); headings favor the shorter end. Applied in `ch` on the
+     * title itself so measure tracks title size, not the card base.
+     */
+    --bibtex-title-measure: 42ch;
+    --bibtex-title-inline-pad: 0.65em;
     display: flex;
-    align-items: flex-start;
-    gap: var(--size-4-2, 8px);
+    flex-direction: column;
+    gap: var(--bibtex-chrome-gap);
     flex: 0 0 auto;
+    min-width: 0;
+    align-items: stretch;
 }
 
-.bibtex-card-header-text {
-    flex: 1 1 auto;
+/* Header — centered key, then undisputed title band. */
+.bibtex-card-header {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5em;
+    flex: 0 0 auto;
     min-width: 0;
 }
 
-.bibtex-card-title {
-    font-size: 1.08em;
-    font-weight: var(--font-semibold, 600);
-    line-height: 1.3;
-    color: var(--text-normal);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.bibtex-card-meta {
+/* Citekey: centered theme chip — quiet companions (year · type) beside it. */
+.bibtex-card-keyline {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.35em 0.5em;
-    margin-top: 0.25em;
-    font-size: 0.88em;
-    color: var(--text-muted);
+    justify-content: center;
+    gap: 0.35em 0.55em;
+    min-width: 0;
+    padding: 0;
 }
 
 .bibtex-card-id {
-    font-size: inherit;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 0.1em 0.4em;
+    font-size: 0.92em;
+    font-weight: var(--font-semibold, 600);
+    line-height: 1.3;
     color: var(--text-accent);
     background: var(--background-secondary);
-    padding: 0.05em 0.35em;
     border-radius: var(--radius-s, 3px);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.bibtex-card-meta {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3em 0.4em;
+    font-size: 0.78em;
+    font-weight: 400;
+    color: var(--text-faint);
+    line-height: 1.25;
+}
+
+.bibtex-card-meta-sep {
+    opacity: 0.7;
+    user-select: none;
 }
 
 .bibtex-card-year,
 .bibtex-card-type {
-    opacity: 0.9;
+    opacity: 1;
 }
 
 .bibtex-card-type {
     text-transform: lowercase;
     font-variant: small-caps;
+    letter-spacing: 0.04em;
 }
 
-/* Pin + dismiss: same hit target and chrome (pin’s current size is the standard). */
-.bibtex-card-pin,
-.bibtex-card-close {
-    flex: 0 0 auto;
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
+/*
+ * Title — plain block (never h1–h6). Whole surface is the copy control
+ * (DOI flash language on click). Bounds via measure + side padding.
+ */
+.bibtex-card-title-row {
+    display: flex;
     justify-content: center;
-    width: max(var(--input-height, 2rem), 2em);
-    height: max(var(--input-height, 2rem), 2em);
-    min-width: max(var(--input-height, 2rem), 2em);
-    min-height: max(var(--input-height, 2rem), 2em) !important;
-    max-width: max(var(--input-height, 2rem), 2em);
-    max-height: max(var(--input-height, 2rem), 2em);
-    padding: 0 !important;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 0.1em var(--bibtex-title-inline-pad) 0.15em;
+}
+
+.bibtex-card-title {
+    box-sizing: border-box;
+    width: fit-content;
+    max-width: min(100%, var(--bibtex-title-measure));
+    min-width: 0;
     margin: 0;
-    border: 1px solid transparent !important;
-    border-radius: var(--radius-s, 6px) !important;
-    background: transparent !important;
-    color: var(--text-muted) !important;
-    font-size: 1em;
-    font-weight: var(--font-normal, 400);
-    line-height: 1;
-    opacity: 0.6;
-    cursor: var(--cursor);
+    padding: 0.05em 0.1em;
+    border: none;
+    border-radius: var(--radius-s, 4px);
+    background: none;
+    font-size: 1.12em;
+    font-weight: var(--font-bold, 700);
+    font-family: inherit;
+    line-height: 1.38;
+    color: var(--text-normal);
+    text-align: left;
+    overflow-wrap: break-word;
+    word-break: normal;
+    hyphens: manual;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+    overflow: visible;
+    transition: color 0.14s ease, opacity 0.14s ease;
 }
 
-/* × glyph needs a touch more optical size to match the 14px pin SVG. */
-.bibtex-card-close {
-    font-size: 1.15em;
+/* Hover/focus: text only — no background slab (shared with field .is-copyable). */
+.bibtex-card-title.is-copyable:hover,
+.bibtex-card-title.is-copyable:focus-visible {
+    color: var(--text-accent);
+    opacity: 1;
+    outline: none;
 }
 
+.bibtex-card-title.is-copy-flash {
+    color: var(--color-green, #3cb371);
+    transition: color 0.08s ease;
+}
+
+/* Pin glyph inside the affordance text control — sized to the compact strip. */
 .bibtex-card-pin-icon {
-    width: 14px;
-    height: 14px;
+    width: 10px;
+    height: 10px;
+    flex: 0 0 auto;
     stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
@@ -307,39 +376,8 @@ code.bibtex-source-tag.is-clashing {
     fill: none;
 }
 
-/* Pinned: the tack's head fills solid — reads as "stuck", still just a color
- * change at icon scale, not a loud block (same restraint as the highlight below). */
-.bibtex-card-pin.is-active .bibtex-card-pin-head {
+.bibtex-card-affordance-action.is-active .bibtex-card-pin-head {
     fill: currentColor;
-}
-
-.bibtex-card-pin:hover,
-.bibtex-card-pin:focus-visible,
-.bibtex-card-close:hover,
-.bibtex-card-close:focus-visible {
-    background: var(--background-modifier-hover) !important;
-    color: var(--text-normal) !important;
-}
-
-/* Pinned: a slight persistent highlight, not a flashing color block (same
- * "subtle, not loud" rule as the paper-panel view toggle). */
-.bibtex-card-pin.is-active {
-    opacity: 1;
-    background: var(--background-modifier-hover) !important;
-    color: var(--text-accent) !important;
-}
-
-/* Touch: 32px hit targets read fine with a mouse but are tight to tap
- * accurately; grow pin/close/corner buttons toward the ~44px guidance on
- * Obsidian's own mobile body class instead of guessing from pointer type. */
-.is-mobile .bibtex-card-pin,
-.is-mobile .bibtex-card-close {
-    width: max(var(--input-height, 2rem), 2.75em);
-    height: max(var(--input-height, 2rem), 2.75em);
-    min-width: max(var(--input-height, 2rem), 2.75em);
-    min-height: max(var(--input-height, 2rem), 2.75em) !important;
-    max-width: max(var(--input-height, 2rem), 2.75em);
-    max-height: max(var(--input-height, 2rem), 2.75em);
 }
 
 .is-mobile .bibtex-panel-corner-btn {
@@ -354,76 +392,131 @@ code.bibtex-source-tag.is-clashing {
 }
 
 /* Card action toolbar (id/bibtex/{ }/[ ]/cite/etc.) — height only, not width:
- * these are text-label buttons that already wrap freely, unlike the icon
- * squares above, so only the ~2.15em height needed bumping toward the
- * touch-target floor used elsewhere. */
+ * text-label block buttons; height bumps toward the touch-target floor. */
 .is-mobile .bibtex-hover-card .bibtex-card-btn,
-.is-mobile .bibtex-hover-card a button {
+.is-mobile .bibtex-hover-card a.bibtex-card-file-link,
+.is-mobile .bibtex-hover-card a.bibtex-card-file-link button {
     min-height: max(var(--input-height, 2rem), 2.75em);
 }
 
-/* Action toolbar — chunky controls (first card-polish feel) */
+/* ── Action strip (command center) ────────────────────────────────────
+ * Block-button command rows (default) or legacy grouped toolbar.
+ * Rows: each band is caption + equal-flex tiles filling the same left/right
+ * bounds — not a global N-column matrix. Change row keeps key/uncache
+ * unbalanced for priority. See docs/action-strip-prototypes.md.
+ */
+
 .bibtex-hover-button-bar {
+    /* Caption/gutter tokens live on .bibtex-card-chrome; keep gap/min local. */
+    --bibtex-action-gap: 0.35em;
+    --bibtex-action-tile-min: 3.4em;
     display: flex;
     flex-wrap: wrap;
-    gap: 0.45em 0.55em;
+    gap: 0.35em 0.4em;
     align-items: center;
     flex: 0 0 auto;
-    padding-bottom: 0.65em;
-    border-bottom: 1px solid var(--background-modifier-border);
+    /* Border handled by chrome / flip state so it doesn't double with fields. */
+    padding-bottom: 0;
+    border-bottom: none;
 }
 
 .bibtex-card-btn-group {
-    display: inline-flex;
+    display: flex;
     flex-wrap: wrap;
-    gap: 0.35em;
+    gap: var(--bibtex-action-gap);
     align-items: center;
+    min-width: 0;
 }
 
-.bibtex-card-btn-group + .bibtex-card-btn-group {
-    padding-left: 0.55em;
-    margin-left: 0.15em;
-    border-left: 1px solid var(--background-modifier-border);
+.bibtex-card-btn-group-cells {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bibtex-action-gap);
+    align-items: stretch;
+    min-width: 0;
+    flex: 0 1 auto;
 }
 
+/* Row captions — quieter than the block tiles they label. */
+.bibtex-card-btn-group-label {
+    display: none;
+    flex: 0 0 auto;
+    align-self: center;
+    box-sizing: border-box;
+    width: var(--bibtex-action-label);
+    min-width: var(--bibtex-action-label);
+    /* Gutter lives on the caption so tile bands still share a clean left edge. */
+    margin-right: var(--bibtex-action-label-gutter);
+    padding-right: 0.15em;
+    font-size: 0.58em;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    opacity: 0.85;
+    line-height: 1.2;
+    text-align: right;
+    user-select: none;
+    pointer-events: none;
+}
+
+/* LinkedFileButton: anchor is the tile shell; inner button fills it. */
+.bibtex-hover-card a.bibtex-card-file-link {
+    display: inline-flex;
+    box-sizing: border-box;
+    min-width: var(--bibtex-action-tile-min);
+    flex: 1 1 var(--bibtex-action-tile-min);
+    text-decoration: none;
+    color: inherit;
+}
+
+.bibtex-hover-card a.bibtex-card-file-link button {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+}
+
+/* Block buttons — solid tiles; rows layout sizes them via flex on the row */
 .bibtex-hover-card .bibtex-card-btn,
-.bibtex-hover-card a button {
+.bibtex-hover-card a.bibtex-card-file-link button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    /* Prefer Obsidian control height; fall back to a solid em floor when scaled. */
-    min-height: max(var(--input-height, 2rem), 2.15em);
+    box-sizing: border-box;
+    min-width: var(--bibtex-action-tile-min);
+    min-height: max(var(--input-height, 2rem), 2.1em);
     height: auto;
-    padding: 0.35em 0.85em;
-    font-size: 0.95em;
+    padding: 0.35em 0.55em;
+    font-size: 0.88em;
     font-weight: var(--input-font-weight, 500);
     font-family: inherit;
+    line-height: 1.15;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     cursor: var(--cursor);
     user-select: none;
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 6px);
+    border-radius: var(--radius-s, 5px);
     background-color: var(--background-primary);
     color: var(--color-accent, var(--text-accent));
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
-    transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+    box-shadow: none;
+    transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
 }
 
 .bibtex-hover-card .bibtex-card-btn:hover,
 .bibtex-hover-card .bibtex-card-btn:focus-visible,
-.bibtex-hover-card a button:hover,
-.bibtex-hover-card a button:focus-visible {
+.bibtex-hover-card a.bibtex-card-file-link button:hover,
+.bibtex-hover-card a.bibtex-card-file-link button:focus-visible {
     background-color: var(--background-modifier-hover);
     color: var(--text-normal);
     border-color: var(--interactive-accent);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
     outline: none;
 }
 
 .bibtex-hover-card .bibtex-card-btn:active,
-.bibtex-hover-card a button:active {
-    box-shadow: none;
-    transform: translateY(0.5px);
+.bibtex-hover-card a.bibtex-card-file-link button:active {
+    background-color: var(--background-modifier-active-hover, var(--background-modifier-hover));
 }
 
 .bibtex-hover-card .bibtex-card-btn.is-danger {
@@ -433,7 +526,6 @@ code.bibtex-source-tag.is-clashing {
 
 .bibtex-hover-card .bibtex-card-btn.is-danger:hover,
 .bibtex-hover-card .bibtex-card-btn.is-danger:focus-visible {
-    /* Solid error fill + light label so text stays readable on red */
     background-color: var(--background-modifier-error, var(--text-error, #e04646));
     border-color: var(--background-modifier-error, var(--text-error, #e04646));
     color: var(--text-on-accent, #fff);
@@ -443,6 +535,96 @@ code.bibtex-source-tag.is-clashing {
     color: var(--text-faint) !important;
     border-style: dashed !important;
     box-shadow: none !important;
+}
+
+/* --- layout: grouped (legacy toolbar) --- */
+.bibtex-hover-button-bar.is-layout-grouped {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.bibtex-hover-button-bar.is-layout-grouped .bibtex-card-btn-group + .bibtex-card-btn-group {
+    padding-left: 0.5em;
+    margin-left: 0.1em;
+    border-left: 1px solid var(--background-modifier-border);
+}
+
+/* --- layout: rows (blocky command bands) ---
+ * First-iteration balance: every row shares the same outer left/right edge
+ * (caption + cells band). Inside a multi-button row, tiles share width equally
+ * (auto-fit 1fr) — not a global N-column matrix. Change row is deliberately
+ * unbalanced: compact key, wider uncache.
+ */
+.bibtex-hover-button-bar.is-layout-rows {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.35em;
+    align-items: stretch;
+    width: 100%;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .bibtex-card-btn-group {
+    display: flex;
+    flex-wrap: nowrap;
+    flex-direction: row;
+    align-items: stretch;
+    /* Gap only between tiles lives on .cells; caption→tiles uses label gutter. */
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .bibtex-card-btn-group-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .bibtex-card-btn-group-cells {
+    display: grid;
+    /* Equal blocks within the row; min keeps tiles readable on narrow cards. */
+    grid-template-columns: repeat(auto-fit, minmax(var(--bibtex-action-tile-min), 1fr));
+    gap: var(--bibtex-action-gap);
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    align-items: stretch;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .bibtex-card-btn,
+.bibtex-hover-button-bar.is-layout-rows a.bibtex-card-file-link {
+    width: 100%;
+    min-width: 0;
+    flex: unset;
+    max-width: none;
+}
+
+.bibtex-hover-button-bar.is-layout-rows a.bibtex-card-file-link button {
+    width: 100%;
+}
+
+/* Change row: key stays compact; uncache takes the rest (priority by width). */
+.bibtex-hover-button-bar.is-layout-rows .is-change .bibtex-card-btn-group-cells {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--bibtex-action-gap);
+}
+
+.bibtex-hover-button-bar.is-layout-rows .is-change .bibtex-card-btn.is-priority-secondary {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: var(--bibtex-action-tile-min);
+    max-width: 6em;
+    padding-left: 0.7em;
+    padding-right: 0.7em;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .is-change .bibtex-card-btn.is-priority-primary {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: var(--bibtex-action-tile-min);
 }
 
 /* Fields */
@@ -494,9 +676,42 @@ code.bibtex-source-tag.is-clashing {
 }
 
 /*
- * Inline copy glyph after the DOI text (not a chrome button, not end-of-row).
- * Markdown renderer wraps content in block <p>/<div>; force inline so the icon
- * sits at the end of the line like a trailing character.
+ * Click-to-copy field values (same language as title): text tint on hover,
+ * green flash on copy. Nested <a> still navigates (CopySurface).
+ * DOI/URL also keep a trailing glyph (.has-inline-copy).
+ */
+.bibtex-card-field-val.is-copyable {
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    border-radius: var(--radius-s, 3px);
+    transition: color 0.14s ease;
+}
+
+.bibtex-card-field-val.is-copyable:hover,
+.bibtex-card-field-val.is-copyable:focus-visible {
+    color: var(--text-accent);
+    outline: none;
+}
+
+.bibtex-card-field-val.is-copyable.is-copy-flash {
+    color: var(--color-green, #3cb371);
+    transition: color 0.08s ease;
+}
+
+/* Keep rendered links readable while the value surface is hovered. */
+.bibtex-card-field-val.is-copyable:hover a,
+.bibtex-card-field-val.is-copyable:focus-visible a {
+    color: var(--link-color, var(--text-accent));
+}
+
+.bibtex-card-field-val.is-copyable.is-copy-flash a {
+    color: var(--color-green, #3cb371);
+}
+
+/*
+ * Trailing copy glyph after DOI/URL text. Markdown wraps content in block
+ * <p>/<div>; force inline so the icon sits at the end of the line.
  */
 .bibtex-card-field-val.has-inline-copy > div {
     display: inline;
@@ -508,17 +723,15 @@ code.bibtex-source-tag.is-clashing {
     margin: 0;
 }
 
-/* Dim trailing icon — sized near text x-height; brightens on hover, green flash on click. */
 .bibtex-field-copy {
     display: inline;
-    margin: 0 0 0 1em;
+    margin: 0 0 0 0.65em;
     padding: 0;
     border: none;
     background: none;
     color: var(--text-faint);
     opacity: 0.35;
     cursor: pointer;
-    /* Align with lowercase baseline band rather than full cap height. */
     vertical-align: -0.05em;
     line-height: 1;
     font-size: 1em;
@@ -558,26 +771,77 @@ code.bibtex-source-tag.is-clashing {
 }
 
 /*
- * Always-visible card footer (preview + pinned). Sits with the fields cluster
- * so is-flipped keeps it farthest from the chip. Short line is readable without
- * hover; title carries the longer explanation.
+ * Near-cursor card controls — controls stay content-width (centered); the
+ * separator rule spans the content area so it reads as a clear band without
+ * the Pin/Close cluster itself stretching edge-to-edge.
  */
 .bibtex-card-affordance {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.05em 0.22em;
     flex: 0 0 auto;
     align-self: stretch;
-    margin-top: 0.15em;
-    padding-top: 0.35em;
-    border-top: 1px solid var(--background-modifier-border);
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: 0 0 0.28em;
+    border: none;
+    border-bottom: 1px solid var(--background-modifier-border);
     color: var(--text-muted);
-    font-size: 0.8em;
-    line-height: 1.3;
-    text-align: center;
-    cursor: help;
+    font-size: 0.68em;
+    line-height: 1.05;
     user-select: none;
+    box-sizing: border-box;
 }
 
-.bibtex-card-affordance.is-pinned {
-    color: var(--text-muted);
+.bibtex-card-affordance-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.18em;
+    margin: 0;
+    padding: 0.02em 0.28em;
+    border: none !important;
+    border-radius: var(--radius-s, 4px) !important;
+    background: transparent !important;
+    color: var(--text-muted) !important;
+    font: inherit;
+    font-weight: 500;
+    line-height: 1.05;
+    cursor: var(--cursor);
+    box-shadow: none !important;
+}
+
+.bibtex-card-affordance-action:hover,
+.bibtex-card-affordance-action:focus-visible {
+    background: var(--background-modifier-hover) !important;
+    color: var(--text-normal) !important;
+    outline: none;
+}
+
+.bibtex-card-affordance-action.is-active {
+    color: var(--text-accent) !important;
+    background: var(--background-modifier-hover) !important;
+}
+
+.bibtex-card-affordance-sep {
+    color: var(--text-faint);
+    opacity: 0.85;
+    user-select: none;
+    pointer-events: none;
+}
+
+.bibtex-card-affordance-hint {
+    color: var(--text-faint);
+    font-weight: 400;
+    cursor: help;
+}
+
+.is-mobile .bibtex-card-affordance-action {
+    /* Keep a usable tap target without fattening the desktop strip. */
+    min-height: max(var(--input-height, 2rem), 2.25em);
+    padding: 0.25em 0.55em;
 }
 
 /* Settings diagnostics (local only — no network). */
