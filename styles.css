@@ -119,6 +119,12 @@ code.bibtex-source-tag.is-clashing {
 /* --bibtex-card-font-size is set from plugin settings (default 13px). */
 .bibtex-hover-card.is-floating {
     --bibtex-card-font-size: 13px;
+    /* Field list / abstract line metrics — keep scroll caps on whole lines. */
+    --bibtex-field-lh: 1.4;
+    --bibtex-abstract-max-lines: 8;
+    --bibtex-abstract-pad-y: 0.4em;
+    /* Sub-pixel / border fudge so “almost 8 lines” does not create scroll play. */
+    --bibtex-scroll-slack: 2px;
     position: fixed;
     z-index: var(--layer-popover, 30);
     top: 0;
@@ -154,35 +160,45 @@ code.bibtex-source-tag.is-clashing {
 
 /* Pinned: detached from any anchor, draggable, own z-order (set inline via
  * style.zIndex — see hover.tsx) — a slightly stronger shadow reads as
- * "floating/detached" rather than "anchored to a chip." */
+ * "floating/detached" rather than "anchored to a chip."
+ * Drag from empty chrome (padding/gaps), not title/actions/fields. */
 .bibtex-hover-card.is-floating.is-pinned {
     box-shadow:
         0 0 0 1px rgba(0, 0, 0, 0.06),
         0 12px 32px rgba(0, 0, 0, 0.28);
-}
-
-.bibtex-hover-card.is-floating.is-pinned .bibtex-card-header {
     cursor: grab;
-    user-select: none;
-    /* Pointer-driven drag (hover.tsx on_header_pointer_down) must own the
-     * gesture on touch — without this, the browser's native scroll/pan
-     * competes with the drag on Android/iOS. */
+    /* Own the gesture on empty chrome; interactive children override below. */
     touch-action: none;
 }
 
-.bibtex-hover-card.is-floating.is-pinned .bibtex-card-header:active {
+.bibtex-hover-card.is-floating.is-pinned[data-dragging='1'] {
     cursor: grabbing;
 }
 
-/* Settings: “Wider citation cards” — more horizontal room, less wrapping/scroll */
+/* Interactive surfaces keep their own cursors / touch behavior. */
+.bibtex-hover-card.is-floating.is-pinned button,
+.bibtex-hover-card.is-floating.is-pinned a,
+.bibtex-hover-card.is-floating.is-pinned .is-copyable,
+.bibtex-hover-card.is-floating.is-pinned .bibtex-field-copy,
+.bibtex-hover-card.is-floating.is-pinned .bibtex-hover-button-bar {
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+/* Field list: pan-y for abstract scroll; empty row space inherits grab for drag. */
+.bibtex-hover-card.is-floating.is-pinned .bibtex-card-fields {
+    touch-action: pan-y;
+}
+
+.bibtex-hover-card.is-floating.is-pinned .bibtex-card-field-key {
+    cursor: grab;
+}
+
+/* Settings: “Wider citation cards” — more horizontal room; abstract still 8 lines. */
 .bibtex-hover-card.is-floating.is-wide {
     width: min(44em, calc(100vw - 16px));
     max-height: min(75vh, 44em);
     max-height: min(75dvh, 44em);
-}
-
-.bibtex-hover-card.is-floating.is-wide .bibtex-card-field.is-abstract .bibtex-card-field-val {
-    max-height: 12em;
 }
 
 /*
@@ -627,17 +643,20 @@ code.bibtex-source-tag.is-clashing {
     min-width: var(--bibtex-action-tile-min);
 }
 
-/* Fields */
+/* Fields — grow with content; scroll only when the card hits its viewport max. */
 .bibtex-card-fields {
     flex: 1 1 auto;
     min-height: 0;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 0.45em;
     margin: 0 -0.15em;
     padding: 0.1em 0.15em;
     overscroll-behavior: contain;
+    /* Avoid reserving gutter when content fits (reduces “empty scroll” feel). */
+    scrollbar-gutter: auto;
 }
 
 .bibtex-card-field {
@@ -646,7 +665,7 @@ code.bibtex-source-tag.is-clashing {
     gap: 0.35em 0.65em;
     align-items: start;
     font-size: 0.92em;
-    line-height: 1.4;
+    line-height: var(--bibtex-field-lh, 1.4);
 }
 
 .bibtex-card-field.is-abstract {
@@ -662,50 +681,78 @@ code.bibtex-source-tag.is-clashing {
     word-break: break-all;
 }
 
+/* Layout cell only — full grid track; empty remainder is free for pin-drag. */
 .bibtex-card-field-val {
     min-width: 0;
     color: var(--text-normal);
 }
 
+/*
+ * Abstract: grow-to-fit, clamp at 8 full lines (plus padding). Scroll only when
+ * content exceeds that — not on fractional “almost fits” (line-based max-height
+ * + 2px slack). Short abstracts never get a nested scrollbar.
+ */
 .bibtex-card-field.is-abstract .bibtex-card-field-val {
-    max-height: 9em;
-    overflow: auto;
-    padding: 0.4em 0.5em;
+    box-sizing: border-box;
+    padding: var(--bibtex-abstract-pad-y, 0.4em) 0.5em;
     background: var(--background-secondary);
     border-radius: var(--radius-s, 4px);
+    /* 8 × line-box + vertical padding + sub-pixel slack */
+    max-height: calc(
+        (var(--bibtex-abstract-max-lines, 8) * 1em * var(--bibtex-field-lh, 1.4))
+        + (2 * var(--bibtex-abstract-pad-y, 0.4em))
+        + var(--bibtex-scroll-slack, 2px)
+    );
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: auto;
+}
+
+/* Markdown blocks inside abstract: no extra margins (they invent scroll play). */
+.bibtex-card-field.is-abstract .bibtex-card-field-val p {
+    margin: 0;
+}
+
+.bibtex-card-field.is-abstract .bibtex-card-field-val p + p {
+    margin-top: 0.35em;
 }
 
 /*
- * Click-to-copy field values (same language as title): text tint on hover,
- * green flash on copy. Nested <a> still navigates (CopySurface).
- * DOI/URL also keep a trailing glyph (.has-inline-copy).
+ * Text-hugging copy hit target (not the whole value cell). Short author/year
+ * lines leave empty track space for drag; long abstract still max-width 100%.
  */
-.bibtex-card-field-val.is-copyable {
+.bibtex-card-field-copy-surface.is-copyable {
+    display: inline-block;
+    box-sizing: border-box;
+    width: fit-content;
+    max-width: 100%;
+    vertical-align: top;
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
     border-radius: var(--radius-s, 3px);
+    color: inherit;
     transition: color 0.14s ease;
 }
 
-.bibtex-card-field-val.is-copyable:hover,
-.bibtex-card-field-val.is-copyable:focus-visible {
+.bibtex-card-field-copy-surface.is-copyable:hover,
+.bibtex-card-field-copy-surface.is-copyable:focus-visible {
     color: var(--text-accent);
     outline: none;
 }
 
-.bibtex-card-field-val.is-copyable.is-copy-flash {
+.bibtex-card-field-copy-surface.is-copyable.is-copy-flash {
     color: var(--color-green, #3cb371);
     transition: color 0.08s ease;
 }
 
-/* Keep rendered links readable while the value surface is hovered. */
-.bibtex-card-field-val.is-copyable:hover a,
-.bibtex-card-field-val.is-copyable:focus-visible a {
+.bibtex-card-field-copy-surface.is-copyable:hover a,
+.bibtex-card-field-copy-surface.is-copyable:focus-visible a {
     color: var(--link-color, var(--text-accent));
 }
 
-.bibtex-card-field-val.is-copyable.is-copy-flash a {
+.bibtex-card-field-copy-surface.is-copyable.is-copy-flash a {
     color: var(--color-green, #3cb371);
 }
 
@@ -713,12 +760,17 @@ code.bibtex-source-tag.is-clashing {
  * Trailing copy glyph after DOI/URL text. Markdown wraps content in block
  * <p>/<div>; force inline so the icon sits at the end of the line.
  */
-.bibtex-card-field-val.has-inline-copy > div {
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-copy-surface {
+    display: inline;
+    max-width: calc(100% - 1.5em);
+}
+
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-copy-surface > div {
     display: inline;
 }
 
-.bibtex-card-field-val.has-inline-copy .bibtex-markdown-rendered p,
-.bibtex-card-field-val.has-inline-copy > div p {
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-copy-surface p,
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-copy-surface > div p {
     display: inline;
     margin: 0;
 }

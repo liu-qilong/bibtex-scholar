@@ -741,6 +741,7 @@ const MarkdownField = ({
  *
  * Chrome (near cursor / chip): card controls → title once → action strip.
  * Contents (far edge when flipped): scrollable fields, without repeating title.
+ * Pin drag is owned by the card shell (empty chrome), not the title.
  */
 const CitationCardBody = ({
     bibtex,
@@ -749,7 +750,6 @@ const CitationCardBody = ({
     pinned,
     on_pin_toggle,
     on_close,
-    on_header_pointer_down,
 }: {
     bibtex: BibtexElement
     plugin: BibtexScholar
@@ -757,7 +757,6 @@ const CitationCardBody = ({
     pinned: boolean
     on_pin_toggle: () => void
     on_close: () => void
-    on_header_pointer_down?: (e: ReactPointerEvent<HTMLElement>) => void
 }) => {
     // Owns the lifecycle of MarkdownRenderer.render() calls for this card instance.
     const owner_ref = useRef<Component | null>(null)
@@ -808,7 +807,7 @@ const CitationCardBody = ({
                     on_close={on_close}
                 />
 
-                <header className="bibtex-card-header" onPointerDown={on_header_pointer_down}>
+                <header className="bibtex-card-header">
                     {/* Citekey is the system focus — year/type are quiet companions. */}
                     <div className="bibtex-card-keyline">
                         <code className="bibtex-card-id" title="Citekey">
@@ -877,25 +876,33 @@ const CitationCardBody = ({
                     return (
                         <div key={key} className={`bibtex-card-field${dense}`}>
                             <div className="bibtex-card-field-key">{key}</div>
-                            <CopySurface
+                            {/*
+							 * Value cell is full-width (layout only). Copy hits a
+							 * text-hugging surface so empty row space stays free for pin-drag.
+							 */}
+                            <div
                                 className={
                                     show_link_copy_glyph
-                                        ? 'bibtex-card-field-val bibtex-markdown-rendered is-copyable has-inline-copy'
-                                        : 'bibtex-card-field-val bibtex-markdown-rendered is-copyable'
+                                        ? 'bibtex-card-field-val bibtex-markdown-rendered has-inline-copy'
+                                        : 'bibtex-card-field-val bibtex-markdown-rendered'
                                 }
-                                text={copy_text}
-                                label={`Copy ${key}`}
                             >
-                                <MarkdownField
-                                    app={app}
-                                    text={display}
-                                    source_path={String(bibtex.source_path)}
-                                    owner={owner_ref.current!}
-                                />
+                                <CopySurface
+                                    className="bibtex-card-field-copy-surface is-copyable"
+                                    text={copy_text}
+                                    label={`Copy ${key}`}
+                                >
+                                    <MarkdownField
+                                        app={app}
+                                        text={display}
+                                        source_path={String(bibtex.source_path)}
+                                        owner={owner_ref.current!}
+                                    />
+                                </CopySurface>
                                 {show_link_copy_glyph ? (
                                     <FieldCopyIcon text={copy_text} label={`Copy ${key}`} />
                                 ) : null}
-                            </CopySurface>
+                            </div>
                         </div>
                     )
                 })}
@@ -1185,8 +1192,25 @@ const PreviewCard = ({
 }
 
 /**
- * User-pinned card (0-or-N). Owns its position; drag from header; closes only
- * via unpin (button or Esc on the front-most pin, handled in CardManager).
+ * Interactive targets that own their own pointer gestures — never start a pin
+ * drag from these (buttons, links, click-to-copy fields/title, scroll body).
+ */
+const PIN_DRAG_IGNORE_SELECTOR = [
+	'button',
+	'a',
+	'input',
+	'textarea',
+	'select',
+	'[role="button"]',
+	'.is-copyable',
+	'.bibtex-field-copy',
+	'.bibtex-hover-button-bar',
+].join(', ')
+
+/**
+ * User-pinned card (0-or-N). Owns its position; drag from empty card chrome
+ * (padding, gutters, non-interactive gaps) — not from title/actions/fields.
+ * Closes only via unpin (button or Esc on the front-most pin).
  */
 const PinnedCard = ({
     paper_id,
@@ -1213,18 +1237,24 @@ const PinnedCard = ({
         }
     }, [pos.top, pos.left])
 
-    const on_header_pointer_down = (e: ReactPointerEvent<HTMLElement>) => {
-        // Ignore pin/close buttons — they need their own clicks.
-        if (e.target instanceof HTMLElement && e.target.closest('button')) {
+    const on_card_pointer_down = (e: ReactPointerEvent<HTMLElement>) => {
+        pin_registry.bring_to_front(paper_id)
+
+        // Only empty chrome / gaps — not title copy, actions, or scroll body.
+        if (e.target instanceof Element && e.target.closest(PIN_DRAG_IGNORE_SELECTOR)) {
             return
         }
+        // Primary button only (ignore right-click / pen barrel).
+        if (e.button !== 0) {
+            return
+        }
+
         const card = card_ref.current
         if (!card) {
             return
         }
-        const header_el = e.currentTarget
         const pointer_id = e.pointerId
-        header_el.setPointerCapture(pointer_id)
+        card.setPointerCapture(pointer_id)
         card.dataset.dragging = '1'
 
         const start_x = e.clientX
@@ -1236,8 +1266,7 @@ const PinnedCard = ({
         const on_move = (ev: PointerEvent) => {
             const dx = ev.clientX - start_x
             const dy = ev.clientY - start_y
-            // Below threshold: don't move yet — absorbs tap jitter near the
-            // header (e.g. reaching for a nearby button) so it doesn't drag.
+            // Below threshold: don't move yet — absorbs tap jitter.
             if (!moved && Math.hypot(dx, dy) < PIN_DRAG_THRESHOLD_PX) {
                 return
             }
@@ -1256,22 +1285,21 @@ const PinnedCard = ({
             card.style.left = `${next.left}px`
         }
         const on_up = () => {
-            header_el.removeEventListener('pointermove', on_move)
-            header_el.removeEventListener('pointerup', on_up)
+            card.removeEventListener('pointermove', on_move)
+            card.removeEventListener('pointerup', on_up)
             delete card.dataset.dragging
             try {
-                header_el.releasePointerCapture(pointer_id)
+                card.releasePointerCapture(pointer_id)
             } catch {
                 // already released
             }
             // Single registry write — avoids re-rendering the card body every move.
-            // Skip entirely if the drag never crossed the threshold (a tap, not a drag).
             if (moved) {
                 pin_registry.move(paper_id, drag_pos_ref.current)
             }
         }
-        header_el.addEventListener('pointermove', on_move)
-        header_el.addEventListener('pointerup', on_up)
+        card.addEventListener('pointermove', on_move)
+        card.addEventListener('pointerup', on_up)
     }
 
     const surface = card_surface_props(plugin, paper_id, {
@@ -1291,7 +1319,7 @@ const PinnedCard = ({
             aria-modal={false}
             tabIndex={-1}
             style={surface.style}
-            onPointerDown={() => pin_registry.bring_to_front(paper_id)}
+            onPointerDown={on_card_pointer_down}
         >
             <CitationCardBody
                 bibtex={bibtex}
@@ -1300,7 +1328,6 @@ const PinnedCard = ({
                 pinned={true}
                 on_pin_toggle={() => pin_registry.unpin(paper_id)}
                 on_close={() => pin_registry.unpin(paper_id)}
-                on_header_pointer_down={on_header_pointer_down}
             />
         </div>
     )

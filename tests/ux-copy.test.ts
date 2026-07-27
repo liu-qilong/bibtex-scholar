@@ -69,6 +69,8 @@ describe('ux-copy / user-facing messages', () => {
 		const pinned = card_affordance_copy(true)
 		expect(pinned.hint).toMatch(/Esc/)
 		expect(pinned.hint).toMatch(/drag/i)
+		expect(pinned.hint).toMatch(/empty space/i)
 		expect(pinned.detail).toMatch(/notes/i)
+		expect(pinned.detail).not.toMatch(/Drag the title/i)
 	})
 })

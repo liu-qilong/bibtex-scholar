@@ -101,13 +101,14 @@ export type CardAffordanceCopy = {
 
 export function card_affordance_copy(pinned: boolean): CardAffordanceCopy {
 	if (pinned) {
-		const hint = 'Esc · drag title to move'
+		const hint = 'Esc · drag empty space to move'
 		return {
 			hint,
 			line: hint,
 			detail:
 				'Stays open when you change notes. Esc closes the front pin only. '
-				+ 'Drag the title to reposition. Use Unpin or Close in this strip.',
+				+ 'Drag empty card chrome (padding/gaps) to reposition — not the title or actions. '
+				+ 'Use Unpin or Close in this strip.',
 		}
 	}
 	const hint = 'Esc · click outside'
