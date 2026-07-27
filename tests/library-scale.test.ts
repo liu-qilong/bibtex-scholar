@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BibtexDict, BibtexElement, Clash } from 'src/bibtex'
-import { match_query, query_matches_citekey } from 'src/bibtex'
+import { match_query, query_match_score, query_matches_citekey } from 'src/bibtex'
 import {
 	CLASH_RESULT_CAP,
 	compare_by_mention_count,
@@ -233,15 +233,27 @@ describe('list_ids_for_panel', () => {
 		d['ZZZ_Smith2020'] = entry('ZZZ_Smith2020', { title: 'Unrelated' })
 		const r = list_ids_for_panel(d, 'Smith2020')
 		expect(r.ids).toEqual(['ZZZ_Smith2020', 'AAA_Other'])
+		expect(query_match_score(d['ZZZ_Smith2020']!, 'Smith2020')).toBeGreaterThan(
+			query_match_score(d['AAA_Other']!, 'Smith2020'),
+		)
 	})
 
-	it('keeps alpha order within each rank group', () => {
+	it('keeps alpha order within the same score tier', () => {
 		const d: BibtexDict = {}
 		d['Zebra_key'] = entry('Zebra_key', {}) // citekey match
 		d['Alpha_key'] = entry('Alpha_key', {}) // citekey match
 		d['Middle'] = entry('Middle', { title: 'key mention in title' }) // other-field match
 		const r = list_ids_for_panel(d, 'key')
 		expect(r.ids).toEqual(['Alpha_key', 'Zebra_key', 'Middle'])
+	})
+
+	it('ranks exact title word above weaker substring/prefix hits', () => {
+		const d: BibtexDict = {}
+		d['Exact'] = entry('Exact', { title: 'The UNITE database' })
+		d['Prefix'] = entry('Prefix', { title: 'Across the United States' })
+		const r = list_ids_for_panel(d, 'UNITE')
+		expect(r.ids[0]).toBe('Exact')
+		expect(r.ids).toContain('Prefix')
 	})
 })
 

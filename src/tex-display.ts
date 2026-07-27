@@ -477,30 +477,64 @@ export function search_words(hay: string): string[] {
 }
 
 /**
- * Whether `token` matches a single normalized dictionary word.
+ * Match-quality ranks for a single query token against one dictionary word.
+ * Higher = better for ranking. {@link MATCH_Q.NONE} means no match.
  *
- * Order of checks (cheap → expensive):
- * 1. exact equality / word contains token / token is a prefix (antibio → antibiofilm)
- * 2. full-word Levenshtein within budget (magepix ≈ manogepix)
- * 3. fuzzy **prefix**: token ≈ some prefix of word (antbio ≈ antibio…, magepi ≈ manoge…)
- *
- * Prefix fuzzy is what full-word-only Levenshtein misses: length gates reject
- * short stubs against long title words.
+ * Exact and true-prefix beats mid-word substring, which beats reverse-stem
+ * ("typed past a short word"), which beats pure fuzzy (edit distance).
  */
-export function token_matches_word(token: string, word: string): boolean {
-	if (!token || !word) return false
-	if (word === token || word.includes(token)) return true
-	// Pure prefix (order-independent multi-token search relies on this heavily).
-	if (token.length >= 2 && word.startsWith(token)) return true
-	// Query longer than word but word is a stem the user finished typing past.
-	if (word.length >= 3 && token.startsWith(word)) return true
+export const MATCH_Q = {
+	NONE: 0,
+	FUZZY: 1,
+	REVERSE_STEM: 2,
+	SUBSTRING: 3,
+	PREFIX: 4,
+	EXACT: 5,
+} as const
+
+export type MatchQuality = (typeof MATCH_Q)[keyof typeof MATCH_Q]
+
+/**
+ * Quality of `token` against one normalized dictionary word (0 = no match).
+ *
+ * Order of checks (cheap → expensive, quality high → low):
+ * 1. exact equality
+ * 2. true prefix (`antibio` → `antibiofilm`) / mid-word substring
+ * 3. reverse stem: token continues past a short word by at most a small
+ *    budget (`smithh` ≈ `smith`) — NOT `liush` ≈ `liu` (too much extra)
+ * 4. full-word Levenshtein within budget (`magepix` ≈ `manogepix`)
+ * 5. fuzzy prefix: token ≈ some prefix of word (`antbio` ≈ `antibio…`)
+ *
+ * Fuzzy steps require a shared first character so `unite` cannot latch onto
+ * `nitesh` via a one-edit prefix of an unrelated word.
+ */
+export function token_match_quality(token: string, word: string): MatchQuality {
+	if (!token || !word) return MATCH_Q.NONE
+	if (word === token) return MATCH_Q.EXACT
+	// True prefix (order-independent multi-token search relies on this heavily).
+	if (token.length >= 2 && word.startsWith(token)) return MATCH_Q.PREFIX
+	if (word.includes(token)) return MATCH_Q.SUBSTRING
 
 	const budget = fuzzy_edit_budget(token.length)
-	if (budget <= 0) return false
+	// Reverse stem: user typed a little past a complete short word.
+	// Cap extra length so "liush" does not claim author/citekey stem "liu".
+	const reverse_extra = Math.max(budget, 1)
+	if (
+		word.length >= 3 &&
+		token.startsWith(word) &&
+		token.length - word.length <= reverse_extra
+	) {
+		return MATCH_Q.REVERSE_STEM
+	}
+
+	if (budget <= 0) return MATCH_Q.NONE
+	// Anchor fuzzy on first character — kills unite≈nitesh while keeping
+	// antbio≈antibiofilm and magepix≈manogepix.
+	if (token.charCodeAt(0) !== word.charCodeAt(0)) return MATCH_Q.NONE
 
 	// Full-word typo (similar length only).
 	if (Math.abs(word.length - token.length) <= budget) {
-		if (levenshtein_within(token, word, budget) <= budget) return true
+		if (levenshtein_within(token, word, budget) <= budget) return MATCH_Q.FUZZY
 	}
 
 	// Fuzzy prefix: allow insertions/deletions at the start of a longer word.
@@ -510,30 +544,52 @@ export function token_matches_word(token: string, word: string): boolean {
 		const hi = Math.min(word.length, token.length + budget)
 		for (let n = lo; n <= hi; n++) {
 			if (levenshtein_within(token, word.slice(0, n), budget) <= budget) {
-				return true
+				return MATCH_Q.FUZZY
 			}
 		}
 	}
 
-	return false
+	return MATCH_Q.NONE
+}
+
+/**
+ * Whether `token` matches a single normalized dictionary word.
+ * See {@link token_match_quality} for the ranked rules.
+ */
+export function token_matches_word(token: string, word: string): boolean {
+	return token_match_quality(token, word) > MATCH_Q.NONE
+}
+
+/**
+ * Best match quality of `token` against a normalized field/corpus string.
+ *
+ * 1. Per-word match via {@link token_match_quality}
+ * 2. Contiguous substring of the whole haystack (covers `antibio` ⊂ title
+ *    even when split edges differ) — at least {@link MATCH_Q.SUBSTRING}
+ *
+ * Multi-token queries are AND'd by the caller; order never matters.
+ */
+export function token_match_quality_haystack(token: string, hay: string): MatchQuality {
+	if (!token) return MATCH_Q.EXACT
+	if (!hay) return MATCH_Q.NONE
+
+	let best: MatchQuality = MATCH_Q.NONE
+	for (const word of search_words(hay)) {
+		const q = token_match_quality(token, word)
+		if (q > best) best = q
+		if (best === MATCH_Q.EXACT) return best
+	}
+	// Contiguous substring anywhere (citekey fragments spanning `_`, etc.).
+	if (best === MATCH_Q.NONE && hay.includes(token)) {
+		return MATCH_Q.SUBSTRING
+	}
+	return best
 }
 
 /**
  * Whether a normalized query token matches a normalized field/corpus string.
- *
- * 1. Exact substring of the whole haystack (fast path)
- * 2. Per-word match via {@link token_matches_word} (prefix + fuzzy)
- *
  * Multi-token queries are AND'd by the caller; order never matters.
  */
 export function token_matches_haystack(token: string, hay: string): boolean {
-	if (!token) return true
-	if (!hay) return false
-	// Contiguous substring anywhere (covers antibio ⊂ antibiofilm in title/id).
-	if (hay.includes(token)) return true
-
-	for (const word of search_words(hay)) {
-		if (token_matches_word(token, word)) return true
-	}
-	return false
+	return token_match_quality_haystack(token, hay) > MATCH_Q.NONE
 }

@@ -1,7 +1,12 @@
 import { App, Modal, ButtonComponent, Setting, Notice, requestUrl } from 'obsidian'
 import type BibtexScholar from 'src/main'
 import { copy_to_clipboard } from 'src/hover'
-import { normalize_for_search, search_tokens, token_matches_haystack } from 'src/tex-display'
+import {
+	normalize_for_search,
+	search_tokens,
+	token_match_quality_haystack,
+	token_matches_haystack,
+} from 'src/tex-display'
 
 /**
  * Represents a single BibTeX entry field.
@@ -633,6 +638,28 @@ const KNOWN_QUERY_KEYS = new Set<string>([
  */
 const search_corpus_cache = new WeakMap<BibtexElement, string>()
 
+/**
+ * Slim free-text corpus: one haystack per entry, fields separated so edges never glue.
+ * Cached per entry object — {@link upsert_entry} always swaps in a new object on
+ * real changes, so the cache self-invalidates by identity (see {@link search_corpus_cache}).
+ */
+function slim_search_corpus(bibtex: BibtexElement): string {
+    const cached = search_corpus_cache.get(bibtex)
+    if (cached !== undefined) {
+        return cached
+    }
+    const parts: string[] = []
+    for (const key of FREE_TEXT_MATCH_FIELDS) {
+        const raw = bibtex.fields[key]
+        if (raw != null && String(raw).length > 0) {
+            parts.push(normalize_for_search(String(raw)))
+        }
+    }
+    const corpus = parts.join('\n')
+    search_corpus_cache.set(bibtex, corpus)
+    return corpus
+}
+
 export function match_query(bibtex: BibtexElement, query: string): boolean {
     function field_has_all_tokens(raw: string, tokens: string[]): boolean {
         if (tokens.length === 0) {
@@ -640,28 +667,6 @@ export function match_query(bibtex: BibtexElement, query: string): boolean {
         }
         const hay = normalize_for_search(raw)
         return tokens.every((t) => token_matches_haystack(t, hay))
-    }
-
-    /**
-     * Slim free-text corpus: one haystack per entry, fields separated so edges never glue.
-     * Cached per entry object — {@link upsert_entry} always swaps in a new object on
-     * real changes, so the cache self-invalidates by identity (see {@link search_corpus_cache}).
-     */
-    function slim_corpus(): string {
-        const cached = search_corpus_cache.get(bibtex)
-        if (cached !== undefined) {
-            return cached
-        }
-        const parts: string[] = []
-        for (const key of FREE_TEXT_MATCH_FIELDS) {
-            const raw = bibtex.fields[key]
-            if (raw != null && String(raw).length > 0) {
-                parts.push(normalize_for_search(String(raw)))
-            }
-        }
-        const corpus = parts.join('\n')
-        search_corpus_cache.set(bibtex, corpus)
-        return corpus
     }
 
     function match_query_single(q: string): boolean {
@@ -694,7 +699,7 @@ export function match_query(bibtex: BibtexElement, query: string): boolean {
         if (tokens.length === 0) {
             return true
         }
-        const corpus = slim_corpus()
+        const corpus = slim_search_corpus(bibtex)
         return tokens.every((t) => token_matches_haystack(t, corpus))
     }
 
@@ -743,6 +748,56 @@ export function query_matches_citekey(bibtex: BibtexElement, query: string): boo
         }
     }
     return saw_free_text
+}
+
+/**
+ * How strongly a free-text query matches this entry — higher is better.
+ * Used by panel/suggest listing to put exact and citekey hits above weak
+ * substring/fuzzy hits (e.g. title word `UNITE` above `United` / `unit`).
+ *
+ * Score = Σ token quality over the slim corpus
+ *       + CITEKEY_WEIGHT × Σ token quality over the citekey alone
+ * so a pure citekey hit outranks the same token only in the title, while
+ * exact word still beats prefix/substring/fuzzy within each bucket.
+ *
+ * Callers that already filtered with {@link match_query} can sort by this;
+ * a non-matching entry may still get a low/zero score and should not be listed.
+ */
+const CITEKEY_SCORE_WEIGHT = 20
+
+export function query_match_score(bibtex: BibtexElement, query: string): number {
+    let field_score = 0
+    let citekey_score = 0
+    const id_hay = normalize_for_search(bibtex.fields.id ?? '')
+    const corpus = slim_search_corpus(bibtex)
+
+    for (const q of query.split(';')) {
+        const trimmed = q.trim()
+        if (trimmed.length === 0) continue
+
+        const colon = trimmed.indexOf(':')
+        if (colon > 0) {
+            const key_raw = trimmed.slice(0, colon).trim()
+            const key = key_raw.toLowerCase()
+            const value = trimmed.slice(colon + 1).trim()
+            if (FIELD_KEY_RE.test(key_raw) && KNOWN_QUERY_KEYS.has(key)) {
+                // Explicit field clause: score only within that field (no citekey bonus).
+                const raw = key in bibtex.fields ? String(bibtex.fields[key]) : ''
+                const hay = normalize_for_search(raw)
+                for (const t of search_tokens(value)) {
+                    field_score += token_match_quality_haystack(t, hay)
+                }
+                continue
+            }
+        }
+
+        const tokens = search_tokens(trimmed)
+        for (const t of tokens) {
+            field_score += token_match_quality_haystack(t, corpus)
+            citekey_score += token_match_quality_haystack(t, id_hay)
+        }
+    }
+    return field_score + CITEKEY_SCORE_WEIGHT * citekey_score
 }
 
 /**

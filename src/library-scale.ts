@@ -6,7 +6,7 @@
 import {
 	FREE_TEXT_MATCH_FIELDS,
 	match_query,
-	query_matches_citekey,
+	query_match_score,
 	type BibtexDict,
 	type BibtexElement,
 	type Clash,
@@ -96,10 +96,32 @@ function sorted_ids(dict: BibtexDict): string[] {
 }
 
 /**
+ * Rank matched ids by {@link query_match_score} (desc), then alpha.
+ * Citekey exact/prefix hits outrank title-only and weak fuzzy/substring hits.
+ */
+function ranked_search_ids(dict: BibtexDict, q: string, cap: number): LibraryListResult {
+	const scored: { id: string; score: number }[] = []
+	for (const id of Object.keys(dict)) {
+		const entry = dict[id]
+		if (!entry || !match_query(entry, q)) continue
+		scored.push({ id, score: query_match_score(entry, q) })
+	}
+	scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+	const matched = scored.length
+	const ids = scored.slice(0, cap).map((s) => s.id)
+	return {
+		ids,
+		matched,
+		truncated: matched > ids.length,
+		kind: 'search',
+	}
+}
+
+/**
  * Paper panel listing policy:
  * - empty / whitespace query → first {@link PANEL_EMPTY_PREVIEW} ids (sorted), never full library
  * - non-empty query → match_query hits, hard-capped at {@link PANEL_RESULT_CAP}
- *   ranked with citekey matches first (see {@link query_matches_citekey}), alpha within each group
+ *   ranked by {@link query_match_score} (citekey + exact/prefix above weak fuzzy), alpha tiebreak
  */
 export function list_ids_for_panel(dict: BibtexDict, query: string): LibraryListResult {
 	const q = query.trim()
@@ -113,29 +135,14 @@ export function list_ids_for_panel(dict: BibtexDict, query: string): LibraryList
 			kind: 'empty_preview',
 		}
 	}
-
-	const key_hits: string[] = []
-	const other_hits: string[] = []
-	for (const id of sorted_ids(dict)) {
-		const entry = dict[id]
-		if (!entry || !match_query(entry, q)) continue
-		;(query_matches_citekey(entry, q) ? key_hits : other_hits).push(id)
-	}
-	const matched = key_hits.length + other_hits.length
-	const ids = [...key_hits, ...other_hits].slice(0, PANEL_RESULT_CAP)
-	return {
-		ids,
-		matched,
-		truncated: matched > ids.length,
-		kind: 'search',
-	}
+	return ranked_search_ids(dict, q, PANEL_RESULT_CAP)
 }
 
 /**
  * EditorSuggest listing: same match rules, capped at {@link SUGGEST_RESULT_CAP}.
  * Empty query still returns a capped prefix so `{` alone is usable on small libs
- * without dumping 10k rows. Non-empty query ranks citekey matches first (see
- * {@link query_matches_citekey}), alpha within each group.
+ * without dumping 10k rows. Non-empty query ranks by {@link query_match_score}
+ * (same policy as {@link list_ids_for_panel}).
  */
 export function list_ids_for_suggest(dict: BibtexDict, query: string): LibraryListResult {
 	const q = query.trim()
@@ -149,22 +156,7 @@ export function list_ids_for_suggest(dict: BibtexDict, query: string): LibraryLi
 			kind: 'empty_preview',
 		}
 	}
-
-	const key_hits: string[] = []
-	const other_hits: string[] = []
-	for (const id of sorted_ids(dict)) {
-		const entry = dict[id]
-		if (!entry || !match_query(entry, q)) continue
-		;(query_matches_citekey(entry, q) ? key_hits : other_hits).push(id)
-	}
-	const matched = key_hits.length + other_hits.length
-	const ids = [...key_hits, ...other_hits].slice(0, SUGGEST_RESULT_CAP)
-	return {
-		ids,
-		matched,
-		truncated: matched > ids.length,
-		kind: 'search',
-	}
+	return ranked_search_ids(dict, q, SUGGEST_RESULT_CAP)
 }
 
 /**

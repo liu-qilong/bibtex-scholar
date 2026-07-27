@@ -12,6 +12,7 @@ import {
 	render_display_text,
 	search_tokens,
 	token_matches_haystack,
+	token_matches_word,
 } from 'src/tex-display'
 
 describe('find_matching_brace', () => {
@@ -183,6 +184,16 @@ describe('fuzzy token match', () => {
 		expect(token_matches_haystack('zzzzzzzz', hay)).toBe(false)
 		// Short tokens: exact only (no fuzzy)
 		expect(token_matches_haystack('cat', 'cut the cake')).toBe(false)
+	})
+
+	it('fuzzy requires shared first character (unite ≉ nitesh)', () => {
+		expect(token_matches_word('unite', 'nitesh')).toBe(false)
+		expect(token_matches_haystack('unite', 'nitesh kumar')).toBe(false)
+	})
+
+	it('reverse stem allows only a small overrun (smithh≈smith, not liush≈liu)', () => {
+		expect(token_matches_word('smithh', 'smith')).toBe(true)
+		expect(token_matches_word('liush', 'liu')).toBe(false)
 	})
 })
 
