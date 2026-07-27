@@ -152,7 +152,8 @@ describe('citation popup DOM behavior', () => {
 		expect(footer!.textContent).toMatch(/Esc/i)
 		expect(footer!.textContent).toMatch(/outside/i)
 		expect(footer!.textContent).not.toBe('ⓘ')
-		expect(footer?.getAttribute('title')).toMatch(/panel/i)
+		// Visible hint is enough — no redundant native tooltip on the strip.
+		expect(footer?.getAttribute('title')).toBeNull()
 	})
 
 	it('chip pointerdown preventDefault so a native <button> cannot steal focus from the CM editor', () => {
@@ -490,7 +491,7 @@ describe('citation popup DOM behavior', () => {
 		expect(footer!.textContent).toMatch(/Close/i)
 		expect(footer!.textContent).toMatch(/Esc/i)
 		expect(footer!.textContent).toMatch(/drag/i)
-		expect(footer!.getAttribute('title')).toMatch(/notes/i)
+		expect(footer!.getAttribute('title')).toBeNull()
 		// Legacy classes removed.
 		expect(card()!.querySelector('.bibtex-card-hint')).toBeNull()
 		expect(card()!.querySelector('.bibtex-card-pin-affordance')).toBeNull()

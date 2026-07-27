@@ -924,13 +924,12 @@ const CardAffordance = ({
     on_pin_toggle: () => void
     on_close: () => void
 }) => {
-    const { hint, detail } = card_affordance_copy(pinned)
+    const { hint } = card_affordance_copy(pinned)
     return (
         <div
             className={pinned ? 'bibtex-card-affordance is-pinned' : 'bibtex-card-affordance'}
             role="toolbar"
             aria-label="Card controls"
-            title={detail}
         >
             <button
                 type="button"
