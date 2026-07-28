@@ -5,6 +5,7 @@ import {
 	clamp_card_position,
 	compute_card_placement,
 	compute_card_position,
+	subline_scroll_grow_px,
 	type Rect,
 } from 'src/citation-card-layout'
 
@@ -97,5 +98,33 @@ describe('clamp_card_position (dragging a pinned card)', () => {
 			top: VIEWPORT.height - size.height - VIEWPORT_PAD_PX,
 			left: VIEWPORT.width - size.width - VIEWPORT_PAD_PX,
 		})
+	})
+})
+
+describe('subline_scroll_grow_px (field-list scroll play)', () => {
+	const line = 17
+
+	it('returns 0 when content fits', () => {
+		expect(subline_scroll_grow_px(0, line)).toBe(0)
+		expect(subline_scroll_grow_px(-2, line)).toBe(0)
+	})
+
+	it('grows by the overflow when it is strictly less than one line', () => {
+		// Classic borderline card: a few px of leftover (SCROLLPLAY-class entries).
+		expect(subline_scroll_grow_px(3, line)).toBe(3)
+		expect(subline_scroll_grow_px(16.2, line)).toBe(17)
+	})
+
+	it('does not grow when overflow is a full line or more (real scroll)', () => {
+		expect(subline_scroll_grow_px(line, line)).toBe(0)
+		expect(subline_scroll_grow_px(line + 1, line)).toBe(0)
+		expect(subline_scroll_grow_px(80, line)).toBe(0)
+	})
+
+	it('rejects non-finite or non-positive line metrics', () => {
+		expect(subline_scroll_grow_px(4, 0)).toBe(0)
+		expect(subline_scroll_grow_px(4, -1)).toBe(0)
+		expect(subline_scroll_grow_px(Number.NaN, line)).toBe(0)
+		expect(subline_scroll_grow_px(4, Number.NaN)).toBe(0)
 	})
 })

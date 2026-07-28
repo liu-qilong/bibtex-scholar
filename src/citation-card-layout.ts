@@ -70,3 +70,25 @@ export function clamp_card_position(
 	const top = Math.max(pad, Math.min(pos.top, viewport.height - size.height - pad))
 	return { top: Math.round(top), left: Math.round(left) }
 }
+
+/**
+ * Pixels to grow a scrollport so a **sub-line** overflow does not leave a
+ * useless scrollbar (“scroll play”).
+ *
+ * Returns 0 when content fits, or when overflow is a full line or more (real
+ * scroll). Used for dense field lists that sit just over the card max-height
+ * (long author rows + many short fields on a normal-width card).
+ */
+export function subline_scroll_grow_px(overflow_px: number, line_px: number): number {
+	if (!Number.isFinite(overflow_px) || !Number.isFinite(line_px)) {
+		return 0
+	}
+	if (overflow_px <= 0 || line_px <= 0) {
+		return 0
+	}
+	// Full line or more → keep scrolling; only forgive fractional leftover.
+	if (overflow_px >= line_px) {
+		return 0
+	}
+	return Math.ceil(overflow_px)
+}

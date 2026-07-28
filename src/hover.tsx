@@ -19,7 +19,12 @@ import { type EditorView, WidgetType } from '@codemirror/view'
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
 import { display_bibtex_plain_text, display_bibtex_segments, display_bibtex_text } from 'src/tex-display'
 import { normalize_action_strip_layout, normalize_card_font_size } from 'src/cache-ops'
-import { clamp_card_position, compute_card_placement, compute_card_position } from 'src/citation-card-layout'
+import {
+	clamp_card_position,
+	compute_card_placement,
+	compute_card_position,
+	subline_scroll_grow_px,
+} from 'src/citation-card-layout'
 import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
 import { find_cite_spans_in_line } from 'src/cite-span'
 import type BibtexScholar from 'src/main'
@@ -78,17 +83,63 @@ function get_viewport(): { width: number, height: number } {
     return { width: window.innerWidth, height: window.innerHeight }
 }
 
+/**
+ * If the field list overflows by less than one line, grow the card’s max-height
+ * so we do not show a useless sub-line scrollbar.
+ *
+ * One-shot per card element (`data-scroll-play-absorbed`) so a sticky 1px
+ * engine overflow cannot ResizeObserver-loop. Returns true when height changed
+ * (caller should re-clamp position).
+ */
+function absorb_fields_scroll_play(card: HTMLElement): boolean {
+	if (card.dataset.scrollPlayAbsorbed === '1') {
+		return false
+	}
+	const fields = card.querySelector('.bibtex-card-fields') as HTMLElement | null
+	if (!fields) {
+		return false
+	}
+	const overflow = fields.scrollHeight - fields.clientHeight
+	if (overflow <= 0) {
+		return false
+	}
+	// Prefer a real field row’s line box (0.92em × --bibtex-field-lh).
+	const sample = fields.querySelector('.bibtex-card-field') as HTMLElement | null
+	const sample_lh = sample ? parseFloat(getComputedStyle(sample).lineHeight) : Number.NaN
+	const fields_lh = parseFloat(getComputedStyle(fields).lineHeight)
+	const font_px = parseFloat(getComputedStyle(card).fontSize) || 13
+	const line_px = (Number.isFinite(sample_lh) && sample_lh > 0)
+		? sample_lh
+		: (Number.isFinite(fields_lh) && fields_lh > 0 ? fields_lh : font_px * 1.4)
+	const grow = subline_scroll_grow_px(overflow, line_px)
+	if (grow <= 0) {
+		return false
+	}
+	const next = Math.ceil(card.getBoundingClientRect().height + grow)
+	card.style.maxHeight = `${next}px`
+	card.dataset.scrollPlayAbsorbed = '1'
+	return true
+}
+
 function position_floating_card(anchor: HTMLElement, card: HTMLElement) {
-    const ar = anchor.getBoundingClientRect()
-    const cr = card.getBoundingClientRect()
-    const viewport = get_viewport()
+	const place = () => {
+		const ar = anchor.getBoundingClientRect()
+		const cr = card.getBoundingClientRect()
+		const viewport = get_viewport()
 
-    const placement = compute_card_placement(ar, cr, viewport)
-    const { top, left } = compute_card_position(ar, cr, viewport, placement)
+		const placement = compute_card_placement(ar, cr, viewport)
+		const { top, left } = compute_card_position(ar, cr, viewport, placement)
 
-    card.style.top = `${top}px`
-    card.style.left = `${left}px`
-    card.classList.toggle('is-flipped', placement === 'above')
+		card.style.top = `${top}px`
+		card.style.left = `${left}px`
+		card.classList.toggle('is-flipped', placement === 'above')
+	}
+	place()
+	// Borderline field lists (long author + many short fields on a normal card)
+	// can sit a few px over max-height — absorb before the user sees scroll play.
+	if (absorb_fields_scroll_play(card)) {
+		place()
+	}
 }
 
 /** Workspace chrome root — floating cards portal here so they do not shift note layout. */
@@ -1264,6 +1315,43 @@ const PinnedCard = ({
             card.style.left = `${pos.left}px`
         }
     }, [pos.top, pos.left])
+
+	// Same sub-line field-list absorb as preview cards (pinned never goes through
+	// position_floating_card). Re-clamp if height grows so the pin stays on-screen.
+	useLayoutEffect(() => {
+		const card = card_ref.current
+		if (!card) {
+			return
+		}
+		const run = () => {
+			if (!absorb_fields_scroll_play(card) || card.dataset.dragging) {
+				return
+			}
+			const top = parseFloat(card.style.top)
+			const left = parseFloat(card.style.left)
+			const clamped = clamp_card_position(
+				{
+					top: Number.isFinite(top) ? top : drag_pos_ref.current.top,
+					left: Number.isFinite(left) ? left : drag_pos_ref.current.left,
+				},
+				{ width: card.offsetWidth, height: card.offsetHeight },
+				get_viewport(),
+			)
+			card.style.top = `${clamped.top}px`
+			card.style.left = `${clamped.left}px`
+		}
+		run()
+		const raf = window.requestAnimationFrame(run)
+		let ro: ResizeObserver | null = null
+		if (typeof ResizeObserver !== 'undefined') {
+			ro = new ResizeObserver(() => run())
+			ro.observe(card)
+		}
+		return () => {
+			window.cancelAnimationFrame(raf)
+			ro?.disconnect()
+		}
+	}, [paper_id, bibtex])
 
     const on_card_pointer_down = (e: ReactPointerEvent<HTMLElement>) => {
         pin_registry.bring_to_front(paper_id)

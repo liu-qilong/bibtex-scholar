@@ -125,6 +125,12 @@ code.bibtex-source-tag.is-clashing {
     --bibtex-abstract-pad-y: 0.4em;
     /* Sub-pixel / border fudge so “almost 8 lines” does not create scroll play. */
     --bibtex-scroll-slack: 2px;
+    /*
+     * Content budget + one field-line of slack so dense field lists that
+     * almost fit (long author row + many short fields on a normal-width card)
+     * do not get a useless sub-line scrollbar. JS absorb covers residual cases.
+     */
+    --bibtex-card-max-block: calc(40em + (var(--bibtex-field-lh, 1.4) * 1em));
     position: fixed;
     z-index: var(--layer-popover, 30);
     top: 0;
@@ -135,10 +141,10 @@ code.bibtex-source-tag.is-clashing {
     flex-direction: column;
     gap: 0.55em;
     width: min(32em, calc(100vw - 16px));
-    max-height: min(70vh, 40em);
+    max-height: min(70vh, var(--bibtex-card-max-block));
     /* dvh shrinks with the on-screen keyboard (vh does not on iOS/most
      * Android WebViews); unsupported browsers keep the vh line above. */
-    max-height: min(70dvh, 40em);
+    max-height: min(70dvh, var(--bibtex-card-max-block));
     /* Tighter top so Pin/Close sit near the card edge; keep side/bottom room. */
     padding: 0.45em 0.85em 0.85em;
     font-size: var(--bibtex-card-font-size);
@@ -196,9 +202,10 @@ code.bibtex-source-tag.is-clashing {
 
 /* Settings: “Wider citation cards” — more horizontal room; abstract still 8 lines. */
 .bibtex-hover-card.is-floating.is-wide {
+    --bibtex-card-max-block: calc(44em + (var(--bibtex-field-lh, 1.4) * 1em));
     width: min(44em, calc(100vw - 16px));
-    max-height: min(75vh, 44em);
-    max-height: min(75dvh, 44em);
+    max-height: min(75vh, var(--bibtex-card-max-block));
+    max-height: min(75dvh, var(--bibtex-card-max-block));
 }
 
 /*
@@ -688,6 +695,17 @@ code.bibtex-source-tag.is-clashing {
 }
 
 /*
+ * Non-link values: block formatting context so the text-hugging copy surface
+ * does not leave an inline-block baseline strut (a few px of phantom height per
+ * row that adds up to sub-line field-list scroll on dense cards).
+ */
+.bibtex-card-field-val:not(.has-inline-copy) {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+/*
  * Abstract: grow-to-fit, clamp at 8 full lines (plus padding). Scroll only when
  * content exceeds that — not on fractional “almost fits” (line-based max-height
  * + 2px slack). Short abstracts never get a nested scrollbar.
@@ -723,11 +741,11 @@ code.bibtex-source-tag.is-clashing {
  * lines leave empty track space for drag; long abstract still max-width 100%.
  */
 .bibtex-card-field-copy-surface.is-copyable {
-    display: inline-block;
+    /* block + fit-content: hug text for pin-drag gutters without baseline strut */
+    display: block;
     box-sizing: border-box;
     width: fit-content;
     max-width: 100%;
-    vertical-align: top;
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
