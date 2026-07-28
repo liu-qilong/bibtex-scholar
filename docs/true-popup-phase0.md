@@ -77,48 +77,9 @@ Implemented: controller (1) → portal (2) → editor stability (3) → click/a1
 | **4** | Polish (click-outside, a11y) | **done 2026-07-18** — click-outside close; chip click toggle; ARIA expanded/haspopup; no focus steal on open |
 | **5** | Cleanup (React roots, styles, docs) | **done 2026-07-18** — `HoverRenderChild` / `unmount_hover`; panel list dispose; uncache confirm fix; README UX |
 
-### Phase 5 inspect checklist
+### Inspect / live QA
 
-- [ ] Open/close notes with many cites — no stuck floating cards after navigate away
-- [ ] Paper panel search / clash toggle / close panel — no leaked cards
-- [ ] Uncache asks confirm **before** removing
-- [ ] README matches floating-card behavior |
-
-### Phase 4 inspect checklist
-
-- [ ] Click outside an open card → closes; hover again can reopen
-- [ ] Click chip → opens immediately (no 250 ms wait); click again → closes
-- [ ] Keyboard: focus chip (if focusable in reading/panel), Enter/Space toggles; Esc dismisses
-- [ ] Opening a card does **not** move keyboard focus out of the editor
-- [ ] Screen-reader-ish DOM: chip has `aria-expanded` / `aria-haspopup`; card `role="dialog"`
-- [ ] ESC still suppresses reopen while pointer remains on chip |
-
-### Phase 3 inspect checklist
-
-- [ ] Arrow through a paragraph of citations without opening/closing flicker
-- [ ] Hover a chip, move caret elsewhere (not into that cite) → popup stays stable (or closes only via leave/ESC)
-- [ ] Move caret **into** a cite span → chip becomes raw `` `{id}` `` for editing
-- [ ] Move caret **out** of that span → chip returns
-- [ ] Type / edit document → decorations still update
-- [ ] Scroll viewport → chips in view still work; no obvious leaks after long session |
-
-### Phase 1 inspect checklist
-
-- [ ] Skim past `` `{id}` `` chips → card does **not** open if leave before ~250 ms
-- [ ] Hold hover on chip → card opens; move onto card within ~150 ms → stays open
-- [ ] Leave chip+card → closes after ~150 ms
-- [ ] ESC while open → closes; stays closed until pointer fully leaves chip (then re-hover)
-- [ ] Open chip A, hover chip B long enough → A closes, B opens (one global)
-- [ ] `` `[id]` `` → open on mount without waiting; ESC still dismisses
-
-### Phase 2 inspect checklist
-
-- [ ] Opening a card does **not** push following lines / displace neighbors
-- [ ] Card appears near the chip (below by default; above near bottom of viewport)
-- [ ] Card stays in view when clamped at edges; scrolls with page (repositions on scroll)
-- [ ] Chip → card pointer path still works with 150 ms close grace
-- [ ] Works in reading view, live preview, paper panel, and bibtex blocks
-- [ ] Long abstracts scroll inside the card (`max-height`)
+Phases 0–5 are **done** (see table above). Automated coverage is under `tests/hover-popup.test.tsx` and related suites. Ongoing code debt is indexed in [`docs/roadmap.md`](roadmap.md) **Technical debt** — not in per-phase manual checklists.
 
 
 ---

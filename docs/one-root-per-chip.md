@@ -284,13 +284,6 @@ practice.
   both buttons) — the actual card-swap reconciliation this refactor exists to
   make correct, which the old N-roots design never had to do.
 
-### Manual verification checklist (not yet run)
+### Manual verification
 
-- [ ] Live Preview: hover/click several cite chips in one note; only one
-      card ever shows; positioning/flip looks right near viewport edges.
-- [ ] Reading mode and `` ```bibtex `` blocks: chips render and open the same way.
-- [ ] Paper panel: open a chip's card from the dense list, scroll/search —
-      card follows or closes sanely, no leaked cards after re-search.
-- [ ] Close a note / navigate away with a card open — no stuck floating card.
-- [ ] Toggle the plugin off (`onunload`) with a card open — no console errors,
-      no leaked listeners on reload.
+Shipped behavior has been exercised in live Obsidian. Automated contracts live under `tests/hover-popup.test.tsx` and related suites; ongoing code debt is indexed in [`docs/roadmap.md`](roadmap.md) **Technical debt** (not re-listed here).

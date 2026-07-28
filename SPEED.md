@@ -165,16 +165,17 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 | 2026-07-19 | **S4 done:** chunked full rescan (32, yield, progress Notice, epoch cancel); pure hit collect in cache-ops; no vault-rescan.ts. Next: **S3** or **S5**. |
 | 2026-07-19 | **S3+S5 done:** slim entries (`entry_source`, load strips source); path fingerprints mtime+size; soft recache + hard reset command; panel clashes hard. Next: **S6** or **S7**. |
 | 2026-07-19 | **S6+S7 done:** cite reverse index (build on first rename scan; restrict later); missing-PDF chunked probe + virtual list + cache/Recheck. Program S1–S7 complete. |
-| 2026-07-22 | Follow-up (outside S1–S7, tracked in `docs/one-root-per-chip.md`): citekey matching made case-insensitive (`src/citekey-index.ts`); one-root-per-chip landed — chips are plain DOM, one shared React root renders the (0-or-1) open card instead of one root per chip. `tsc` + `npm test` (122 tests) + `npm run build` green; **no manual Obsidian pass yet** — see checklist in `docs/one-root-per-chip.md` §6. |
-| 2026-07-22 | **S1 follow-up done (list mode only):** paper panel split into two views — **discover** (renamed condensed chips: capped `DISCOVER_RESULT_CAP`=140, randomized empty-query preview + re-roll, clash/missing-PDF coloring; not virtualized, by design) and **list** (new: unbounded, virtualized plain-DOM rows via `visible_window`, sortable A–Z or by mention count). Mention-count sort reuses the existing `cite_index` reverse index rather than a new probe — `scan_inline_cites_chunked`'s `old_id` is now optional so it can warm the index without a rename target (`BibtexScholar.ensure_cite_index()`); `cite_index_count_for()` added (O(1), vs. the display-oriented `cite_index_paths_for()`) so panel sorting doesn't sort+spread a path set per id per render. `tsc` + `npm test` (132 tests) + `npm run build` green; **no manual Obsidian pass yet** — toggle persistence, randomize-again, coloring, and scroll virtualization are all unverified outside jsdom-adjacent unit tests (panel.ts itself has no test file, same as the pre-existing clash/missing-pdf panel code). |
-| 2026-07-26 | **S8 in progress:** per-entry search corpus cache (WeakMap by object identity) cut a 10k-entry synthetic benchmark from ~33ms/keystroke to ~7ms/keystroke steady-state (measured via a throwaway `list_ids_for_panel` timing script, not committed); search-box debounce (130ms trailing, immediate on query-clear); EditorSuggest `onTrigger` double-scan deduped via `has_any_match`; list-mode scroll/keystroke repaint now diffs the visible window by id instead of tearing down and rebuilding it every tick (`should_repaint_window` + `diff_window_ids` in `src/library-scale.ts`). Deliberately **not** done: early-exit on the capped scan loops (matched-count is load-bearing UI copy), discover-mode virtualization (SPEED.md already records that as a non-goal — chips need real listeners), and `display_bibtex_text` memoization (measure-first, likely moot after the row-diff change). `tsc` + `npm test` (315 tests) + `npm run build` green; **no manual Obsidian pass yet** for the debounce feel or scroll behavior under real pointer input. |
+| 2026-07-22 | Follow-up (outside S1–S7, tracked in `docs/one-root-per-chip.md`): citekey matching made case-insensitive (`src/citekey-index.ts`); one-root-per-chip landed — chips are plain DOM, one shared React root renders the (0-or-1) open card instead of one root per chip. |
+| 2026-07-22 | **S1 follow-up done (list mode only):** paper panel split into two views — **discover** (capped chip view, not virtualized by design) and **list** (unbounded, virtualized plain-DOM rows). Mention-count sort reuses `cite_index`. |
+| 2026-07-26 | **S8 landed** (corpus cache, search debounce, suggest double-scan dedupe, list window row-diff). Open/deferred items remain the three S8 checklist `- [ ]` bullets (matched-count full scan, discover virtualization, display memoization). |
+| 2026-07-28 | Code debt index: `docs/roadmap.md` **Technical debt**; BibTeX parse/display gaps as `it.todo` in `tests/bibtex-renderer.completeness.test.ts`. |
 
 ---
 
 ## Resume after disconnect
 
-1. Read **SPEED.md** Status column.
+1. Read **SPEED.md** (S-checklists + deferred bullets); product/code debt index in `docs/roadmap.md` **Technical debt**.
 2. `git status` / branch; note WIP may be uncommitted.
-3. `npm test` baseline (expect ≥315 tests).
-4. Program **S1–S7 complete; S8 in progress** (search/render hot-path perf — see S8 checklist for what's done vs. deliberately deferred).
-5. On slice done: Status → `done`, session log line, update trust doc if needed.
+3. `npm test` baseline.
+4. Program **S1–S8 complete** for required work; remaining S8 lines are deliberate deferrals (see checklist).
+5. On slice done: update checklist / session log; if parse/display debt, promote an `it.todo` → real assertion in the completeness harness.

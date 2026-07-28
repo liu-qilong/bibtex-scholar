@@ -28,6 +28,44 @@ Beyond `\autocite{id}` clipboard helpers: configurable CSL (or a small style pre
 
 Until then, mobile is best-effort only.
 
-## Manual QA still required
+## Technical debt
 
-Live Obsidian: Live Preview long-press edit, pin drag feel, export `.bib`, cache modal copy, diagnostics refresh.
+Code- and contract-level debt only. Live Obsidian exercise of shipped UX is not tracked here.
+
+### How we track it
+
+Prefer **executable contracts** over prose checklists:
+
+1. Add or promote an `it.todo('…')` (or a failing `it` once work starts) that names the missing behavior.
+2. Implement until the test is a real assertion.
+3. Keep prose here as a short index + context — the test file is the source of truth for what still fails.
+
+Primary harness today: [`tests/bibtex-renderer.completeness.test.ts`](../tests/bibtex-renderer.completeness.test.ts)  
+(structure = `parse_bibtex`, display = `display_bibtex_*` / segments).
+
+### BibTeX parse / display (open contracts)
+
+Custom stack all along (same lineage as upstream): regex field parse + display walker. Accents, font switches (`{\itshape …}`, `\textbf{…}`, …), bare `~`, and DBLP `<i>`/`<em>` are covered by green tests in that harness. Still open as `it.todo`:
+
+| Contract (`it.todo`) | Layer | Notes |
+|----------------------|--------|--------|
+| Simple math (`$\alpha$`) as readable text | display | Optional symbol map; not a full math engine |
+| Outer quotes stripped from `"…"` fields | structure | Parser currently keeps surrounding `"` |
+| Structured author names (particles, corporate) | structure | Display keeps one raw author string today |
+| `@string` resolution | structure | Custom parse does not expand abbreviations |
+| `crossref` field inheritance | structure | Not implemented |
+
+**Direction when this bites users:** grow the completeness harness first; consider a BibTeX library **only for structural parse** (adapter → existing `BibtexField`), keep display as an explicit small grammar. Do not conflate the two layers.
+
+### Scale (deliberately deferred)
+
+Recorded as open/deferred in [`SPEED.md`](../SPEED.md) S8 — not bugs, intentional tradeoffs until measured or UX-signed:
+
+- Full-dict scan for exact “N matches” copy (no early-exit without product sign-off)
+- Discover/clash chip list: capped, not virtualized (listeners need real DOM)
+- `display_bibtex_text` memoization: measure-first; likely moot after list row-diff
+
+### Not debt
+
+- Product features not started (C2 CSL, C3 mobile) — see **Planned platform work** above
+- One-off design notes / historical QA lists under `docs/*` — not a backlog
