@@ -131,6 +131,21 @@ describe('display_bibtex_text', () => {
 		expect(display_bibtex_text('A {\\foo{bar}} B')).toBe('A {\\foo{bar}} B')
 	})
 
+	it('strips {\\itshape …} / \\textit{…} to plain body text', () => {
+		expect(
+			display_bibtex_text(
+				'Evolution of the genus {\\itshape Thelebolus} in Antarctica',
+			),
+		).toBe('Evolution of the genus Thelebolus in Antarctica')
+		expect(display_bibtex_text('Genus \\textit{Aspergillus} spp.')).toBe(
+			'Genus Aspergillus spp.',
+		)
+	})
+
+	it('maps bare ~ to a non-breaking space', () => {
+		expect(display_bibtex_text('A~B')).toBe('A\u00A0B')
+	})
+
 	it('leaves unbalanced braces mostly intact', () => {
 		expect(display_bibtex_text('no close {here')).toBe('no close {here')
 	})
@@ -226,56 +241,112 @@ describe('fuzzy token match', () => {
 
 describe('display_bibtex_segments', () => {
 	it('plain text with no tags is a single non-italic segment', () => {
-		expect(display_bibtex_segments('Plain title')).toEqual([{ text: 'Plain title', italic: false }])
+		expect(display_bibtex_segments('Plain title')).toEqual([
+			{ text: 'Plain title', italic: false, bold: false },
+		])
 	})
 
 	it('splits <i>…</i> into a marked italic segment', () => {
 		expect(display_bibtex_segments('Activity against <i>Candida</i> spp.')).toEqual([
-			{ text: 'Activity against ', italic: false },
-			{ text: 'Candida', italic: true },
-			{ text: ' spp.', italic: false },
+			{ text: 'Activity against ', italic: false, bold: false },
+			{ text: 'Candida', italic: true, bold: false },
+			{ text: ' spp.', italic: false, bold: false },
 		])
 	})
 
 	it('splits <em>…</em> the same way as <i>', () => {
 		expect(display_bibtex_segments('An <em>in vitro</em> study')).toEqual([
-			{ text: 'An ', italic: false },
-			{ text: 'in vitro', italic: true },
-			{ text: ' study', italic: false },
+			{ text: 'An ', italic: false, bold: false },
+			{ text: 'in vitro', italic: true, bold: false },
+			{ text: ' study', italic: false, bold: false },
 		])
 	})
 
 	it('handles multiple italic spans in one title', () => {
 		expect(display_bibtex_segments('<i>Candida</i> vs <i>Aspergillus</i>')).toEqual([
-			{ text: 'Candida', italic: true },
-			{ text: ' vs ', italic: false },
-			{ text: 'Aspergillus', italic: true },
+			{ text: 'Candida', italic: true, bold: false },
+			{ text: ' vs ', italic: false, bold: false },
+			{ text: 'Aspergillus', italic: true, bold: false },
 		])
 	})
 
 	it('mismatched tag names are left as literal text (nothing invented)', () => {
 		expect(display_bibtex_segments('<i>Candida</em>')).toEqual([
-			{ text: '<i>Candida</em>', italic: false },
+			{ text: '<i>Candida</em>', italic: false, bold: false },
 		])
 	})
 
 	it('an unclosed tag is left as literal text', () => {
 		expect(display_bibtex_segments('<i>Candida spp.')).toEqual([
-			{ text: '<i>Candida spp.', italic: false },
+			{ text: '<i>Candida spp.', italic: false, bold: false },
 		])
 	})
 
 	it('tags with attributes are not recognized (only bare <i>/<em>)', () => {
 		expect(display_bibtex_segments('<i class="x">Candida</i>')).toEqual([
-			{ text: '<i class="x">Candida</i>', italic: false },
+			{ text: '<i class="x">Candida</i>', italic: false, bold: false },
 		])
 	})
 
 	it('TeX specials are converted before tag splitting', () => {
 		expect(display_bibtex_segments('<i>M{\\"u}ller</i> et al.')).toEqual([
-			{ text: 'Müller', italic: true },
-			{ text: ' et al.', italic: false },
+			{ text: 'Müller', italic: true, bold: false },
+			{ text: ' et al.', italic: false, bold: false },
 		])
+	})
+
+	it('marks {\\itshape …} as italic (foundational BibTeX font switch)', () => {
+		expect(
+			display_bibtex_segments(
+				'Evolution of the genus {\\itshape Thelebolus} in Antarctica',
+			),
+		).toEqual([
+			{ text: 'Evolution of the genus ', italic: false, bold: false },
+			{ text: 'Thelebolus', italic: true, bold: false },
+			{ text: ' in Antarctica', italic: false, bold: false },
+		])
+	})
+
+	it('marks \\textit{…} / \\emph{…} as italic', () => {
+		expect(display_bibtex_segments('Genus \\textit{Aspergillus} spp.')).toEqual([
+			{ text: 'Genus ', italic: false, bold: false },
+			{ text: 'Aspergillus', italic: true, bold: false },
+			{ text: ' spp.', italic: false, bold: false },
+		])
+		expect(display_bibtex_segments('An \\emph{in vitro} assay')).toEqual([
+			{ text: 'An ', italic: false, bold: false },
+			{ text: 'in vitro', italic: true, bold: false },
+			{ text: ' assay', italic: false, bold: false },
+		])
+	})
+
+	it('marks {\\bfseries …} / \\textbf{…} as bold', () => {
+		expect(display_bibtex_segments('See {\\bfseries Important} note')).toEqual([
+			{ text: 'See ', italic: false, bold: false },
+			{ text: 'Important', italic: false, bold: true },
+			{ text: ' note', italic: false, bold: false },
+		])
+		expect(display_bibtex_segments('See \\textbf{Important} note')).toEqual([
+			{ text: 'See ', italic: false, bold: false },
+			{ text: 'Important', italic: false, bold: true },
+			{ text: ' note', italic: false, bold: false },
+		])
+	})
+
+	it('nests bold + italic font switches', () => {
+		expect(
+			display_bibtex_segments('{\\bfseries {\\itshape Aspergillus} section}'),
+		).toEqual([
+			{ text: 'Aspergillus', italic: true, bold: true },
+			{ text: ' section', italic: false, bold: true },
+		])
+	})
+
+	it('converts bare ~ to a non-breaking space', () => {
+		expect(display_bibtex_segments('A~non-breaking space')).toEqual([
+			{ text: 'A\u00A0non-breaking space', italic: false, bold: false },
+		])
+		expect(display_bibtex_plain_text('A~non-breaking space')).toBe('A\u00A0non-breaking space')
 	})
 })
 

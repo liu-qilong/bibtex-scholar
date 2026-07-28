@@ -899,9 +899,19 @@ const CitationCardBody = ({
                             label="Copy title"
                             stop_header_drag
                         >
-                            {title_segments.map((seg, i) =>
-                                seg.italic ? <em key={i}>{seg.text}</em> : seg.text,
-                            )}
+                            {title_segments.map((seg, i) => {
+                                if (!seg.text) return null
+                                if (seg.italic && seg.bold) {
+                                    return (
+                                        <strong key={i}>
+                                            <em>{seg.text}</em>
+                                        </strong>
+                                    )
+                                }
+                                if (seg.italic) return <em key={i}>{seg.text}</em>
+                                if (seg.bold) return <strong key={i}>{seg.text}</strong>
+                                return seg.text
+                            })}
                         </CopySurface>
                     </div>
                 </header>

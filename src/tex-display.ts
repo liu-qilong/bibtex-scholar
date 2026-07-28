@@ -2,15 +2,20 @@
  * Display-time rendering of BibTeX field values.
  *
  * Stored fields stay in their original TeX-ish encoding (export / copy / parse
- * are untouched). UI surfaces call {@link display_bibtex_text} so readers see
- * Unicode rather than the special-character scheme.
+ * are untouched). UI surfaces call {@link display_bibtex_text} /
+ * {@link display_bibtex_segments} so readers see Unicode and font styles rather
+ * than raw TeX.
  *
- * Special-character scheme (as used by most BibTeX providers): a left brace at
- * the current scan level, immediately followed by a backslash, through the
- * matching right brace — e.g. `{\'e}`, `{\"{u}}`, `{\ae}`, `{\&}`.
+ * Handled for display (not a full TeX engine):
+ * - Special-character groups / bare accents: `{\'e}`, `{\"{u}}`, `\v{z}`, …
+ * - Symbols: `{\ae}`, `\&`, `\%`, …
+ * - Font switches: `{\itshape …}`, `{\em …}`, `\textit{…}`, `{\bfseries …}`, `\textbf{…}`, …
+ * - Bare `~` → U+00A0 (BibTeX non-breaking space)
+ * - DBLP-style bare `<i>` / `<em>` tags
+ * - Protective braces (`{GPU}`, `{:}`, `{de}`) stripped
  *
- * Protective braces that do not start that scheme (`{GPU}`, `{:}`, `{de}`) are
- * stripped for display so titles read naturally.
+ * Structural BibTeX grammar (`@string`, crossref, quoted fields) lives in
+ * `parse_bibtex` — a separate, custom parser — not here.
  */
 
 /** Combining marks applied after a TeX accent command + base letter. */
@@ -151,6 +156,7 @@ function render_group_body(inner: string): string {
 
 /**
  * Take a TeX command argument: `{…}` (recursively display-rendered) or one character.
+ * Used by accent/symbol consumption where the argument should already be Unicode.
  */
 function take_arg(s: string, i: number): { arg: string; next: number } | null {
 	i = skip_ws(s, i)
@@ -163,6 +169,25 @@ function take_arg(s: string, i: number): { arg: string; next: number } | null {
 			return null
 		}
 		return { arg: render_group_body(s.slice(i + 1, end)), next: end + 1 }
+	}
+	return { arg: s[i], next: i + 1 }
+}
+
+/**
+ * Take a raw TeX argument (brace body or one character) without display-rendering.
+ * Used by font commands so nested markup can be walked with style.
+ */
+function take_raw_arg(s: string, i: number): { arg: string; next: number } | null {
+	i = skip_ws(s, i)
+	if (i >= s.length) {
+		return null
+	}
+	if (s[i] === '{') {
+		const end = find_matching_brace(s, i)
+		if (end < 0) {
+			return null
+		}
+		return { arg: s.slice(i + 1, end), next: end + 1 }
 	}
 	return { arg: s[i], next: i + 1 }
 }
@@ -284,109 +309,280 @@ function has_tex_arg(after: string): boolean {
 }
 
 /**
- * Render a BibTeX field value for humans.
+ * Render a BibTeX field value for humans (plain Unicode, markup stripped).
  *
  * - Special-character groups `{…}` starting with `\` → Unicode where known
  * - Bare TeX specials mid-string (`\v{z}`, `\'{c}`) → Unicode (same commands)
+ * - Font switches (`{\itshape …}`, `\textit{…}`, `{\bfseries …}`, …) → body only
+ * - Bare `~` → non-breaking space (BibTeX convention)
  * - Other braces (case protection / grouping) → stripped, contents kept
  * - Unbalanced or unknown specials → left unchanged so data is not inventively altered
  *
- * Pure and cheap; safe to call on every paint.
+ * Pure and cheap; safe to call on every paint. For styled UI use
+ * {@link display_bibtex_segments}.
  */
 export function display_bibtex_text(raw: string): string {
 	if (!raw) {
 		return raw
 	}
-	// Fast path: nothing brace- or backslash-like to rewrite.
-	if (!raw.includes('{') && !raw.includes('\\')) {
+	// Fast path: nothing that needs a walk.
+	if (!raw.includes('{') && !raw.includes('\\') && !raw.includes('~') && !/<[ie]/i.test(raw)) {
 		return raw
 	}
+	return display_bibtex_plain_text(raw)
+}
 
-	let out = ''
+export type DisplaySegment = { text: string, italic: boolean, bold: boolean }
+
+type DisplayStyle = { italic: boolean, bold: boolean }
+
+const STYLE_PLAIN: DisplayStyle = { italic: false, bold: false }
+
+/**
+ * Font-declaration switches used as `{\itshape body}` / `{\bfseries body}`.
+ * After the control word, TeX skips whitespace; the rest of the group is the body.
+ */
+const FONT_DECL: Record<string, Partial<DisplayStyle>> = {
+	itshape: { italic: true },
+	it: { italic: true },
+	em: { italic: true },
+	slshape: { italic: true },
+	bfseries: { bold: true },
+	bf: { bold: true },
+}
+
+/**
+ * Font commands that take a TeX argument: `\textit{…}`, `\emph{…}`, `\textbf{…}`.
+ * Also accepted as the body of a special group (`{\textit{…}}`).
+ */
+const FONT_ARG: Record<string, Partial<DisplayStyle>> = {
+	textit: { italic: true },
+	emph: { italic: true },
+	textsl: { italic: true },
+	textbf: { bold: true },
+}
+
+/** Matches only bare `<i>…</i>` / `<em>…</em>` — no attributes. */
+const ITALIC_TAG_RE = /<(i|em)>([\s\S]*?)<\/\1>/gi
+
+function merge_style(base: DisplayStyle, add: Partial<DisplayStyle>): DisplayStyle {
+	return {
+		italic: add.italic === true ? true : base.italic,
+		bold: add.bold === true ? true : base.bold,
+	}
+}
+
+function push_seg(out: DisplaySegment[], text: string, style: DisplayStyle): void {
+	if (!text) {
+		return
+	}
+	const last = out[out.length - 1]
+	if (last && last.italic === style.italic && last.bold === style.bold) {
+		last.text += text
+		return
+	}
+	out.push({ text, italic: style.italic, bold: style.bold })
+}
+
+/**
+ * Read a letter-named TeX control sequence starting at `\` (index `start`).
+ * Returns null for symbol commands (`\'`, `\&`, …).
+ */
+function read_control_word(
+	s: string,
+	start: number,
+): { name: string, next: number } | null {
+	if (s[start] !== '\\' || start + 1 >= s.length) {
+		return null
+	}
+	if (!/[a-zA-Z]/.test(s[start + 1])) {
+		return null
+	}
+	let j = start + 1
+	while (j < s.length && /[a-zA-Z]/.test(s[j])) {
+		j++
+	}
+	return { name: s.slice(start + 1, j), next: j }
+}
+
+/**
+ * Walk raw BibTeX field text into styled display segments (TeX specials + font
+ * markup). Does not handle DBLP HTML tags — see {@link expand_html_italic_tags}.
+ */
+function walk_display(raw: string, style: DisplayStyle): DisplaySegment[] {
+	const out: DisplaySegment[] = []
 	let i = 0
 	while (i < raw.length) {
-		if (raw[i] === '{') {
+		const ch = raw[i]
+
+		if (ch === '{') {
 			const end = find_matching_brace(raw, i)
 			if (end < 0) {
-				out += raw.slice(i)
+				push_seg(out, raw.slice(i), style)
 				break
 			}
 			const inner = raw.slice(i + 1, end)
 			if (inner.startsWith('\\')) {
-				const converted = convert_tex_special(inner)
-				if (converted !== null) {
-					out += converted
+				const word = read_control_word(inner, 0)
+				if (word && FONT_DECL[word.name]) {
+					// `{\itshape body}` / `{\bfseries body}` — body after command + space.
+					const body = inner.slice(skip_ws(inner, word.next))
+					for (const seg of walk_display(body, merge_style(style, FONT_DECL[word.name]))) {
+						push_seg(out, seg.text, { italic: seg.italic, bold: seg.bold })
+					}
+				} else if (word && FONT_ARG[word.name]) {
+					// `{\textit{body}}` or `{\textit body}` inside outer braces.
+					const got = take_raw_arg(inner, word.next)
+					if (got) {
+						for (const seg of walk_display(got.arg, merge_style(style, FONT_ARG[word.name]))) {
+							push_seg(out, seg.text, { italic: seg.italic, bold: seg.bold })
+						}
+						const rest = inner.slice(got.next)
+						if (rest) {
+							for (const seg of walk_display(rest, style)) {
+								push_seg(out, seg.text, { italic: seg.italic, bold: seg.bold })
+							}
+						}
+					} else {
+						// No arg — treat remainder after command as body (rare).
+						const body = inner.slice(skip_ws(inner, word.next))
+						for (const seg of walk_display(body, merge_style(style, FONT_ARG[word.name]))) {
+							push_seg(out, seg.text, { italic: seg.italic, bold: seg.bold })
+						}
+					}
 				} else {
-					// Unknown command: keep original braces so nothing is invented.
-					out += raw.slice(i, end + 1)
+					const converted = convert_tex_special(inner)
+					if (converted !== null) {
+						push_seg(out, converted, style)
+					} else {
+						// Unknown command: keep original braces so nothing is invented.
+						push_seg(out, raw.slice(i, end + 1), style)
+					}
 				}
 			} else {
-				// Protective / grouping braces — drop them, render inside
-				// (may still contain bare `\v{z}` / `{\'e}` nested specials).
-				out += display_bibtex_text(inner)
+				// Protective / grouping braces — drop them, walk inside.
+				for (const seg of walk_display(inner, style)) {
+					push_seg(out, seg.text, { italic: seg.italic, bold: seg.bold })
+				}
 			}
 			i = end + 1
 			continue
 		}
-		if (raw[i] === '\\') {
+
+		if (ch === '\\') {
+			const word = read_control_word(raw, i)
+			if (word && FONT_ARG[word.name]) {
+				const got = take_raw_arg(raw, word.next)
+				if (got) {
+					for (const seg of walk_display(got.arg, merge_style(style, FONT_ARG[word.name]))) {
+						push_seg(out, seg.text, { italic: seg.italic, bold: seg.bold })
+					}
+					i = got.next
+					continue
+				}
+			}
+			if (word && FONT_DECL[word.name]) {
+				// Bare `{\itshape` is normal; bare `\itshape` mid-string is rare —
+				// consume the command + following space only (no body scope without braces).
+				i = skip_ws(raw, word.next)
+				continue
+			}
 			const got = consume_tex_special(raw, i)
 			if (got) {
-				out += got.text
+				push_seg(out, got.text, style)
 				i = got.next
 				continue
 			}
 			// Unknown bare command — keep the backslash literally.
-			out += raw[i]
+			push_seg(out, ch, style)
 			i++
 			continue
 		}
-		out += raw[i]
-		i++
+
+		// BibTeX non-breaking space (not the accent command `\~`).
+		if (ch === '~') {
+			push_seg(out, '\u00A0', style)
+			i++
+			continue
+		}
+
+		// Run of plain characters until the next special.
+		let j = i + 1
+		while (j < raw.length) {
+			const c = raw[j]
+			if (c === '{' || c === '\\' || c === '~') {
+				break
+			}
+			j++
+		}
+		push_seg(out, raw.slice(i, j), style)
+		i = j
 	}
 	return out
 }
 
-export type DisplaySegment = { text: string, italic: boolean }
-
-/** Matches only bare `<i>…</i>` / `<em>…</em>` — no attributes, so nothing but the tag name is ever trusted. */
-const ITALIC_TAG_RE = /<(i|em)>([\s\S]*?)<\/\1>/gi
+/**
+ * Expand DBLP-style bare `<i>`/`<em>` tags inside segment text into italic
+ * segments. Attributed / mismatched / unclosed tags stay literal.
+ */
+function expand_html_italic_tags(segments: DisplaySegment[]): DisplaySegment[] {
+	const out: DisplaySegment[] = []
+	for (const seg of segments) {
+		if (!seg.text || !/<(i|em)>/i.test(seg.text)) {
+			push_seg(out, seg.text, { italic: seg.italic, bold: seg.bold })
+			continue
+		}
+		let last = 0
+		let any = false
+		ITALIC_TAG_RE.lastIndex = 0
+		let match: RegExpExecArray | null
+		while ((match = ITALIC_TAG_RE.exec(seg.text))) {
+			any = true
+			if (match.index > last) {
+				push_seg(out, seg.text.slice(last, match.index), {
+					italic: seg.italic,
+					bold: seg.bold,
+				})
+			}
+			push_seg(out, match[2], { italic: true, bold: seg.bold })
+			last = ITALIC_TAG_RE.lastIndex
+		}
+		if (!any) {
+			push_seg(out, seg.text, { italic: seg.italic, bold: seg.bold })
+		} else if (last < seg.text.length) {
+			push_seg(out, seg.text.slice(last), { italic: seg.italic, bold: seg.bold })
+		}
+	}
+	return out
+}
 
 /**
- * Split display-ready text into segments, marking DBLP-style `<i>…</i>` /
- * `<em>…</em>` spans (used for genus/species names in titles) so callers can
- * render real italics instead of literal tag text. TeX specials are converted
- * first via {@link display_bibtex_text}. Only bare `<i>`/`<em>` (no attributes)
- * are recognized; unmatched or malformed tags are left as literal text —
- * nothing invented, same policy as `display_bibtex_text`.
+ * Split a BibTeX field into display segments with style flags.
+ *
+ * Handles:
+ * - TeX specials → Unicode
+ * - Font switches (`{\itshape …}`, `\textit{…}`, `{\bfseries …}`, …)
+ * - Bare `~` → nbsp
+ * - DBLP-style bare `<i>`/`<em>` (no attributes)
+ *
+ * Unknown TeX is left literal. Pure and cheap enough for paint paths.
  */
 export function display_bibtex_segments(raw: string): DisplaySegment[] {
-	const text = display_bibtex_text(raw)
-	if (!text || !/<(i|em)>/i.test(text)) {
-		return [{ text, italic: false }]
+	if (!raw) {
+		return [{ text: raw, italic: false, bold: false }]
 	}
-
-	const segments: DisplaySegment[] = []
-	let last = 0
-	ITALIC_TAG_RE.lastIndex = 0
-	let match: RegExpExecArray | null
-	while ((match = ITALIC_TAG_RE.exec(text))) {
-		if (match.index > last) {
-			segments.push({ text: text.slice(last, match.index), italic: false })
-		}
-		segments.push({ text: match[2], italic: true })
-		last = ITALIC_TAG_RE.lastIndex
+	if (!raw.includes('{') && !raw.includes('\\') && !raw.includes('~') && !/<[ie]/i.test(raw)) {
+		return [{ text: raw, italic: false, bold: false }]
 	}
-	if (last < text.length) {
-		segments.push({ text: text.slice(last), italic: false })
-	}
-	return segments
+	const tex = walk_display(raw, STYLE_PLAIN)
+	return expand_html_italic_tags(tex)
 }
 
 /**
  * Flattened plain Unicode of {@link display_bibtex_segments}.
  * Use for tooltips and **clipboard** from the card UI (TeX → Unicode, tags
- * stripped). Do not use for BibTeX export / “copy bibtex” — those keep the raw
- * stored encoding.
+ * and font markup stripped). Do not use for BibTeX export / “copy bibtex” —
+ * those keep the raw stored encoding.
  */
 export function display_bibtex_plain_text(raw: string): string {
 	return display_bibtex_segments(raw).map((seg) => seg.text).join('')
@@ -394,17 +590,26 @@ export function display_bibtex_plain_text(raw: string): string {
 
 /**
  * Append {@link display_bibtex_segments} to `el` as real DOM nodes — italic
- * segments become `<em>` elements (never `innerHTML`, so no markup beyond the
- * exact `<i>`/`<em>` pair this module recognizes can ever reach the DOM).
+ * → `<em>`, bold → `<strong>`, both → nested (never `innerHTML`).
  * Appends only; call on a freshly created element.
  */
 export function render_display_text(el: HTMLElement, raw: string): void {
 	for (const seg of display_bibtex_segments(raw)) {
 		if (seg.text.length === 0) continue
-		if (seg.italic) {
+		if (seg.italic && seg.bold) {
+			const strong = document.createElement('strong')
+			const em = document.createElement('em')
+			em.textContent = seg.text
+			strong.appendChild(em)
+			el.appendChild(strong)
+		} else if (seg.italic) {
 			const em = document.createElement('em')
 			em.textContent = seg.text
 			el.appendChild(em)
+		} else if (seg.bold) {
+			const strong = document.createElement('strong')
+			strong.textContent = seg.text
+			el.appendChild(strong)
 		} else {
 			el.appendChild(document.createTextNode(seg.text))
 		}
