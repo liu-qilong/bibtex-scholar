@@ -4,6 +4,25 @@
 
 ![img](/gallery/bibtex-scholar.png)
 
+## About this fork
+
+This repository is a maintained fork of [liu-qilong/bibtex-scholar](https://github.com/liu-qilong/bibtex-scholar). The product idea is unchanged: BibTeX lives in Markdown notes, inline cite chips open a citation card, and a paper panel browses the library. We still use a custom field parser (same general approach as upstream), not a full BibTeX/CSL stack.
+
+What we focused on is hardening and UX around that core:
+
+| Area | In this fork |
+|------|----------------|
+| **Architecture** | Logic split into smaller modules (cache, vault scan, scale caps, popup controller, pin registry, TeX display, indexes, …) instead of living mostly in a few large files |
+| **UI** | Floating citation cards (portal + placement), pin and drag, action strip, discover + virtualized list panel modes, scroll and layout polish |
+| **Scale** | Explicit work for larger libraries: mount caps, list virtualization, path fingerprints, chunked rescan, cite reverse index, search debounce / corpus cache (see `SPEED.md`) |
+| **Display** | Dedicated TeX → Unicode path, font markup (`{\itshape …}`, accents, …), search folding |
+| **Trust** | Coalesced saves, soft uncache with undo, idle/unload checks, clash source tags, automated tests (~370) and short design/trust notes under `docs/` |
+| **Mobile** | Installable pass: icon sizing, tap-to-open (no hover-only close races), safe-area corner actions—not a full mobile redesign |
+
+**Intentionally not goals (for now):** CSL / styled citation export, replacing the parser with a standards library, or treating mobile as the primary platform.
+
+In short: a note-native BibTeX Scholar descendant aimed at larger vaults and more stable UI, still the same workflow—not a Zotero reimplementation inside Obsidian. Upstream maintainers: the tables and `docs/roadmap.md` / `SPEED.md` are the shortest map of what diverged and what is still open.
+
 ## Why choose BibTeX Scholar? 💡
 
 Traditional reference managers organize papers in flat folders, leading to the lack of context:
