@@ -12,23 +12,17 @@
 - Export library to vault `.bib` from Copy/export modal
 - Settings diagnostics (local scale + audit)
 - Settings tab extracted from `main.ts`
+- **C3 mobile hardening (mostly done):** panel `--icon-size` with touch-sized buttons; safe-area corner actions; click-only chip open on mobile (no synthetic hover leave-close); higher pin-drag threshold; discover-chip / clash / missing-PDF touch floors. `isDesktopOnly` stays `false` — installable on mobile with these fixes; not a full redesign (e.g. dedicated pin-without-drag UX, polished small-screen panel chrome).
 
-## Planned platform work (not started)
+## Platform work
 
-### C2 — Citation styles / CSL
+### C2 — Citation styles / CSL — **out of scope for now**
 
-Beyond `\autocite{id}` clipboard helpers: configurable CSL (or a small style preset set) for export and note templates. Depends on a clear cache/export story (now partly in place via `.bib` export).
+Configurable CSL (or style presets) for export and note templates, beyond current `\autocite{id}` / BibTeX copy helpers. Cache/export story is already good enough if we ever reopen this; no active plan.
 
-### C3 — Mobile hardening
+### C3 — Mobile — **mostly done**
 
-`manifest.json` has `isDesktopOnly: false`, but the primary UX is hover chips, floating cards, and long-press edit in Live Preview. Decide either:
-
-1. **Desktop-primary** — set `isDesktopOnly: true` until mobile gestures are designed, or  
-2. **Mobile pass** — tap targets, no-hover open, pin without drag, panel layout on small screens.
-
-Until then, mobile is best-effort only.
-
-First-pass hardening already in CSS/`hover.tsx` (not a full C3): panel `--icon-size` scaling with touch-sized buttons, safe-area corner actions, click-only chip open (no synthetic hover leave-close), higher pin-drag threshold.
+Shipped under “Done recently.” Residual polish only if a real mobile bug shows up — not a tracked open project.
 
 ## Technical debt
 
@@ -69,5 +63,6 @@ Recorded as open/deferred in [`SPEED.md`](../SPEED.md) S8 — not bugs, intentio
 
 ### Not debt
 
-- Product features not started (C2 CSL, C3 mobile) — see **Planned platform work** above
+- **C2 CSL** — out of scope (see Platform work)
+- **C3 mobile** — mostly done; further issues are ordinary bugs, not a program slice
 - One-off design notes / historical QA lists under `docs/*` — not a backlog
