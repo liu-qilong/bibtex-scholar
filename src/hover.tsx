@@ -9,7 +9,7 @@
  * - Live Preview: {@link HoverWidget} (CodeMirror replace decoration).
  * - Reading view / panel: {@link render_hover} / {@link HoverRenderChild}.
  */
-import { App, Component, MarkdownRenderer, Notice, Modal, MarkdownRenderChild, Setting } from 'obsidian'
+import { App, Component, MarkdownRenderer, Notice, Modal, MarkdownRenderChild, Platform, Setting } from 'obsidian'
 import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -36,6 +36,9 @@ export const CHIP_LONG_PRESS_MS = 500
 
 /** Minimum pointer travel (px) before a header-down starts moving a pinned card — absorbs tap jitter (touch). */
 export const PIN_DRAG_THRESHOLD_PX = 5
+
+/** Higher threshold on phone/tablet so scroll and tap jitter do not start a pin drag. */
+export const PIN_DRAG_THRESHOLD_MOBILE_PX = 12
 
 /** True when two field maps have the same keys and string values (widget eq / A5). */
 export function fields_shallow_equal(
@@ -1258,9 +1261,10 @@ const PreviewCard = ({
             aria-modal={false}
             tabIndex={-1}
             style={surface.style}
-            // Not autoFocused — keep editor focus for typing.
-            onMouseEnter={() => citation_popup.enter_card(instance_id)}
-            onMouseLeave={() => citation_popup.leave_card(instance_id)}
+            // Desktop: hover bridge chip↔card. Mobile: click/outside only —
+            // synthetic mouseleave after a tap would schedule a false close.
+            onMouseEnter={Platform.isMobile ? undefined : () => citation_popup.enter_card(instance_id)}
+            onMouseLeave={Platform.isMobile ? undefined : () => citation_popup.leave_card(instance_id)}
             onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                     e.stopPropagation()
@@ -1392,8 +1396,11 @@ const PinnedCard = ({
         const on_move = (ev: PointerEvent) => {
             const dx = ev.clientX - start_x
             const dy = ev.clientY - start_y
-            // Below threshold: don't move yet — absorbs tap jitter.
-            if (!moved && Math.hypot(dx, dy) < PIN_DRAG_THRESHOLD_PX) {
+            // Below threshold: don't move yet — absorbs tap jitter (higher on mobile).
+            const drag_threshold = Platform.isMobile
+                ? PIN_DRAG_THRESHOLD_MOBILE_PX
+                : PIN_DRAG_THRESHOLD_PX
+            if (!moved && Math.hypot(dx, dy) < drag_threshold) {
                 return
             }
             moved = true
@@ -1654,13 +1661,18 @@ function mount_chip(
 
 	chip_registry.set(instance_id, { anchor: chip, bibtex, plugin, app, dense })
 
-	chip.addEventListener('mouseenter', () => {
-		const open_debounce_ms = dense && plugin.cache.panel_double_debounce_enabled
-			? OPEN_DEBOUNCE_MS * 2
-			: OPEN_DEBOUNCE_MS
-		citation_popup.enter_trigger(instance_id, open_debounce_ms)
-	}, true)
-	chip.addEventListener('mouseleave', () => citation_popup.leave_trigger(instance_id), true)
+	// Hover-open is desktop-only. On mobile, synthetic mouseenter/leave after a
+	// tap races click-toggle and can close the card after CLOSE_GRACE_MS.
+	// Touch opens via the click handler below (immediate toggle).
+	if (!Platform.isMobile) {
+		chip.addEventListener('mouseenter', () => {
+			const open_debounce_ms = dense && plugin.cache.panel_double_debounce_enabled
+				? OPEN_DEBOUNCE_MS * 2
+				: OPEN_DEBOUNCE_MS
+			citation_popup.enter_trigger(instance_id, open_debounce_ms)
+		}, true)
+		chip.addEventListener('mouseleave', () => citation_popup.leave_trigger(instance_id), true)
+	}
 
 	// Long-press (Live Preview) → edit raw cite; short click → toggle card.
 	let long_press_timer: number | null = null

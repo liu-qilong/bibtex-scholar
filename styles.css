@@ -403,9 +403,51 @@ code.bibtex-source-tag.is-clashing {
     fill: currentColor;
 }
 
+/*
+ * Panel setIcon glyphs — Obsidian removed setIcon(…, size); size is CSS via
+ * --icon-size (--icon-xs|s|m|l). Growing only the button on mobile left icons
+ * tiny; keep glyph scale tied to the control on every platform.
+ */
+.bibtex-panel-corner-btn,
+.bibtex-panel-clash-btn,
+.bibtex-panel-missing-pdf-btn,
+.bibtex-panel-view-toggle-knob {
+    --icon-size: var(--icon-s, 16px);
+}
+
+.bibtex-panel-corner-btn svg,
+.bibtex-panel-clash-btn svg,
+.bibtex-panel-missing-pdf-btn svg,
+.bibtex-panel-view-toggle-knob svg {
+    width: var(--icon-size);
+    height: var(--icon-size);
+    flex-shrink: 0;
+}
+
 .is-mobile .bibtex-panel-corner-btn {
     width: 2.75em;
     height: 2.75em;
+    --icon-size: var(--icon-l, 22px);
+}
+
+/* Touch floor for toolbar icon buttons (clash / missing-PDF). */
+.is-mobile .bibtex-panel-clash-btn,
+.is-mobile .bibtex-panel-missing-pdf-btn {
+    flex-basis: max(var(--input-height), 2.5em);
+    width: max(var(--input-height), 2.5em);
+    height: max(var(--input-height), 2.5em);
+    --icon-size: var(--icon-m, 18px);
+}
+
+.is-mobile .bibtex-panel-view-toggle {
+    width: calc(max(var(--input-height), 2.5em) * 1.9);
+    height: max(var(--input-height), 2.5em);
+}
+
+.is-mobile .bibtex-panel-view-toggle-knob {
+    width: calc(max(var(--input-height), 2.5em) - 4px);
+    height: calc(max(var(--input-height), 2.5em) - 4px);
+    --icon-size: var(--icon-s, 16px);
 }
 
 /* Corner buttons grew above (1.9em -> 2.75em); the gutter that keeps footer
@@ -420,6 +462,12 @@ code.bibtex-source-tag.is-clashing {
 .is-mobile .bibtex-hover-card a.bibtex-card-file-link,
 .is-mobile .bibtex-hover-card a.bibtex-card-file-link button {
     min-height: max(var(--input-height, 2rem), 2.75em);
+}
+
+/* Discover chips: larger tap targets on phone (in-note CM chips stay compact). */
+.is-mobile .bibtex-panel-discover-chip .bibtex-hover button {
+    min-height: max(var(--input-height, 2rem), 2.5em);
+    padding: 0.35em 0.65em;
 }
 
 /* ── Action strip (command center) ────────────────────────────────────
@@ -967,8 +1015,9 @@ code.bibtex-source-tag.is-clashing {
  * list in the bottom-right so it's reachable regardless of view mode. */
 .bibtex-panel-corner-actions {
     position: absolute;
-    right: var(--size-4-2);
-    bottom: var(--size-4-2);
+    /* Safe-area so home-indicator / notched devices do not clip floating actions. */
+    right: max(var(--size-4-2), env(safe-area-inset-right, 0px));
+    bottom: max(var(--size-4-2), env(safe-area-inset-bottom, 0px));
     display: flex;
     gap: var(--size-4-1);
     z-index: 5;
@@ -987,6 +1036,8 @@ code.bibtex-source-tag.is-clashing {
     background: transparent;
     color: var(--text-muted);
     cursor: var(--cursor);
+    /* setIcon size — see panel icon block under .is-mobile above */
+    --icon-size: var(--icon-s, 16px);
 }
 
 .bibtex-panel-corner-btn:hover,

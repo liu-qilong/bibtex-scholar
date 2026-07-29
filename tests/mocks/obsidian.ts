@@ -76,6 +76,15 @@ export class Setting {
 export async function requestUrl(_opts?: unknown): Promise<{ text: string }> {
 	return { text: '' }
 }
+
+/** Desktop by default so hover-open tests still exercise mouseenter paths. */
+export const Platform = {
+	isMobile: false,
+	isDesktop: true,
+	isPhone: false,
+	isTablet: false,
+}
+
 export type App = unknown
 
 /** Dispatch to flip Live Preview on/off in unit tests. */

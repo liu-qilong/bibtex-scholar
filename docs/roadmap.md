@@ -28,6 +28,8 @@ Beyond `\autocite{id}` clipboard helpers: configurable CSL (or a small style pre
 
 Until then, mobile is best-effort only.
 
+First-pass hardening already in CSS/`hover.tsx` (not a full C3): panel `--icon-size` scaling with touch-sized buttons, safe-area corner actions, click-only chip open (no synthetic hover leave-close), higher pin-drag threshold.
+
 ## Technical debt
 
 Code- and contract-level debt only. Live Obsidian exercise of shipped UX is not tracked here.
