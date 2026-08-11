@@ -1,13 +1,14 @@
 {
 	"name": "BibTeX Scholar",
-	"version": "1.0.0",
+	"version": "1.5.0",
 	"description": "Obsidian plugin for managing/citing BibTeX entries",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"build": "node version-check.mjs && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"check:version": "node version-check.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [],
