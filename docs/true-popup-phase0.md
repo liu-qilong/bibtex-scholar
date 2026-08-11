@@ -71,7 +71,7 @@ Implemented: controller (1) → portal (2) → editor stability (3) → click/a1
 | Phase | Scope | Inspect when done |
 |-------|--------|-------------------|
 | **0** | Spec lock (this doc) | Decisions agreed |
-| **1** | Shared controller: debounce, close grace, ESC dismiss, one global open | Skim without open; ESC sticks until leave — **done 2026-07-18** (`src/citation-popup.ts`, wired in `src/hover.tsx`; card still inline) |
+| **1** | Shared controller: debounce, close grace, ESC dismiss, one global open | Skim without open; ESC sticks until leave — **done 2026-07-18** (`src/ui/citation-popup.ts`, wired in `src/hover.tsx`; card still inline) |
 | **2** | Portal + fixed position under workspace container | Open does not shift text — **done 2026-07-18** (`createPortal` → `app.workspace.containerEl`, fixed + clamp/flip; styles in `styles.css`) |
 | **3** | Editor decoration stability (chip-only widget, fewer remounts) | Caret motion does not thrash popup — **done 2026-07-18** (selection rebuild only on cite enter/leave; `HoverWidget.eq` + `destroy` unmount) |
 | **4** | Polish (click-outside, a11y) | **done 2026-07-18** — click-outside close; chip click toggle; ARIA expanded/haspopup; no focus steal on open |

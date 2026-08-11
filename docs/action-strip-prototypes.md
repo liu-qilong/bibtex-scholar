@@ -29,8 +29,8 @@
 
 | Piece | Where |
 |-------|--------|
-| Setting + normalize | `src/cache-ops.ts` (`action_strip_layout`) |
-| Settings UI | `src/settings-tab.ts` |
+| Setting + normalize | `src/core/cache-ops.ts` (`action_strip_layout`) |
+| Settings UI | `src/architecture/settings-tab.ts` |
 | Markup | `src/hover.tsx` (`ActionStrip`) |
 | Layout CSS | `styles.css` (`.bibtex-hover-button-bar.is-layout-*`, `--bibtex-action-tile`) |
 

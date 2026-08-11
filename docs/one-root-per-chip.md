@@ -88,7 +88,7 @@ So a note with 40 citations in view has **40 separate React roots**, each with
 its own fiber tree, its own `useState`/`useEffect` closures, and — while its
 card happens to be open — its own `ResizeObserver` and a document-level
 `pointerdown` capture listener (see `HoverPopup`'s effects in
-`src/hover.tsx`). `citation_popup` (`src/citation-popup.ts`) already
+`src/hover.tsx`). `citation_popup` (`src/ui/citation-popup.ts`) already
 centralizes the *logic* of "which one is open" into a single controller
 singleton; the *rendering*, however, is still fully decentralized.
 
@@ -145,15 +145,15 @@ Concretely:
    card, it looks up `citation_popup.get_active_id()` in the registry and
    renders the (single) `<CitationCardBody>` for whichever chip that
    resolves to, positioned against that chip's `anchor` element using the
-   existing pure `src/citation-card-layout.ts` math.
+   existing pure `src/ui/citation-card-layout.ts` math.
 
 4. **Teardown gets simpler, not harder.** Only one root to ever unmount
    (on plugin `onunload`), instead of tracking N. Removing a chip from the
    registry while its card is open should also tell `citation_popup` to
    close it (chip left the document — nothing to point the card at anymore).
 
-The pure logic added this round — `src/citation-card-layout.ts` and
-`src/citation-popup.ts` — carries over untouched; this refactor only changes
+The pure logic added this round — `src/ui/citation-card-layout.ts` and
+`src/ui/citation-popup.ts` — carries over untouched; this refactor only changes
 *how many roots render the result*, not the open/close/placement rules
 themselves.
 

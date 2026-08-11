@@ -21,17 +21,17 @@ Update this file as work lands. If a session dies, **this file is the source of 
 
 | Area | Where | Why it scales |
 |------|--------|----------------|
-| DOI clash check | `src/doi-index.ts` | O(1) paint path |
-| Save coalescing | `src/save-coalesce.ts` | Not one write per entry |
+| DOI clash check | `src/architecture/doi-index.ts` | O(1) paint path |
+| Save coalescing | `src/infra/save-coalesce.ts` | Not one write per entry |
 | Editor cite widgets | `src/editor.ts` + `cite-span.ts` | Visible ranges only |
-| Citation popup | `src/citation-popup.ts` | One global open |
+| Citation popup | `src/ui/citation-popup.ts` | One global open |
 | Citation chip rendering | `src/hover.tsx` | One shared React root for the card (not one per chip); chips are plain DOM — see `docs/one-root-per-chip.md` |
-| Rename vault scan | `src/vault-scan.ts` | Chunked, cancelable |
-| Idle/unload audit | `src/idle-audit.ts` | No leaked work |
-| Panel/suggest caps | `src/library-scale.ts` | Hard mount caps (S1) |
+| Rename vault scan | `src/scale/vault-scan.ts` | Chunked, cancelable |
+| Idle/unload audit | `src/infra/idle-audit.ts` | No leaked work |
+| Panel/suggest caps | `src/scale/library-scale.ts` | Hard mount caps (S1) |
 | Slim free-text match | `src/bibtex.ts` `match_query` | No abstract on every keystroke; TeX→Unicode + accent-fold + token AND; word-level Levenshtein (length-scaled budget) via `token_matches_haystack`; per-entry corpus cached by object identity (S8) |
 | Scale report command | `main` → `format_scale_report` | Visible counters (S2) |
-| List-mode virtualized repaint | `src/panel.ts` `paint_list_window`, `src/library-scale.ts` `should_repaint_window`/`diff_window_ids` | Scroll/keystroke repaint is a no-op when the window is unchanged; only ids entering/leaving the window are (re)mounted (S8) |
+| List-mode virtualized repaint | `src/panel.ts` `paint_list_window`, `src/scale/library-scale.ts` `should_repaint_window`/`diff_window_ids` | Scroll/keystroke repaint is a no-op when the window is unchanged; only ids entering/leaving the window are (re)mounted (S8) |
 
 ---
 
@@ -110,7 +110,7 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 
 ### S8 checklist
 - [x] Per-entry free-text search corpus cached by object identity (`search_corpus_cache` in `src/bibtex.ts`) — `match_query` no longer rebuilds/normalizes an entry's slim corpus on every keystroke, only once per entry object. Safe because `upsert_entry`/`rebuild_dict_from_hits` always construct a new entry object on real content changes and never mutate `.fields` in place.
-- [x] Search-box debounce (`src/debounce.ts` `Debouncer`, 130ms trailing) wired into `panel.ts`'s `SearchComponent.onChange` — clearing the query still fires immediately (no debounce on "back to the full list"); `onClose` cancels any pending call.
+- [x] Search-box debounce (`src/scale/debounce.ts` `Debouncer`, 130ms trailing) wired into `panel.ts`'s `SearchComponent.onChange` — clearing the query still fires immediately (no debounce on "back to the full list"); `onClose` cancels any pending call.
 - [x] EditorSuggest per-keystroke double scan deduped: `onTrigger` now uses `has_any_match` (short-circuits on first *match*) instead of a second full `list_ids_for_suggest` call — `getSuggestions` still does the one real capped-list scan. Note: on a *miss* (nothing matches) `has_any_match` still walks the whole dict same as before; the win there is dropping the redundant `sorted_ids` allocate+sort, not short-circuiting — profile misses separately if they show up as hot.
 - [x] List-mode scroll/keystroke repaint no longer tears down and rebuilds the whole visible window every tick: `should_repaint_window` no-ops when `{list_ref, start, end}` is unchanged; `diff_window_ids` + a `Map<id, HTMLElement>` (`list_row_els`) keep rows whose id stays visible untouched (same DOM node, same live hover chip) — only ids entering/leaving the window are mounted/unmounted. Missing-PDF window got the same no-op guard (no row-diff — those rows have no hover chip, so the win is smaller and the plan marked it lower priority).
 - [ ] **Explicitly not done, by design:** `list_ids_for_panel`/`list_ids_for_suggest` still scan every entry even after their mount cap is hit — the exact `matched` count is load-bearing UI copy ("347 matches — showing first 80") and is asserted exactly in tests. Do not add an early-exit here without an explicit UX sign-off on approximating/truncating that count.
@@ -141,15 +141,15 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 
 | File | Role |
 |------|------|
-| `src/library-scale.ts` | Caps, list_ids, `visible_window`, missing-PDF row height |
+| `src/scale/library-scale.ts` | Caps, list_ids, `visible_window`, missing-PDF row height |
 | `src/bibtex.ts` | slim `match_query`; `entry_source` |
 | `src/panel.ts` | capped papers; hard clash rescan; virtual missing-PDF |
 | `src/prompt.ts` | capped suggest + stats sink |
-| `src/idle-audit.ts` | scale counters + format_scale_report |
-| `src/cache-ops.ts` | slim cache, fingerprints, merge, PDF probe |
-| `src/vault-scan.ts` | chunked scans + cite reverse index |
+| `src/infra/idle-audit.ts` | scale counters + format_scale_report |
+| `src/core/cache-ops.ts` | slim cache, fingerprints, merge, PDF probe |
+| `src/scale/vault-scan.ts` | chunked scans + cite reverse index |
 | `src/main.ts` | rescan; rename scan via cite index |
-| `src/debounce.ts` | clock-injectable trailing debouncer (S8) |
+| `src/scale/debounce.ts` | clock-injectable trailing debouncer (S8) |
 | `tests/*` | S1–S8 pure helpers + 10k smoke |
 | `docs/stability-trust.md` | budgets |
 
@@ -165,7 +165,7 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 | 2026-07-19 | **S4 done:** chunked full rescan (32, yield, progress Notice, epoch cancel); pure hit collect in cache-ops; no vault-rescan.ts. Next: **S3** or **S5**. |
 | 2026-07-19 | **S3+S5 done:** slim entries (`entry_source`, load strips source); path fingerprints mtime+size; soft recache + hard reset command; panel clashes hard. Next: **S6** or **S7**. |
 | 2026-07-19 | **S6+S7 done:** cite reverse index (build on first rename scan; restrict later); missing-PDF chunked probe + virtual list + cache/Recheck. Program S1–S7 complete. |
-| 2026-07-22 | Follow-up (outside S1–S7, tracked in `docs/one-root-per-chip.md`): citekey matching made case-insensitive (`src/citekey-index.ts`); one-root-per-chip landed — chips are plain DOM, one shared React root renders the (0-or-1) open card instead of one root per chip. |
+| 2026-07-22 | Follow-up (outside S1–S7, tracked in `docs/one-root-per-chip.md`): citekey matching made case-insensitive (`src/architecture/citekey-index.ts`); one-root-per-chip landed — chips are plain DOM, one shared React root renders the (0-or-1) open card instead of one root per chip. |
 | 2026-07-22 | **S1 follow-up done (list mode only):** paper panel split into two views — **discover** (capped chip view, not virtualized by design) and **list** (unbounded, virtualized plain-DOM rows). Mention-count sort reuses `cite_index`. |
 | 2026-07-26 | **S8 landed** (corpus cache, search debounce, suggest double-scan dedupe, list window row-diff). Open/deferred items remain the three S8 checklist `- [ ]` bullets (matched-count full scan, discover virtualization, display memoization). |
 | 2026-07-28 | Code debt index: `docs/roadmap.md` **Technical debt**; BibTeX parse/display gaps as `it.todo` in `tests/bibtex-renderer.completeness.test.ts`. |
