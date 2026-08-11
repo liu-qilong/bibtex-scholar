@@ -700,6 +700,41 @@ describe('pinned cards', () => {
 		expect(remaining).toHaveLength(1)
 		expect(remaining[0].classList.contains('is-pinned')).toBe(true)
 	})
+
+	it('transient hover preview stacks above pinned cards (z-index)', async () => {
+		const portal_root = document.createElement('div')
+		document.body.appendChild(portal_root)
+		const app = make_fake_app(portal_root)
+		const plugin = make_fake_plugin()
+
+		const chip_a = mount_chip(app, plugin, bibtex)
+		const chip_b = mount_chip(app, plugin, bibtex_2)
+
+		// Pin paper A.
+		await act(async () => {
+			fireEvent.click(chip_a.chip_button())
+		})
+		await act(async () => {
+			fireEvent.click(
+				portal_root.querySelector('.bibtex-hover-card .bibtex-card-pin') as HTMLButtonElement,
+			)
+		})
+		const pinned = portal_root.querySelector('.bibtex-hover-card.is-pinned') as HTMLElement
+		expect(pinned).not.toBeNull()
+		const pinned_z = Number.parseInt(pinned.style.zIndex || '0', 10)
+		expect(pinned_z).toBeGreaterThan(0)
+
+		// Open a transient preview for paper B while A stays pinned.
+		await act(async () => {
+			fireEvent.click(chip_b.chip_button())
+		})
+		const preview = Array.from(portal_root.querySelectorAll('.bibtex-hover-card')).find(
+			(c) => !c.classList.contains('is-pinned'),
+		) as HTMLElement
+		expect(preview).toBeTruthy()
+		const preview_z = Number.parseInt(preview.style.zIndex || '0', 10)
+		expect(preview_z).toBeGreaterThan(pinned_z)
+	})
 })
 
 describe('HoverWidget / chip lifecycle contracts', () => {

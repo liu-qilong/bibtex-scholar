@@ -101,6 +101,20 @@ export class PinRegistry<T> {
 		return front
 	}
 
+	/**
+	 * Highest pin stacking order currently in use (0 when empty).
+	 * Transient hover previews use `max_z() + 1` so they always draw above pins.
+	 */
+	max_z(): number {
+		let max = 0
+		for (const entry of this.pins.values()) {
+			if (entry.z > max) {
+				max = entry.z
+			}
+		}
+		return max
+	}
+
 	entries(): [string, PinEntry<T>][] {
 		return Array.from(this.pins.entries())
 	}

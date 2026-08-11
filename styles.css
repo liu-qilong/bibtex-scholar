@@ -165,8 +165,9 @@ code.bibtex-source-tag.is-clashing {
 }
 
 /* Pinned: detached from any anchor, draggable, own z-order (set inline via
- * style.zIndex — see hover.tsx) — a slightly stronger shadow reads as
- * "floating/detached" rather than "anchored to a chip."
+ * style.zIndex — see hover.tsx). Transient previews stack above pins so a
+ * live hover can be inspected over pin clutter. A slightly stronger shadow
+ * reads as "floating/detached" rather than "anchored to a chip."
  * Drag from empty chrome (padding/gaps), not title/actions/fields. */
 .bibtex-hover-card.is-floating.is-pinned {
     box-shadow:

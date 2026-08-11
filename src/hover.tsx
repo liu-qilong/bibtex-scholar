@@ -1143,7 +1143,8 @@ function card_surface_props(
         style.left = opts.pos.left
     }
     if (opts.z != null) {
-        // Base matches styles.css `--layer-popover` fallback (30); pin z stacks above it.
+        // Base matches styles.css `--layer-popover` fallback (30).
+        // Pin z stacks among pins; preview always receives max_pin_z + 1 so it wins.
         style.zIndex = 30 + opts.z
     }
     return {
@@ -1249,7 +1250,8 @@ const PreviewCard = ({
         citation_popup.close_outside()
     }
 
-    const surface = card_surface_props(plugin, paper_id, {})
+    // Always above pinned cards so a live hover can be inspected over pin clutter.
+    const surface = card_surface_props(plugin, paper_id, { z: pin_registry.max_z() + 1 })
 
     return (
         <div

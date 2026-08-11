@@ -76,6 +76,18 @@ describe('PinRegistry', () => {
 		expect(reg.front_id()).toBeNull()
 	})
 
+	it('max_z is 0 when empty and tracks the highest pin z', () => {
+		const reg = new PinRegistry<string>()
+		expect(reg.max_z()).toBe(0)
+		reg.pin('a', 'a', { top: 0, left: 0 })
+		reg.pin('b', 'b', { top: 0, left: 0 })
+		expect(reg.max_z()).toBe(2)
+		reg.bring_to_front('a')
+		expect(reg.max_z()).toBe(3)
+		reg.unpin('a')
+		expect(reg.max_z()).toBe(2)
+	})
+
 	it('subscribe returns an unsubscribe function', () => {
 		const reg = new PinRegistry<string>()
 		let notifications = 0

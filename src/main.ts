@@ -44,7 +44,7 @@ import {
 } from 'src/infra/idle-audit'
 import { HoverRenderChild, unmount_card_manager } from 'src/hover'
 import { EditorPrompt } from 'src/prompt'
-import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
+import { PaperPanelView, PAPER_PANEL_ICON_ID, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 import { createHoverWidgetPlugin } from 'src/editor'
 import { SaveCoalescer } from 'src/infra/save-coalesce'
 import { BibtexScholarSetting } from 'src/architecture/settings-tab'
@@ -296,15 +296,16 @@ export default class BibtexScholar extends Plugin {
 			(leaf) => new PaperPanelView(leaf, this)
 		)
 
-		this.addRibbonIcon('scan-search', 'Paper panel', () => {
-			this.add_paper_panel()
+		// Plain click reuses an open paper panel; Shift-click opens another (right split).
+		this.addRibbonIcon(PAPER_PANEL_ICON_ID, 'Paper panel (Shift: new)', (evt: MouseEvent) => {
+			void this.add_paper_panel({ force_new: evt.shiftKey })
 		})
 
 		this.addCommand({
 			id: 'open-paper-panel',
 			name: 'Open paper panel',
 			callback: () => {
-				this.add_paper_panel()
+				void this.add_paper_panel()
 			},
 		})
 	}
@@ -1343,14 +1344,31 @@ export default class BibtexScholar extends Plugin {
 	}
 
 	/**
-	 * Add paper panel to the right sidebar
+	 * Open the paper panel in the right sidebar.
+	 *
+	 * Default: reveal + focus an existing `paper-panel-view` leaf if any (ribbon /
+	 * command don't spawn duplicates). Pass `{ force_new: true }` (ribbon:
+	 * Shift-click) to open another panel via a right-sidebar split.
 	 */
-	add_paper_panel() {
+	async add_paper_panel(opts?: { force_new?: boolean }) {
 		const { workspace } = this.app
-		const leaf = workspace.getRightLeaf(false)
+		const force_new = opts?.force_new === true
 
+		if (!force_new) {
+			const existing = workspace.getLeavesOfType(PAPER_PANEL_VIEW_TYPE)
+			if (existing.length > 0) {
+				const leaf = existing[0]
+				await workspace.revealLeaf(leaf)
+				workspace.setActiveLeaf(leaf, { focus: true })
+				return
+			}
+		}
+
+		// split=true when forcing a second panel so we don't replace a neighbor view
+		const leaf = workspace.getRightLeaf(force_new)
 		if (leaf) {
-			leaf.setViewState({ type: PAPER_PANEL_VIEW_TYPE, active: true })
+			await leaf.setViewState({ type: PAPER_PANEL_VIEW_TYPE, active: true })
+			await workspace.revealLeaf(leaf)
 		}
 	}
 }

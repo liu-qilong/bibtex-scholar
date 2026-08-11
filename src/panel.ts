@@ -27,6 +27,38 @@ import type BibtexScholar from 'src/main'
 
 export const PAPER_PANEL_VIEW_TYPE = 'paper-panel-view'
 
+/**
+ * Custom paper-panel icon — two stacked scientific papers.
+ *
+ * Designed in Obsidian's native 100×100 addIcon space (see gallery/paper-panel-icon.svg).
+ * This is a filled-shape logo, not a Lucide 24-grid stroke glyph: at ribbon size
+ * (~18px) a dense line layout collapses, so we keep the silhouette bold and
+ * reduce body copy to title + 2 full lines + 2 two-col rows (plus 3 back peeks).
+ *
+ * Proportions from paperpannelnew.png / vectorizer filled paths; geometry is
+ * hand-simplified for small-scale legibility (raw traces are not shipped).
+ *
+ * Theme: ink = currentColor; paper faces = var(--background-primary) so the
+ * front sheet occludes the back without hard-coded black/white.
+ */
+export const PAPER_PANEL_ICON_ID = 'bibtex-paper-panel'
+// Filled capsules for text (survive ~18px). Back then front — front fill masks.
+addIcon(
+	PAPER_PANEL_ICON_ID,
+	`<rect x="6" y="20" width="56" height="73" rx="9" fill="var(--background-primary)" stroke="currentColor" stroke-width="7.5" stroke-linejoin="round"/>
+	<rect x="13" y="46.75" width="22" height="6.5" rx="3.25" fill="currentColor"/>
+	<rect x="13" y="58.75" width="22" height="6.5" rx="3.25" fill="currentColor"/>
+	<rect x="13" y="70.75" width="22" height="6.5" rx="3.25" fill="currentColor"/>
+	<rect x="33" y="6" width="56" height="73" rx="9" fill="var(--background-primary)" stroke="currentColor" stroke-width="7.5" stroke-linejoin="round"/>
+	<rect x="47" y="14.75" width="26" height="6.5" rx="3.25" fill="currentColor"/>
+	<rect x="40" y="26.75" width="44" height="6.5" rx="3.25" fill="currentColor"/>
+	<rect x="40" y="37.75" width="44" height="6.5" rx="3.25" fill="currentColor"/>
+	<rect x="40" y="50.75" width="17" height="6.5" rx="3.25" fill="currentColor"/>
+	<rect x="63" y="50.75" width="21" height="6.5" rx="3.25" fill="currentColor"/>
+	<rect x="40" y="62.75" width="17" height="6.5" rx="3.25" fill="currentColor"/>
+	<rect x="63" y="62.75" width="21" height="6.5" rx="3.25" fill="currentColor"/>`,
+)
+
 /** Custom "crossed-out document" icon for the missing-PDF panel toggle (Obsidian icons use a 100x100 grid). */
 const MISSING_PDF_ICON_ID = 'bibtex-missing-pdf'
 addIcon(
@@ -122,7 +154,7 @@ export class PaperPanelView extends ItemView {
     }
 
     getIcon(): IconName {
-        return 'scan-search'
+        return PAPER_PANEL_ICON_ID as IconName
     }
 
     async onOpen() {

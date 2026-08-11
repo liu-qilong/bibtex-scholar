@@ -231,14 +231,12 @@ Add a `bibtex-ignore` property (checked/`true`) to a note's frontmatter to keep 
 
 ### Paper panel
 
-You can click ![img](/gallery/scan-search.jpeg) on the left ribbon to open the paper panel to the right sidebar. From there, you can search and filter your papers easily:
+You can click ![img](/gallery/paper-panel.jpeg) on the left ribbon to open the paper panel to the right sidebar. If a paper panel is already open, the click focuses that one instead of creating another; **Shift-click** opens an additional panel (you can still drag panels wherever you want). From there, you can search and filter your papers easily:
 
 - You can search with various queries separated with `;`: e.g. `John;2020`
 - You can filter specific fields: e.g. `author:John;year:2020`
 
 The switch at the top of the panel toggles between **Discover** (a random, re-rollable sample of your library — good for browsing) and **List** (every match, sortable A–Z or by **Most cited**, virtualized so it stays fast at any library size). Either view, hovering a citekey opens the same floating card described above.
-
-You can open multiple paper panels and draw them to the place you want.
 
 The compare-icon button in the panel recaches from the vault and lists citekey/DOI collisions.
 Enabling **Missing PDF panel** in settings adds a second toggle beside it that lists cached
