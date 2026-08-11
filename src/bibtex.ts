@@ -265,7 +265,7 @@ export class FetchBibtexOnline extends Modal {
     btn: ButtonComponent
 
     doi: string = ''
-    id_surfix: string = ''
+    id_suffix: string = ''
     abstract: string = ''
     bibtex: string = ''
 
@@ -297,12 +297,12 @@ export class FetchBibtexOnline extends Modal {
             )
         
         new Setting(contentEl)
-			.setName('ID surfix')
-			.setDesc('Surfix to the paper ID')
+			.setName('ID suffix')
+			.setDesc('Suffix to the paper ID')
 			.addText(text => text
-				.setValue(this.id_surfix)
+				.setValue(this.id_suffix)
 				.onChange(async (value) => {
-					this.id_surfix = value
+					this.id_suffix = value
 				}))
 
         new Setting(contentEl)
@@ -388,7 +388,7 @@ export class FetchBibtexOnline extends Modal {
             first_name = name_parts.join(' ')
         }
 
-        field['id'] = `${first_name}${last_name}${field['year'] || ''}`.replace(/[^a-zA-Z0-9]/g, '') + this.id_surfix
+        field['id'] = `${first_name}${last_name}${field['year'] || ''}`.replace(/[^a-zA-Z0-9]/g, '') + this.id_suffix
 
         // fix duplication
         if (field.id in this.plugin.cache.bibtex_dict) {
