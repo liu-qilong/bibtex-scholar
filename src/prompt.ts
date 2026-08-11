@@ -9,9 +9,9 @@ import {
 	type EditorSuggestTriggerInfo,
 } from 'obsidian'
 import { type BibtexDict } from 'src/bibtex'
-import { has_any_match, list_ids_for_suggest } from 'src/library-scale'
-import { find_prompt_trigger } from 'src/prompt-trigger'
-import { render_display_text } from 'src/tex-display'
+import { has_any_match, list_ids_for_suggest } from 'src/scale/library-scale'
+import { find_prompt_trigger } from 'src/architecture/prompt-trigger'
+import { render_display_text } from 'src/display/tex-display'
 
 /**
  * Inline cite autocomplete.

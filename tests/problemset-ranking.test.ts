@@ -8,9 +8,9 @@ import {
 	token_match_quality,
 	token_matches_word,
 	MATCH_Q,
-} from 'src/tex-display'
+} from 'src/display/tex-display'
 import { match_query, type BibtexDict, type BibtexElement } from 'src/bibtex'
-import { filtered_ids, list_ids_for_panel, list_ids_for_suggest } from 'src/library-scale'
+import { filtered_ids, list_ids_for_panel, list_ids_for_suggest } from 'src/scale/library-scale'
 
 function entry(id: string, fields: Record<string, string> = {}): BibtexElement {
 	return {

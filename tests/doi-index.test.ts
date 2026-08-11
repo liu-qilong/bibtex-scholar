@@ -5,8 +5,8 @@ import {
 	doi_index_on_delete,
 	doi_index_on_upsert,
 	doi_is_duplicate,
-} from 'src/doi-index'
-import { delete_entry, rebuild_dict_from_hits, upsert_entry, type ScanHit } from 'src/cache-ops'
+} from 'src/architecture/doi-index'
+import { delete_entry, rebuild_dict_from_hits, upsert_entry, type ScanHit } from 'src/core/cache-ops'
 
 function fields(partial: Partial<BibtexField> & { id: string }): BibtexField {
 	return { type: 'article', ...partial } as BibtexField

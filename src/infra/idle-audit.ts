@@ -1,6 +1,8 @@
 /**
  * Idle / unload trust checks.
  * "Idle" means: no open citation popup, no pending coalesced save, no rename debounce timers.
+ *
+ * Review unit: Trust — see docs/RESEGMENT.md.
  */
 
 export type PerfCounters = {

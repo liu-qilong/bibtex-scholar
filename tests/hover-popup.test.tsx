@@ -10,7 +10,7 @@
 import { act, cleanup, fireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BibtexElement } from 'src/bibtex'
-import { citation_popup, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
+import { citation_popup, OPEN_DEBOUNCE_MS } from 'src/ui/citation-popup'
 import {
 	ConfirmActionModal,
 	HoverRenderChild,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { SaveCoalescer } from 'src/save-coalesce'
+import { SaveCoalescer } from 'src/infra/save-coalesce'
 
 function fake_clock() {
 	let now = 0

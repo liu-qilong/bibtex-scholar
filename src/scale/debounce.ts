@@ -1,4 +1,4 @@
-import type { PopupClock } from 'src/citation-popup'
+import type { PopupClock } from 'src/ui/citation-popup'
 
 const default_clock: PopupClock = {
 	setTimeout: (fn, ms) => window.setTimeout(fn, ms) as unknown as number,

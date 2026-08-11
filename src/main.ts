@@ -22,18 +22,18 @@ import {
 	type PathFingerprintMap,
 	type PluginCacheShape,
 	type ScanHit,
-} from 'src/cache-ops'
+} from 'src/core/cache-ops'
 import {
 	delete_uncache_notice_text,
 	duplicate_block_notice,
 	paint_duplicate_tag_state,
 	rename_notice_text,
 	unknown_cite_title,
-} from 'src/ux-copy'
-import { text_may_contain_bibtex_block } from 'src/cite-span'
-import { citation_popup } from 'src/citation-popup'
-import { build_id_index, resolve_id, type IdIndex } from 'src/citekey-index'
-import { build_doi_index, type DoiIndex } from 'src/doi-index'
+} from 'src/ui/ux-copy'
+import { text_may_contain_bibtex_block } from 'src/core/cite-span'
+import { citation_popup } from 'src/ui/citation-popup'
+import { build_id_index, resolve_id, type IdIndex } from 'src/architecture/citekey-index'
+import { build_doi_index, type DoiIndex } from 'src/architecture/doi-index'
 import {
 	audit_idle_after_unload,
 	create_perf_counters,
@@ -41,13 +41,13 @@ import {
 	is_plugin_idle,
 	type IdleSnapshot,
 	type PerfCounters,
-} from 'src/idle-audit'
+} from 'src/infra/idle-audit'
 import { HoverRenderChild, unmount_card_manager } from 'src/hover'
 import { EditorPrompt } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
 import { createHoverWidgetPlugin } from 'src/editor'
-import { SaveCoalescer } from 'src/save-coalesce'
-import { BibtexScholarSetting } from 'src/settings-tab'
+import { SaveCoalescer } from 'src/infra/save-coalesce'
+import { BibtexScholarSetting } from 'src/architecture/settings-tab'
 import {
 	cite_index_all_cites,
 	cite_index_clear,
@@ -61,7 +61,7 @@ import {
 	scan_bibtex_hits_chunked,
 	scan_inline_cites_chunked,
 	type CitePathIndex,
-} from 'src/vault-scan'
+} from 'src/scale/vault-scan'
 
 type BibtexScholarCache = PluginCacheShape
 

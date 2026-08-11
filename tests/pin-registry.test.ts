@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PinRegistry } from 'src/pin-registry'
+import { PinRegistry } from 'src/ui/pin-registry'
 
 describe('PinRegistry', () => {
 	it('pins and unpins, notifying subscribers', () => {

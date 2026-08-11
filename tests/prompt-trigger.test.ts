@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { find_prompt_trigger } from 'src/prompt-trigger'
+import { find_prompt_trigger } from 'src/architecture/prompt-trigger'
 
 const has_smith = (query: string) => query === '' || 'Smith2020'.startsWith(query)
 

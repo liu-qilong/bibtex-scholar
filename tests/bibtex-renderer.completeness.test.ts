@@ -15,7 +15,7 @@ import {
 	display_bibtex_plain_text,
 	display_bibtex_segments,
 	display_bibtex_text,
-} from 'src/tex-display'
+} from 'src/display/tex-display'
 
 describe('BibTeX renderer – completeness', () => {
 	// 1. Classic scientific italics + accent macros

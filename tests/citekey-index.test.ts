@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { check_duplicate_id, type BibtexDict, type BibtexField } from 'src/bibtex'
-import { build_id_index, id_index_claim, id_index_clear_owner, resolve_id } from 'src/citekey-index'
-import { delete_entry, rebuild_dict_from_hits, upsert_entry, type ScanHit } from 'src/cache-ops'
+import { build_id_index, id_index_claim, id_index_clear_owner, resolve_id } from 'src/architecture/citekey-index'
+import { delete_entry, rebuild_dict_from_hits, upsert_entry, type ScanHit } from 'src/core/cache-ops'
 
 function fields(partial: Partial<BibtexField> & { id: string }): BibtexField {
 	return { type: 'article', ...partial } as BibtexField

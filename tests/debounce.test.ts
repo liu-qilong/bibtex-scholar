@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Debouncer } from 'src/debounce'
+import { Debouncer } from 'src/scale/debounce'
 
 function fake_clock() {
 	let now = 0

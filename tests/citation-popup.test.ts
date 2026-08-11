@@ -5,7 +5,7 @@ import {
 	OPEN_DEBOUNCE_MS,
 	__reset_citation_popup_ids_for_tests,
 	create_citation_popup_id,
-} from 'src/citation-popup'
+} from 'src/ui/citation-popup'
 
 function fake_clock() {
 	let now = 0

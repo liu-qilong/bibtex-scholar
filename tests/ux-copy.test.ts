@@ -6,7 +6,7 @@ import {
 	paint_duplicate_tag_state,
 	rename_notice_text,
 	unknown_cite_title,
-} from 'src/ux-copy'
+} from 'src/ui/ux-copy'
 
 describe('ux-copy / user-facing messages', () => {
 	it('unknown_cite_title names the key and points at recache (no toast wording)', () => {

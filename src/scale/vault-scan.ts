@@ -7,8 +7,8 @@
  */
 
 import { INLINE_CITE_RE, normalize_id, type CiteHit } from 'src/bibtex'
-import { collect_hits_from_markdown, type ScanHit } from 'src/cache-ops'
-import { text_may_contain_bibtex_block } from 'src/cite-span'
+import { collect_hits_from_markdown, type ScanHit } from 'src/core/cache-ops'
+import { text_may_contain_bibtex_block } from 'src/core/cite-span'
 
 export type VaultRead = (path: string) => Promise<string>
 

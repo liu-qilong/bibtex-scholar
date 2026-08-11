@@ -14,7 +14,7 @@ import {
 	order_scan_paths,
 	scan_bibtex_hits_chunked,
 	scan_inline_cites_chunked,
-} from 'src/vault-scan'
+} from 'src/scale/vault-scan'
 
 describe('vault-scan (Phase B)', () => {
 	it('order_scan_paths puts priority first without duplicates', () => {

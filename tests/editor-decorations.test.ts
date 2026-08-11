@@ -10,7 +10,7 @@
 import { EditorSelection, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { afterEach, describe, expect, it } from 'vitest'
-import { build_id_index } from 'src/citekey-index'
+import { build_id_index } from 'src/architecture/citekey-index'
 import { cite_span_key_at, createHoverWidgetPlugin } from 'src/editor'
 import { setEditorLivePreview, editorLivePreviewField } from 'obsidian'
 import type { BibtexElement } from 'src/bibtex'

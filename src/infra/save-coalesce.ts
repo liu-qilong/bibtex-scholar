@@ -2,6 +2,8 @@
  * Coalesce frequent cache persistence requests into fewer disk writes.
  * Obsidian's saveData is durable but not free — codeblock re-renders can
  * otherwise write once per entry per paint.
+ *
+ * Review unit: Trust — see docs/RESEGMENT.md.
  */
 
 export type SaveCoalesceClock = {

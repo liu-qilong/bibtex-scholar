@@ -23,6 +23,49 @@ What we focused on is hardening and UX around that core:
 
 In short: a note-native BibTeX Scholar descendant aimed at larger vaults and more stable UI, still the same workflow—not a Zotero reimplementation inside Obsidian. Upstream maintainers: the tables and `docs/roadmap.md` / `SPEED.md` are the shortest map of what diverged and what is still open.
 
+### Reviewing this as a stack of PRs
+
+The areas in the table above are also the seams this fork's history is being cut along for review. Each one—Architecture, Scale, Trust, Display, UI, Mobile, plus Docs & Release—is rebuilt as its own branch, built directly from the same shared base commit rather than from each other, so the underlying functionality stays separable: a reviewer can read and merge one unit without needing the others in place first. A merge cascade then recombines the units back into a tree identical to the original fork's tip, so nothing is lost or reordered along the way—it's the same change, just split into independently reviewable pieces:
+
+![resegment topology](/gallery/resegment-topology.png)
+
+### Bringing this into upstream
+
+This repository was set up independently rather than through GitHub's fork mechanism, so it shares
+no git ancestry with `liu-qilong/bibtex-scholar`—`git merge` or `git rebase` against the real
+upstream tip won't fast-forward or three-way merge, no matter how the `resegment/*` branches are
+organized. `resegment/base` is this fork's own starting point, not a commit shared with upstream
+(its tree matches this repo's own `1.1.0` tag, though that tag sits on a separate lineage and isn't
+verified against any specific point in upstream's own history)—confirm what it corresponds to on
+your end before relying on it as a diff base. The units are reviewable, not directly mergeable by
+history, and split cleanly along two different lines:
+
+1. **Net-new files**—most of what each unit adds—have no upstream equivalent, so they can be
+   copied in wholesale, one unit at a time, in cascade order (Architecture → Scale → Trust →
+   Display → UI → Mobile → Docs & Release):
+   ```bash
+   git remote add fork <this-repo-url>
+   git fetch fork 'refs/heads/resegment/*:refs/remotes/fork/resegment/*'
+   git diff --stat fork/resegment/base fork/resegment/unit-architecture   # see what a unit touches
+   git checkout fork/resegment/unit-architecture -- <new-file-path>
+   ```
+   Order matters in one place: Trust's clash detection consumes Scale's vault-scan module, so bring
+   Scale in before Trust.
+2. **Files that predate this fork** (`main.ts`, `bibtex.ts`, `editor.ts`, `hover.tsx`, `panel.ts`,
+   `prompt.ts`, `styles.css`, `README.md`) were rebuilt whole-file rather than split per unit—
+   whichever unit's branch touches one of these carries that file's *entire* fork-wide change, not
+   just that unit's slice (see the Limitations section of `docs/RESEGMENT.md`). Review each of
+   these once, directly against your own current version, rather than per unit:
+   ```bash
+   git diff <your-upstream-tip>:src/main.ts fork/resegment/unit-architecture:src/main.ts
+   ```
+   A patch tool will mostly produce rejected hunks rather than clean applies.
+
+`docs/RESEGMENT.md` has the full branch topology and per-unit ownership if a different sequencing
+than the cascade order above makes more sense on your end.
+
+---
+
 ## Why choose BibTeX Scholar? 💡
 
 Traditional reference managers organize papers in flat folders, leading to the lack of context:

@@ -6,7 +6,7 @@ import {
 	selection_requires_decoration_rebuild,
 	spans_showing_chips,
 	text_may_contain_bibtex_block,
-} from 'src/cite-span'
+} from 'src/core/cite-span'
 import { should_render_cite_widgets } from 'src/editor'
 import { fields_shallow_equal } from '../src/hover'
 

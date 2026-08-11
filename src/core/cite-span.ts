@@ -1,6 +1,8 @@
 /**
  * Pure helpers for inline citation spans and caret/decoration decisions.
  * No Obsidian or CodeMirror imports — safe for unit tests in Node.
+ *
+ * Review unit: Trust — see docs/RESEGMENT.md.
  */
 
 /** `` `{id}` `` (compact chip) or `` `[id]` `` (expanded card) inside backticks. */

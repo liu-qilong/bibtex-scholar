@@ -6,7 +6,7 @@ import {
 	search_tokens,
 	token_match_quality_haystack,
 	token_matches_haystack,
-} from 'src/tex-display'
+} from 'src/display/tex-display'
 
 /**
  * Represents a single BibTeX entry field.

@@ -13,7 +13,7 @@ import {
 	search_tokens,
 	token_matches_haystack,
 	token_matches_word,
-} from 'src/tex-display'
+} from 'src/display/tex-display'
 
 describe('find_matching_brace', () => {
 	it('matches nested braces', () => {

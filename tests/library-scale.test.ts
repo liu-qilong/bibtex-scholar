@@ -22,7 +22,7 @@ import {
 	SUGGEST_RESULT_CAP,
 	is_unsafe_full_mount,
 	visible_window,
-} from 'src/library-scale'
+} from 'src/scale/library-scale'
 
 function entry(id: string, extra: Record<string, string> = {}): BibtexElement {
 	return {

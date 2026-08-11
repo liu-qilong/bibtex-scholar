@@ -32,9 +32,9 @@ import {
 	snapshot_entries_for_path,
 	upsert_entry,
 	type ScanHit,
-} from 'src/cache-ops'
-import { build_doi_index } from 'src/doi-index'
-import { build_id_index } from 'src/citekey-index'
+} from 'src/core/cache-ops'
+import { build_doi_index } from 'src/architecture/doi-index'
+import { build_id_index } from 'src/architecture/citekey-index'
 import { make_bibtex, type BibtexField } from 'src/bibtex'
 
 function fields(partial: Partial<BibtexField> & { id: string }): BibtexField {

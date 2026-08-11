@@ -4,6 +4,8 @@
  *
  * SPEED S3: slim entries (no double-stored reconstructible `source`).
  * SPEED S5: path fingerprints + merge helpers for incremental rescan.
+ *
+ * Review unit: Trust — see docs/RESEGMENT.md.
  */
 
 import {
@@ -16,18 +18,18 @@ import {
 	type BibtexField,
 	type ClashHit,
 } from 'src/bibtex'
-import { text_may_contain_bibtex_block } from 'src/cite-span'
+import { text_may_contain_bibtex_block } from 'src/core/cite-span'
 import {
 	type IdIndex,
 	id_index_claim,
 	id_index_clear_owner,
-} from 'src/citekey-index'
+} from 'src/architecture/citekey-index'
 import {
 	type DoiIndex,
 	doi_index_on_delete,
 	doi_index_on_remove_path,
 	doi_index_on_upsert,
-} from 'src/doi-index'
+} from 'src/architecture/doi-index'
 
 export type ScanHit = ClashHit & { fields: BibtexField }
 

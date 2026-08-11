@@ -7,7 +7,7 @@ import {
 	compute_card_position,
 	subline_scroll_grow_px,
 	type Rect,
-} from 'src/citation-card-layout'
+} from 'src/ui/citation-card-layout'
 
 const VIEWPORT = { width: 1000, height: 800 }
 

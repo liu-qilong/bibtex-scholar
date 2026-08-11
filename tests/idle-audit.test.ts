@@ -5,9 +5,9 @@ import {
 	format_diagnostics_report,
 	format_scale_report,
 	is_plugin_idle,
-} from 'src/idle-audit'
-import { CitationPopupController } from 'src/citation-popup'
-import { SaveCoalescer } from 'src/save-coalesce'
+} from 'src/infra/idle-audit'
+import { CitationPopupController } from 'src/ui/citation-popup'
+import { SaveCoalescer } from 'src/infra/save-coalesce'
 
 describe('idle audit (Phase C)', () => {
 	it('is_plugin_idle requires no popup, no dirty save, no rename timers', () => {

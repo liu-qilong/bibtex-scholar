@@ -13,8 +13,8 @@ import {
 	cite_span_key_at_offset,
 	selection_requires_decoration_rebuild,
 	spans_showing_chips,
-} from 'src/cite-span'
-import { resolve_id } from 'src/citekey-index'
+} from 'src/core/cite-span'
+import { resolve_id } from 'src/architecture/citekey-index'
 import { HoverWidget } from 'src/hover'
 import type BibtexScholar from 'src/main'
 

@@ -17,19 +17,19 @@ import { EditorSelection } from '@codemirror/state'
 import { type EditorView, WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
-import { display_bibtex_plain_text, display_bibtex_segments, display_bibtex_text } from 'src/tex-display'
-import { normalize_action_strip_layout, normalize_card_font_size } from 'src/cache-ops'
+import { display_bibtex_plain_text, display_bibtex_segments, display_bibtex_text } from 'src/display/tex-display'
+import { normalize_action_strip_layout, normalize_card_font_size } from 'src/core/cache-ops'
 import {
 	clamp_card_position,
 	compute_card_placement,
 	compute_card_position,
 	subline_scroll_grow_px,
-} from 'src/citation-card-layout'
-import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/citation-popup'
-import { find_cite_spans_in_line } from 'src/cite-span'
+} from 'src/ui/citation-card-layout'
+import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/ui/citation-popup'
+import { find_cite_spans_in_line } from 'src/core/cite-span'
 import type BibtexScholar from 'src/main'
-import { PinRegistry, type PinPosition } from 'src/pin-registry'
-import { card_affordance_copy } from 'src/ux-copy'
+import { PinRegistry, type PinPosition } from 'src/ui/pin-registry'
+import { card_affordance_copy } from 'src/ui/ux-copy'
 
 /** Long-press duration (ms) on a Live Preview chip to drop into raw-text edit mode. */
 export const CHIP_LONG_PRESS_MS = 500
@@ -1263,6 +1263,7 @@ const PreviewCard = ({
             style={surface.style}
             // Desktop: hover bridge chip↔card. Mobile: click/outside only —
             // synthetic mouseleave after a tap would schedule a false close.
+            // Review unit: Mobile — see docs/RESEGMENT.md.
             onMouseEnter={Platform.isMobile ? undefined : () => citation_popup.enter_card(instance_id)}
             onMouseLeave={Platform.isMobile ? undefined : () => citation_popup.leave_card(instance_id)}
             onKeyDown={(e) => {
@@ -1397,6 +1398,7 @@ const PinnedCard = ({
             const dx = ev.clientX - start_x
             const dy = ev.clientY - start_y
             // Below threshold: don't move yet — absorbs tap jitter (higher on mobile).
+            // Review unit: Mobile — see docs/RESEGMENT.md.
             const drag_threshold = Platform.isMobile
                 ? PIN_DRAG_THRESHOLD_MOBILE_PX
                 : PIN_DRAG_THRESHOLD_PX
@@ -1664,6 +1666,7 @@ function mount_chip(
 	// Hover-open is desktop-only. On mobile, synthetic mouseenter/leave after a
 	// tap races click-toggle and can close the card after CLOSE_GRACE_MS.
 	// Touch opens via the click handler below (immediate toggle).
+	// Review unit: Mobile — see docs/RESEGMENT.md.
 	if (!Platform.isMobile) {
 		chip.addEventListener('mouseenter', () => {
 			const open_debounce_ms = dense && plugin.cache.panel_double_debounce_enabled

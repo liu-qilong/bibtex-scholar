@@ -16,8 +16,8 @@ import {
 	filtered_ids,
 	list_ids_for_panel,
 	list_ids_for_suggest,
-} from 'src/library-scale'
-import { find_prompt_trigger } from 'src/prompt-trigger'
+} from 'src/scale/library-scale'
+import { find_prompt_trigger } from 'src/architecture/prompt-trigger'
 
 const TARGET_ID = 'CeballosGarzon-antibiofilm_2025'
 

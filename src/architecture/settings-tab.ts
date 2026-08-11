@@ -13,9 +13,9 @@ import {
 	PANEL_CHIP_FONT_SIZE_MAX,
 	PANEL_CHIP_FONT_SIZE_MIN,
 	type ActionStripLayout,
-} from 'src/cache-ops'
-import { OPEN_DEBOUNCE_MS } from 'src/citation-popup'
-import { format_diagnostics_report } from 'src/idle-audit'
+} from 'src/core/cache-ops'
+import { OPEN_DEBOUNCE_MS } from 'src/ui/citation-popup'
+import { format_diagnostics_report } from 'src/infra/idle-audit'
 import type BibtexScholar from 'src/main'
 import { FileSuggest, FolderSuggest } from 'src/prompt'
 
@@ -241,6 +241,7 @@ export class BibtexScholarSetting extends PluginSettingTab {
 
 		// Only affects the paper panel's mouseenter debounce (see hover.tsx) — touch opens
 		// via an unconditional tap/click, so this toggle is a no-op on mobile. Hide it there.
+		// Review unit: Mobile — see docs/RESEGMENT.md.
 		if (!Platform.isMobile) {
 			new Setting(containerEl)
 				.setName('Double hover debounce in paper panel')

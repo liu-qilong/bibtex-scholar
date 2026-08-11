@@ -1,9 +1,9 @@
 import { addIcon, ItemView, Notice, WorkspaceLeaf, SearchComponent, setIcon, type IconName } from 'obsidian'
 import type { BibtexDict, BibtexElement, Clash } from 'src/bibtex'
-import { normalize_card_font_size, normalize_list_font_size, normalize_panel_chip_font_size, probe_missing_pdf_chunked, type ScanHit } from 'src/cache-ops'
-import { Debouncer } from 'src/debounce'
-import { render_display_text } from 'src/tex-display'
-import { CacheOpsModal, CopyExportModal } from 'src/command-modals'
+import { normalize_card_font_size, normalize_list_font_size, normalize_panel_chip_font_size, probe_missing_pdf_chunked, type ScanHit } from 'src/core/cache-ops'
+import { Debouncer } from 'src/scale/debounce'
+import { render_display_text } from 'src/display/tex-display'
+import { CacheOpsModal, CopyExportModal } from 'src/architecture/command-modals'
 import { render_hover, unmount_hover_hosts } from 'src/hover'
 import {
     CLASH_RESULT_CAP,
@@ -22,7 +22,7 @@ import {
     should_repaint_window,
     visible_window,
     type LibraryListResult,
-} from 'src/library-scale'
+} from 'src/scale/library-scale'
 import type BibtexScholar from 'src/main'
 
 export const PAPER_PANEL_VIEW_TYPE = 'paper-panel-view'
