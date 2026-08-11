@@ -1,5 +1,5 @@
 import { App, Editor, Notice, Plugin, Setting, PluginSettingTab, MarkdownRenderer, MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bibtex, make_bibtex, check_duplicate_id, FetchBibtexOnline, type BibtexDict } from 'src/bibtex'
+import { parse_bibtex, make_bibtex, check_duplicate_id, check_duplicate_doi, FetchBibtexOnline, type BibtexDict } from 'src/bibtex'
 import { render_hover } from 'src/hover'
 import { EditorPrompt, FolderSuggest, FileSuggest } from 'src/prompt'
 import { PaperPanelView, PAPER_PANEL_VIEW_TYPE } from 'src/panel'
@@ -186,15 +186,24 @@ export default class BibtexScholar extends Plugin {
 		fields_ls.forEach(async (fields) => {
 			const id = fields.id
 			const bibtex_source = make_bibtex(fields)
-			const duplicate = check_duplicate_id(
+			const id_duplicate = check_duplicate_id(
 				this.cache.bibtex_dict, id,
 				ctx.sourcePath,
 				String(ctx.getSectionInfo(el)?.text)
 			)
+			const doi_duplicate = check_duplicate_doi(
+				this.cache.bibtex_dict, fields.doi, id, ctx.sourcePath
+			)
+			const duplicate = id_duplicate || doi_duplicate
 
 			if (duplicate) {
 				// if duplicated, prompt warning
-				new Notice(`Warning: BibTeX ID has been used\n${id}`, 10e3)
+				if (id_duplicate) {
+					new Notice(`Warning: BibTeX ID has been used\n${id}`, 10e3)
+				}
+				if (doi_duplicate) {
+					new Notice(`Warning: BibTeX DOI has been used\n${fields.doi}`, 10e3)
+				}
 			} else {
 				// if not duplicated, check if the id exists
 				// if exists, only cache bibtex code that is updated
@@ -210,10 +219,16 @@ export default class BibtexScholar extends Plugin {
 			}
 
 			// render paper element
+			// if doi-clash rejected a new id, fall back to the local fields so it still paints
 			const paper_bar = el.createEl('span', {
 				cls: (duplicate) ? ('bibtex-hover-duplicate-id') : ('bibtex-entry'),
 			})
-			render_hover(paper_bar, this.cache.bibtex_dict[id], this, this.app)
+			const entry = this.cache.bibtex_dict[id] ?? {
+				fields: fields,
+				source: bibtex_source,
+				source_path: ctx.sourcePath,
+			}
+			render_hover(paper_bar, entry, this, this.app)
 			el.createEl('code').setText('source')
 		})
 	}
