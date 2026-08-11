@@ -13,5 +13,7 @@ export default defineConfig({
 	test: {
 		environment: 'node',
 		include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
+		// Scale A/B experiments (public-seed, N=5k) — run via `npm run test:perf`.
+		exclude: ['tests/perf/**'],
 	},
 })

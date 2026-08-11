@@ -169,6 +169,7 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 | 2026-07-22 | **S1 follow-up done (list mode only):** paper panel split into two views — **discover** (capped chip view, not virtualized by design) and **list** (unbounded, virtualized plain-DOM rows). Mention-count sort reuses `cite_index`. |
 | 2026-07-26 | **S8 landed** (corpus cache, search debounce, suggest double-scan dedupe, list window row-diff). Open/deferred items remain the three S8 checklist `- [ ]` bullets (matched-count full scan, discover virtualization, display memoization). |
 | 2026-07-28 | Code debt index: `docs/roadmap.md` **Technical debt**; BibTeX parse/display gaps as `it.todo` in `tests/bibtex-renderer.completeness.test.ts`. |
+| 2026-08-11 | Scale A/B experiments: `tests/perf/` (upstream-shaped baseline vs fork on public-seed N=5k + mock vault). Run `npm run test:perf`. Not in default `npm test` (wall-clock + Θ(N²) DOI baseline). |
 
 ---
 
