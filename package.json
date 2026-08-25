@@ -8,7 +8,7 @@
 		"build": "node version-check.mjs && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"test:perf": "vitest run tests/perf --testTimeout=30000",
+		"test:perf": "vitest run --config vitest.perf.config.ts --testTimeout=30000",
 		"check:version": "node version-check.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},

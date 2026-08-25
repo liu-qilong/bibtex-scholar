@@ -22,7 +22,7 @@ Update this file as work lands. If a session dies, **this file is the source of 
 | Area | Where | Why it scales |
 |------|--------|----------------|
 | DOI clash check | `src/architecture/doi-index.ts` | O(1) paint path |
-| Save coalescing | `src/infra/save-coalesce.ts` | Not one write per entry |
+| Save coalescing | `src/infra/save-coalesce.ts` | Not one write per entry — see caveat below (E8) |
 | Editor cite widgets | `src/editor.ts` + `cite-span.ts` | Visible ranges only |
 | Citation popup | `src/ui/citation-popup.ts` | One global open |
 | Citation chip rendering | `src/hover.tsx` | One shared React root for the card (not one per chip); chips are plain DOM — see `docs/one-root-per-chip.md` |
@@ -45,6 +45,8 @@ Update this file as work lands. If a session dies, **this file is the source of 
 | `rescan_vault()` sequential full vault | UI freeze | **S4+S5 done** — chunked + fingerprints; hard reset for full clash harvest |
 | Missing-PDF full list | Slow open + large DOM | **S7 done** — chunked probe + virtual rows + cache |
 | Rename O(files), no reverse index | Painful on huge vaults | **S6 done** — citekey↔path index after first full scan |
+| Same-note duplicate-ID check (`check_duplicate_id` in `src/bibtex.ts`) used to build a `RegExp` and scan the whole note's flattened text **per entry in the block** | Was O(entries · notesize) per note, same shape as upstream's own known-bad code (see `external_UPSTREAM-BIBTEX-SCHOLAR.md`) | **done (2026-08-25)** — new `count_citekeys_in_note` scans the note once and returns citekey occurrence counts; `bibtex_codeblock_processor` builds it once per block render (`same_note_counts` in `src/main.ts`) and passes it to every `check_duplicate_id` call in that block instead of rescanning. `id_index` still covers the cross-file half unchanged. Old `file_content`-regex path kept as a fallback when no map is passed (tests, other callers). Measured: E9 (`tests/perf/duplicate-id-scan.perf.test.ts`) — ~1279× fewer ms for 2000 entries in one note; correctness cross-checked against the regex path. |
+| Save coalescing (`SaveCoalescer`, 80ms trailing throttle) degrades to upstream's per-entry full-serialize cost if codeblock paints are spaced **past** the debounce window | Fix's adequacy depends on Obsidian's real paint cadence for many-block notes, which we don't control | **Measured, not fixed** — `tests/perf/save-cache-amplification.perf.test.ts` (E8, 2026-08-25): synchronous/burst paints → ~1 write, ~1000× fewer bytes than upstream; paints spaced faster than but close to the 80ms window (20ms) → real but bounded win (~4×, not eliminated — quadratic-shaped, just scaled); paints spaced past the window (100ms) → 0% improvement, same quadratic total as upstream. No action taken — no evidence yet on real per-block paint spacing for a many-block note; the numbers exist now so a real trace can be checked against them. |
 
 ---
 
@@ -170,6 +172,8 @@ Status: `todo` | `in_progress` | `done` | `blocked`
 | 2026-07-26 | **S8 landed** (corpus cache, search debounce, suggest double-scan dedupe, list window row-diff). Open/deferred items remain the three S8 checklist `- [ ]` bullets (matched-count full scan, discover virtualization, display memoization). |
 | 2026-07-28 | Code debt index: `docs/roadmap.md` **Technical debt**; BibTeX parse/display gaps as `it.todo` in `tests/bibtex-renderer.completeness.test.ts`. |
 | 2026-08-11 | Scale A/B experiments: `tests/perf/` (upstream-shaped baseline vs fork on public-seed N=5k + mock vault). Run `npm run test:perf`. Not in default `npm test` (wall-clock + Θ(N²) DOI baseline). |
+| 2026-08-25 | Reviewed `external_UPSTREAM-BIBTEX-SCHOLAR.md` (upstream 1.1.0 analysis: two quadratics — per-entry `save_cache()` full serialize, and per-block same-note duplicate-ID regex over the whole note). Save-cache fix confirmed real but cadence-dependent, not proven — added E8 perf experiment (`tests/perf/save-cache-amplification.perf.test.ts`) instead of declaring it closed on inspection alone; left as-is (no code change — see row above). Same-note duplicate-ID regex confirmed **was still present, unfixed** — `id_index` (S6-adjacent work) only covered the cross-file half of `check_duplicate_id`. |
+| 2026-08-25 | **Fixed**: same-note duplicate-ID quadratic. `count_citekeys_in_note` (`src/bibtex.ts`) + `same_note_counts` param on `check_duplicate_id`; wired into `bibtex_codeblock_processor` (`src/main.ts`). E9 perf experiment + 3 new unit tests in `tests/citekey-index.test.ts`; `npm test` 373 passed, `tsc -noEmit` clean. Also fixed `npm run test:perf` (was finding 0 files — vitest 3.2.7's config `exclude: ['tests/perf/**']` wins over the CLI's positional path filter, pre-existing and unrelated to the above): split into `vitest.config.ts` (default, still excludes `tests/perf`) + `vitest.perf.config.ts` (perf-only `include`, no exclude), sharing alias config via `vitest.shared.ts`. `test:perf` script now points at the new config. |
 
 ---
 

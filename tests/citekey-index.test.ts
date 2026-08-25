@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { check_duplicate_id, type BibtexDict, type BibtexField } from 'src/bibtex'
+import { check_duplicate_id, count_citekeys_in_note, type BibtexDict, type BibtexField } from 'src/bibtex'
 import { build_id_index, id_index_claim, id_index_clear_owner, resolve_id } from 'src/architecture/citekey-index'
 import { delete_entry, rebuild_dict_from_hits, upsert_entry, type ScanHit } from 'src/core/cache-ops'
 
@@ -58,6 +58,34 @@ describe('citekey index', () => {
 		const dict: BibtexDict = {}
 		const content = '@article{Smith2020,}\n@article{smith2020,}'
 		expect(check_duplicate_id(dict, 'Smith2020', 'a.md', content)).toBe(true)
+	})
+
+	it('count_citekeys_in_note counts occurrences case-insensitively in one pass', () => {
+		const content = '@article{Smith2020,}\n@article{smith2020,}\n@article{Doe2021,}'
+		const counts = count_citekeys_in_note(content)
+		expect(counts.get('smith2020')).toBe(2)
+		expect(counts.get('doe2021')).toBe(1)
+		expect(counts.get('unknown')).toBeUndefined()
+	})
+
+	it('check_duplicate_id with a precomputed same_note_counts matches the regex-scan result', () => {
+		const dict: BibtexDict = {}
+		const content = '@article{Smith2020,}\n@article{smith2020,}\n@article{Doe2021,}'
+		const counts = count_citekeys_in_note(content)
+		// same-file repeat: flagged via the map, same as the regex fallback
+		expect(check_duplicate_id(dict, 'Smith2020', 'a.md', content, undefined, counts)).toBe(true)
+		expect(check_duplicate_id(dict, 'Smith2020', 'a.md', content)).toBe(true)
+		// not repeated: neither path flags it
+		expect(check_duplicate_id(dict, 'Doe2021', 'a.md', content, undefined, counts)).toBe(false)
+		expect(check_duplicate_id(dict, 'Doe2021', 'a.md', content)).toBe(false)
+	})
+
+	it('check_duplicate_id with same_note_counts still catches a cross-file collision via id_index', () => {
+		const dict: BibtexDict = { Smith2020: entry('Smith2020', 'a.md') }
+		const index = build_id_index(dict)
+		const content = '@article{smith2020,}'
+		const counts = count_citekeys_in_note(content)
+		expect(check_duplicate_id(dict, 'smith2020', 'b.md', content, index, counts)).toBe(true)
 	})
 
 	it('upsert_entry / delete_entry keep the id index consistent with the dict', () => {

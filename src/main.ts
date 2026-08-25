@@ -1,5 +1,5 @@
 import { App, Notice, Plugin, TFile, TFolder, normalizePath, type MarkdownPostProcessorContext } from 'obsidian'
-import { parse_bibtex, make_bibtex, entry_source, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, find_bibtex_block_line_range, find_clashes, match_citekey_renames, is_pending_same_file_rename, replace_bibtex_fence_citekey, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
+import { parse_bibtex, make_bibtex, entry_source, build_clash_reasons_by_id, check_duplicate_id, check_duplicate_doi, count_citekeys_in_note, find_bibtex_block_line_range, find_clashes, match_citekey_renames, is_pending_same_file_rename, replace_bibtex_fence_citekey, replace_inline_citekey, source_tag_state, FetchBibtexOnline, RenameCitekeyModal, type BibtexDict, type BibtexField, type Clash, type ClashReason, type CiteHit } from 'src/bibtex'
 import {
 	audit_bibtex_dict,
 	classify_path_fingerprints,
@@ -430,6 +430,10 @@ export default class BibtexScholar extends Plugin {
 		const fields_ls = await parse_bibtex(source)
 		let dirty = false
 		const section_text = String(ctx.getSectionInfo(el)?.text ?? source)
+		// Built once per block render, reused for every entry in this block:
+		// avoids check_duplicate_id rescanning the whole note per entry
+		// (SPEED: see external_UPSTREAM-BIBTEX-SCHOLAR.md).
+		const same_note_counts = count_citekeys_in_note(section_text)
 		// One summary Notice for losers in this block (not one toast per entry).
 		let id_dup_hits = 0
 		let doi_dup_hits = 0
@@ -451,6 +455,7 @@ export default class BibtexScholar extends Plugin {
 				ctx.sourcePath,
 				section_text,
 				this.id_index,
+				same_note_counts,
 			)
 			let doi_duplicate = check_duplicate_doi(
 				this.cache.bibtex_dict, fields.doi, id, ctx.sourcePath, this.doi_index,

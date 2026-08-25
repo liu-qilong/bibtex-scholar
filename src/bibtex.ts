@@ -373,11 +373,35 @@ export function entry_source(
 }
 
 /**
+ * Count each citekey's occurrences (normalized, case-insensitive) across an
+ * entire note's raw text in a single pass. Lets a caller with several entries
+ * to check in the same note (e.g. one codeblock-processor invocation) build
+ * this once and reuse it, instead of `check_duplicate_id` rescanning the
+ * whole note per entry — see external_UPSTREAM-BIBTEX-SCHOLAR.md (upstream's
+ * same shape is O(entries · notesize) per note).
+ */
+export function count_citekeys_in_note(file_content: string): Map<string, number> {
+    const flat = file_content.replace(/\n/g, '')
+    const citekey_re = /@[a-zA-Z]+\{([^,]+),/g
+    const counts = new Map<string, number>()
+    let match: RegExpExecArray | null
+    while ((match = citekey_re.exec(flat)) !== null) {
+        const norm = normalize_id(match[1] ?? '')
+        counts.set(norm, (counts.get(norm) ?? 0) + 1)
+    }
+    return counts
+}
+
+/**
  * Check if a BibTeX entry ID is duplicated within a file or across different files.
  * @param bibtex_dict - The dictionary of BibTeX entries.
  * @param id - The ID of the BibTeX entry to check.
  * @param file_path - The path of the file to check.
- * @param file_content - The content of the file to check.
+ * @param file_content - The content of the file to check. Ignored when `same_note_counts` is given.
+ * @param id_index - O(1) cross-file duplicate lookup (falls back to a linear dict scan without it).
+ * @param same_note_counts - Precomputed via {@link count_citekeys_in_note}; when given, replaces the
+ *   per-call regex scan of `file_content` for the same-file half of the check. Callers checking
+ *   several entries from the same note should build this once and pass it for every entry.
  * @returns True if the ID is duplicated, false otherwise.
  */
 export function check_duplicate_id(
@@ -386,20 +410,27 @@ export function check_duplicate_id(
     file_path: string,
     file_content: string,
     id_index?: Map<string, string>,
+    same_note_counts?: Map<string, number>,
 ): boolean {
     // if the id appears more than 1 time in the file (case-insensitively)
     // it means the id is duplicated in the same file
-    function escape_reg_exp(string: string): string {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
-    }
-
-    const id_regex = new RegExp(`@[a-zA-Z]+{${escape_reg_exp(id)},`, 'gi')
-    let count = 0
-
-    while (id_regex.exec(file_content.replace(/\n/g, '')) !== null) {
-        count++
-        if (count > 1) {
+    if (same_note_counts) {
+        if ((same_note_counts.get(normalize_id(id)) ?? 0) > 1) {
             return true
+        }
+    } else {
+        function escape_reg_exp(string: string): string {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+        }
+
+        const id_regex = new RegExp(`@[a-zA-Z]+{${escape_reg_exp(id)},`, 'gi')
+        let count = 0
+
+        while (id_regex.exec(file_content.replace(/\n/g, '')) !== null) {
+            count++
+            if (count > 1) {
+                return true
+            }
         }
     }
 
