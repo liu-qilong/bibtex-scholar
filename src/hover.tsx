@@ -1,39 +1,257 @@
-import { App, Notice, Modal } from 'obsidian'
-import { useState, StrictMode } from "react"
-import { createRoot } from 'react-dom/client'
-import Markdown from 'react-markdown'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
-import { WidgetType } from '@codemirror/view'
+/**
+ * Citation chips + floating cards.
+ *
+ * Architecture (see docs/one-root-per-chip.md):
+ * - Chips are plain DOM (`mount_chip`), not React.
+ * - One shared React root (`CardManager`) portals:
+ *     • 0–1 {@link PreviewCard} — hover/click, anchored (`citation_popup` + `chip_registry`)
+ *     • 0–N {@link PinnedCard} — user-pinned, draggable (`pin_registry`)
+ * - Live Preview: {@link HoverWidget} (CodeMirror replace decoration).
+ * - Reading view / panel: {@link render_hover} / {@link HoverRenderChild}.
+ */
+import { App, Component, MarkdownRenderer, Notice, Modal, MarkdownRenderChild, Platform, Setting } from 'obsidian'
+import { useEffect, useLayoutEffect, useRef, useState, StrictMode, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { createRoot, type Root } from 'react-dom/client'
+import { EditorSelection } from '@codemirror/state'
+import { type EditorView, WidgetType } from '@codemirror/view'
 
 import { type BibtexElement, make_bibtex, mentions_search_query } from 'src/bibtex'
-import BibtexScholar from 'src/main'
+import { display_bibtex_plain_text, display_bibtex_segments, display_bibtex_text } from 'src/display/tex-display'
+import { normalize_action_strip_layout, normalize_card_font_size } from 'src/core/cache-ops'
+import {
+	clamp_card_position,
+	compute_card_placement,
+	compute_card_position,
+	subline_scroll_grow_px,
+} from 'src/ui/citation-card-layout'
+import { citation_popup, create_citation_popup_id, OPEN_DEBOUNCE_MS } from 'src/ui/citation-popup'
+import { find_cite_spans_in_line } from 'src/core/cite-span'
+import type BibtexScholar from 'src/main'
+import { PinRegistry, type PinPosition } from 'src/ui/pin-registry'
+import { card_affordance_copy } from 'src/ui/ux-copy'
+
+/** Long-press duration (ms) on a Live Preview chip to drop into raw-text edit mode. */
+export const CHIP_LONG_PRESS_MS = 500
+
+/** Minimum pointer travel (px) before a header-down starts moving a pinned card — absorbs tap jitter (touch). */
+export const PIN_DRAG_THRESHOLD_PX = 5
+
+/** Higher threshold on phone/tablet so scroll and tap jitter do not start a pin drag. */
+export const PIN_DRAG_THRESHOLD_MOBILE_PX = 12
+
+/** True when two field maps have the same keys and string values (widget eq / A5). */
+export function fields_shallow_equal(
+	a: Record<string, unknown>,
+	b: Record<string, unknown>,
+): boolean {
+	const keys_a = Object.keys(a)
+	const keys_b = Object.keys(b)
+	if (keys_a.length !== keys_b.length) {
+		return false
+	}
+	for (const k of keys_a) {
+		if (a[k] !== b[k]) {
+			return false
+		}
+	}
+	return true
+}
+
+/** Snapshot carried by a pinned card (independent of the chip that opened it). */
+type PinPayload = { bibtex: BibtexElement, plugin: BibtexScholar, app: App }
+
+/** Process-wide pins — survive note switches; cleared on plugin unload. */
+export const pin_registry = new PinRegistry<PinPayload>()
 
 /**
- * Copy the given text to the clipboard.
- * @param text - The text to copy.
+ * Place a fixed-position card near an anchor chip (prefer below; flip above
+ * when there is more room; clamp to the viewport).
+ *
+ * `is-flipped` (see styles.css) only ever moves the scrollable field list
+ * ("the contents") to the far edge of the card. The chrome cluster
+ * (card controls → title/meta → action strip) stays on the edge nearest the
+ * chip/cursor in both placements.
  */
-export const copy_to_clipboard = (text: any) => {
+/**
+ * `window.innerWidth/innerHeight` do not shrink for the on-screen keyboard on
+ * iOS/most Android WebViews — only `visualViewport` does. Fall back for
+ * environments without it (older WebViews).
+ */
+function get_viewport(): { width: number, height: number } {
+    const vv = window.visualViewport
+    if (vv) {
+        return { width: vv.width, height: vv.height }
+    }
+    return { width: window.innerWidth, height: window.innerHeight }
+}
+
+/**
+ * If the field list overflows by less than one line, grow the card’s max-height
+ * so we do not show a useless sub-line scrollbar.
+ *
+ * One-shot per card element (`data-scroll-play-absorbed`) so a sticky 1px
+ * engine overflow cannot ResizeObserver-loop. Returns true when height changed
+ * (caller should re-clamp position).
+ */
+function absorb_fields_scroll_play(card: HTMLElement): boolean {
+	if (card.dataset.scrollPlayAbsorbed === '1') {
+		return false
+	}
+	const fields = card.querySelector('.bibtex-card-fields') as HTMLElement | null
+	if (!fields) {
+		return false
+	}
+	const overflow = fields.scrollHeight - fields.clientHeight
+	if (overflow <= 0) {
+		return false
+	}
+	// Prefer a real field row’s line box (0.92em × --bibtex-field-lh).
+	const sample = fields.querySelector('.bibtex-card-field') as HTMLElement | null
+	const sample_lh = sample ? parseFloat(getComputedStyle(sample).lineHeight) : Number.NaN
+	const fields_lh = parseFloat(getComputedStyle(fields).lineHeight)
+	const font_px = parseFloat(getComputedStyle(card).fontSize) || 13
+	const line_px = (Number.isFinite(sample_lh) && sample_lh > 0)
+		? sample_lh
+		: (Number.isFinite(fields_lh) && fields_lh > 0 ? fields_lh : font_px * 1.4)
+	const grow = subline_scroll_grow_px(overflow, line_px)
+	if (grow <= 0) {
+		return false
+	}
+	const next = Math.ceil(card.getBoundingClientRect().height + grow)
+	card.style.maxHeight = `${next}px`
+	card.dataset.scrollPlayAbsorbed = '1'
+	return true
+}
+
+function position_floating_card(anchor: HTMLElement, card: HTMLElement) {
+	const place = () => {
+		const ar = anchor.getBoundingClientRect()
+		const cr = card.getBoundingClientRect()
+		const viewport = get_viewport()
+
+		const placement = compute_card_placement(ar, cr, viewport)
+		const { top, left } = compute_card_position(ar, cr, viewport, placement)
+
+		card.style.top = `${top}px`
+		card.style.left = `${left}px`
+		card.classList.toggle('is-flipped', placement === 'above')
+	}
+	place()
+	// Borderline field lists (long author + many short fields on a normal card)
+	// can sit a few px over max-height — absorb before the user sees scroll play.
+	if (absorb_fields_scroll_play(card)) {
+		place()
+	}
+}
+
+/** Workspace chrome root — floating cards portal here so they do not shift note layout. */
+function citation_portal_root(app: App): HTMLElement {
+    return app.workspace.containerEl
+}
+
+/** Copy text and show a short Notice (errors go to the console). */
+export const copy_to_clipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
         new Notice('Copied to clipboard')
-    }).catch(err => {
-        console.error('Failed to copy text: ', err)
+    }).catch((err) => {
+        console.error('Failed to copy text:', err)
     })
 }
 
 /**
- * Modal for uploading a PDF file.
+ * Return keyboard focus to the active note editor after a modal / card teardown.
+ *
+ * Native `window.confirm` leaves Electron with no typing target once the card
+ * button that held focus is unmounted (F1 help → close was the user workaround).
+ * Call this after Obsidian modals close and after uncache dismisses the card.
+ *
+ * Uses nested `setTimeout(0)` (not rAF) so focus lands after Modal close + React
+ * unmount of the focused card button — and so unit tests can flush with timers.
  */
+export function restore_editor_focus(app: App): void {
+	const focus = () => {
+		const ws = app.workspace as {
+			activeEditor?: { editor?: { focus?: () => void } }
+		}
+		const ed = ws.activeEditor?.editor
+		if (ed && typeof ed.focus === 'function') {
+			ed.focus()
+			return
+		}
+		// Fallback: CM content root in the active leaf (or any visible editor).
+		const cm = document.querySelector(
+			'.workspace-leaf.mod-active .cm-content, .cm-content',
+		) as HTMLElement | null
+		if (cm && typeof cm.focus === 'function') {
+			cm.focus()
+		}
+	}
+	window.setTimeout(() => {
+		window.setTimeout(focus, 0)
+	}, 0)
+}
+
+/**
+ * Lightweight confirm dialog (Obsidian Modal — not `window.confirm`).
+ * Always restores editor focus on close (OK or Cancel).
+ */
+export class ConfirmActionModal extends Modal {
+	private title_text: string
+	private body_text: string
+	private confirm_label: string
+	private danger: boolean
+	private on_confirm: () => void | Promise<void>
+
+	constructor(
+		app: App,
+		opts: {
+			title: string
+			body: string
+			confirm_label?: string
+			danger?: boolean
+			on_confirm: () => void | Promise<void>
+		},
+	) {
+		super(app)
+		this.title_text = opts.title
+		this.body_text = opts.body
+		this.confirm_label = opts.confirm_label ?? 'Confirm'
+		this.danger = opts.danger === true
+		this.on_confirm = opts.on_confirm
+	}
+
+	onOpen() {
+		const { contentEl } = this
+		contentEl.empty()
+		contentEl.createEl('h4', { text: this.title_text })
+		contentEl.createEl('p', { text: this.body_text })
+
+		new Setting(contentEl)
+			.addButton((btn) => btn.setButtonText('Cancel').onClick(() => this.close()))
+			.addButton((btn) => {
+				btn.setButtonText(this.confirm_label).setCta().onClick(async () => {
+					await this.on_confirm()
+					this.close()
+				})
+				if (this.danger) {
+					btn.setWarning()
+				}
+				return btn
+			})
+	}
+
+	onClose() {
+		this.contentEl.empty()
+		restore_editor_focus(this.app)
+	}
+}
+
+/** Modal: pick a PDF and write it into the vault under `folder/fname`. */
 class UploadPdfModal extends Modal {
     folder: string
     fname: string
 
-    /**
-     * Constructor
-     * @param {App} app - The Obsidian app instance
-     * @param {string} folder - The folder to place the PDF file
-     * @param {string} fname - The name of the PDF file
-     */
     constructor(app: App, folder: string = 'paper/pdf', fname: string = 'paper.pdf') {
         super(app)
         this.folder = folder
@@ -48,31 +266,26 @@ class UploadPdfModal extends Modal {
         file_input.addEventListener('change', (event: Event) => {
             const target = event.target as HTMLInputElement
             if (target.files && target.files.length > 0) {
-                const file = target.files[0]
-                this.handle_file_upload(file)
+                this.handle_file_upload(target.files[0])
             }
         })
     }
 
     handle_file_upload(file: File) {
-        // read the file as an ArrayBuffer
         const reader = new FileReader()
         reader.onload = async (event) => {
             const { result } = event.target as FileReader
             const data = result as ArrayBuffer
             const file_path = `${this.folder}/${this.fname}`
 
-            // ensure the folder exists
             if (!await this.app.vault.getFolderByPath(this.folder)) {
                 await this.app.vault.createFolder(this.folder)
             }
 
-            // save the file to the vault
             await this.app.vault.createBinary(file_path, data)
             await this.app.workspace.openLinkText(this.fname, this.fname, true)
         }
         reader.readAsArrayBuffer(file)
-
         this.close()
     }
 }
@@ -90,11 +303,11 @@ class UploadPdfModal extends Modal {
  */
 const LinkedFileButton = ({ label, fname, folder, app, plugin }: { label: string, fname: string, folder: string, app: App, plugin: BibtexScholar }) => {
     const exist = app.metadataCache.getFirstLinkpathDest(fname, '')
-    const cls = (exist) ? ('bibtex-file-exist') : ('bibtex-file-not-exist')
+    const state_cls = exist ? 'bibtex-file-exist' : 'bibtex-file-not-exist'
 
     return (
         <a
-            className={cls}
+            className={`bibtex-card-file-link ${state_cls}`}
             onMouseOver={(event) => {
                 app.workspace.trigger("hover-link", {
                     event,
@@ -143,203 +356,1504 @@ const LinkedFileButton = ({ label, fname, folder, app, plugin }: { label: string
                 }
             }}
         >
-            <button>{label}</button>
+            <button type="button" className="bibtex-card-btn">{label}</button>
         </a>
     )
 }
 
+/** Prefer common bibliographic fields first in the card body. */
+const FIELD_ORDER = [
+    'title', 'author', 'year', 'journal', 'booktitle', 'volume', 'number',
+    'pages', 'publisher', 'doi', 'url', 'abstract', 'keywords',
+]
+
 /**
- * HoverPopup component displays a hoverable popup for a given BibTeX entry.
- * @param bibtex - The BibtexElement object containing the entry's fields and metadata.
- * @param plugin - The BibtexScholar plugin instance, used for accessing cache and plugin methods.
- * @param app - The Obsidian App instance, used for workspace and UI interactions.
- * @param expand - If true, the popup is expanded by default; otherwise, it appears on hover.
- * The popup provides quick actions such as copying the entry's ID, BibTeX, markdown/LaTeX citations, and links to associated note, PDF, and BibTeX source files. It also allows searching for mentions of the entry and uncaching the entry from the plugin's cache. Entry fields are rendered with markdown and math support.
+ * Fields for the scrollable detail list. Title is shown only in the card
+ * header (once); id/type live in the header meta chips.
  */
-const HoverPopup = ({ bibtex, plugin, app, expand = false }: { bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean }) => {
-    const paper_id = bibtex.fields.id
+function ordered_field_entries(fields: BibtexElement['fields']): [string, string][] {
+    const keys = Object.keys(fields).filter(
+        (k) => k !== 'id' && k !== 'type' && k.toLowerCase() !== 'title',
+    )
+    keys.sort((a, b) => {
+        const ia = FIELD_ORDER.indexOf(a.toLowerCase())
+        const ib = FIELD_ORDER.indexOf(b.toLowerCase())
+        if (ia === -1 && ib === -1) return a.localeCompare(b)
+        if (ia === -1) return 1
+        if (ib === -1) return -1
+        return ia - ib
+    })
+    return keys.map((k) => [k, String(fields[k])])
+}
 
-    // handlers for mouse enter and leave
-    const [is_hovered, set_is_hovered] = useState(expand)
+const CardBtn = ({
+    label,
+    title,
+    onClick,
+    danger,
+    className,
+}: {
+    label: string
+    title: string
+    onClick: () => void
+    danger?: boolean
+    /** Extra classes (e.g. `is-span-rest` for manage-row stretch). */
+    className?: string
+}) => (
+    <button
+        type="button"
+        className={[
+            'bibtex-card-btn',
+            danger ? 'is-danger' : '',
+            className ?? '',
+        ].filter(Boolean).join(' ')}
+        title={title}
+        aria-label={title}
+        onClick={onClick}
+    >
+        {label}
+    </button>
+)
 
-    const handle_mouse_enter = () => {
-        set_is_hovered(true)
+/**
+ * Ask for a new citekey, then hand off to {@link BibtexScholar.offer_rename}
+ * (confirm modal with mention counts + vault rewrite).
+ */
+class PromptCitekeyRenameModal extends Modal {
+    private old_id: string
+    private on_submit: (new_id: string) => void | Promise<void>
+    private draft: string
+
+    constructor(app: App, old_id: string, on_submit: (new_id: string) => void | Promise<void>) {
+        super(app)
+        this.old_id = old_id
+        this.on_submit = on_submit
+        this.draft = old_id
     }
 
-    const handle_mouse_leave = () => {
-        set_is_hovered(expand)
+    onOpen() {
+        const { contentEl } = this
+        contentEl.empty()
+        contentEl.createEl('h4', { text: 'Change citekey' })
+        contentEl.createEl('p', {
+            text: `Rename “${this.old_id}” in the source BibTeX fence and inline cites.`,
+        })
+
+        new Setting(contentEl)
+            .setName('New citekey')
+            .addText((text) => {
+                text
+                    .setPlaceholder(this.old_id)
+                    .setValue(this.draft)
+                    .onChange((v) => {
+                        this.draft = v
+                    })
+                text.inputEl.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault()
+                        void this.submit()
+                    }
+                })
+                // Focus after paint so the field is ready to type.
+                window.setTimeout(() => text.inputEl.focus(), 0)
+            })
+
+        new Setting(contentEl)
+            .addButton((btn) => btn.setButtonText('Cancel').onClick(() => this.close()))
+            .addButton((btn) =>
+                btn.setButtonText('Continue').setCta().onClick(() => {
+                    void this.submit()
+                }),
+            )
+    }
+
+    private async submit() {
+        const next = this.draft.trim()
+        if (!next) {
+            new Notice('Citekey cannot be empty.')
+            return
+        }
+        if (next === this.old_id) {
+            new Notice('Citekey is unchanged.')
+            return
+        }
+        // Common BibTeX key characters — keep simple; rename path still validates collisions.
+        if (!/^[A-Za-z0-9_.:/+-]+$/.test(next)) {
+            new Notice('Citekey has invalid characters.')
+            return
+        }
+        this.close()
+        await this.on_submit(next)
+    }
+
+    onClose() {
+        this.contentEl.empty()
+    }
+}
+
+/**
+ * Citation action strip — copy / open / manage command center.
+ * Layout is a prototype setting ({@link normalize_action_strip_layout}); markup
+ * stays grouped for a11y; CSS chooses rows (shared tile grid) vs legacy grouped.
+ *
+ * Rows layout: one CSS grid for all groups so Copy/Open/Manage columns line up.
+ * Manage row: change-key tile + uncache spanning the remaining columns.
+ */
+const ActionStrip = ({
+    paper_id,
+    bibtex,
+    plugin,
+    app,
+    on_close,
+    open_mentions,
+}: {
+    paper_id: string
+    bibtex: BibtexElement
+    plugin: BibtexScholar
+    app: App
+    on_close: () => void
+    open_mentions: () => void | Promise<void>
+}) => {
+    const layout = normalize_action_strip_layout(plugin.cache.action_strip_layout)
+    const rows = layout === 'rows'
+    const caption = (text: string) =>
+        rows ? (
+            <span className="bibtex-card-btn-group-label" aria-hidden="true">
+                {text}
+            </span>
+        ) : null
+
+    return (
+        <div
+            className={`bibtex-hover-button-bar is-layout-${layout}`}
+            role="toolbar"
+            aria-label="Citation actions"
+            data-layout={layout}
+        >
+            <div className="bibtex-card-btn-group is-copy" role="group" aria-label="Copy">
+                {caption('Copy')}
+                <div className="bibtex-card-btn-group-cells">
+                    <CardBtn label="id" title="Copy citation key" onClick={() => copy_to_clipboard(paper_id)} />
+                    <CardBtn label="bibtex" title="Copy BibTeX (no abstract)" onClick={() => copy_to_clipboard(make_bibtex(bibtex.fields, false))} />
+                    <CardBtn label="{ }" title="Copy compact cite `{id}`" onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)} />
+                    <CardBtn label="[ ]" title="Copy expanded cite `[id]`" onClick={() => copy_to_clipboard(`\`[${paper_id}]\``)} />
+                    <CardBtn label="cite" title="Copy LaTeX \\autocite{id}" onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)} />
+                </div>
+            </div>
+            <div className="bibtex-card-btn-group is-open" role="group" aria-label="Open">
+                {caption('Open')}
+                <div className="bibtex-card-btn-group-cells">
+                    <LinkedFileButton label="note" fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} plugin={plugin} />
+                    <LinkedFileButton label="pdf" fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} plugin={plugin} />
+                    <CardBtn
+                        label="source"
+                        title={`Jump to BibTeX source (${bibtex.source_path})`}
+                        onClick={() => {
+                            void plugin.open_line(String(bibtex.source_path), 0)
+                        }}
+                    />
+                    <CardBtn label="mentions" title="Search mentions of this paper" onClick={() => { void open_mentions() }} />
+                </div>
+            </div>
+            <div className="bibtex-card-btn-group is-change" role="group" aria-label="Change">
+                {caption('Change')}
+                <div className="bibtex-card-btn-group-cells">
+                    <CardBtn
+                        label="key"
+                        title="Change citekey (rename in source + inline cites)"
+                        className="is-priority-secondary"
+                        onClick={() => {
+                            new PromptCitekeyRenameModal(app, paper_id, (new_id) => {
+                                void plugin.offer_rename(paper_id, new_id)
+                            }).open()
+                        }}
+                    />
+                    <CardBtn
+                        label="uncache"
+                        title="Remove from plugin cache"
+                        danger
+                        className="is-priority-primary"
+                        onClick={() => {
+                            // Obsidian Modal + restore_editor_focus — never window.confirm
+                            // (native dialog + card unmount leaves CM with no typing target).
+                            new ConfirmActionModal(app, {
+                                title: 'Uncache entry',
+                                body: `Remove ${paper_id} from the plugin cache? Source BibTeX and notes are not deleted.`,
+                                confirm_label: 'Uncache',
+                                danger: true,
+                                on_confirm: async () => {
+                                    await plugin.uncache_bibtex_with_id(paper_id)
+                                    on_close()
+                                },
+                            }).open()
+                        }}
+                    />
+                </div>
+            </div>
+        </div>
+    )
+}
+
+/** Tilted thumbtack glyph for the pin button — outline head when unpinned, fills via CSS (`.is-active`) when pinned. */
+const PinIcon = () => (
+    <svg
+        className='bibtex-card-pin-icon'
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        aria-hidden="true"
+        focusable="false"
+    >
+        <g transform="rotate(45 12 12)">
+            <rect className='bibtex-card-pin-head' x="9" y="3" width="6" height="8" rx="3" />
+            <line x1="12" y1="11" x2="12" y2="20" />
+        </g>
+    </svg>
+)
+
+/** Shared flash timer for click-to-copy surfaces (title, field values, DOI glyph). */
+function use_copy_flash() {
+    const [flash, set_flash] = useState(false)
+    const flash_timer = useRef<number | null>(null)
+
+    useEffect(() => {
+        return () => {
+            if (flash_timer.current != null) {
+                window.clearTimeout(flash_timer.current)
+            }
+        }
+    }, [])
+
+    const trigger_flash = () => {
+        set_flash(true)
+        if (flash_timer.current != null) {
+            window.clearTimeout(flash_timer.current)
+        }
+        flash_timer.current = window.setTimeout(() => {
+            flash_timer.current = null
+            set_flash(false)
+        }, 450)
+    }
+
+    return { flash, trigger_flash }
+}
+
+/** Classic “two stacked squares” copy glyph — trailing DOI/URL affordance only. */
+const CopyIcon = () => (
+    <svg
+        className="bibtex-field-copy-icon"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        focusable="false"
+    >
+        <rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path
+            d="M4 16V6a2 2 0 0 1 2-2h10"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+        />
+    </svg>
+)
+
+/**
+ * Dim trailing copy glyph (DOI / URL). Stops propagation so the parent field
+ * surface does not double-fire; still copies display Unicode.
+ */
+const FieldCopyIcon = ({ text, label }: { text: string; label: string }) => {
+    const { flash, trigger_flash } = use_copy_flash()
+    const payload = text.trim()
+    if (!payload) {
+        return null
+    }
+
+    const do_copy = (e: ReactMouseEvent | ReactKeyboardEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        copy_to_clipboard(payload)
+        trigger_flash()
     }
 
     return (
-        <span className='bibtex-hover'>
-            {/* This is the element to hover */}
-            <span
-                onMouseEnter={handle_mouse_enter}
-                onMouseLeave={handle_mouse_leave}
-            >
-                <button>{paper_id}</button>
-            </span>
-            {/* This is the popup that appears on hover */}
-            {/* {( */}
-            {is_hovered && (
-                <span
-                    onMouseEnter={handle_mouse_enter}
-                    onMouseLeave={handle_mouse_leave}
-                >
-                    <div className='bibtex-hover-button-bar'>
-                        {/* copy id */}
-                        <button onClick={() => copy_to_clipboard(paper_id)}>
-                            <code>id</code>
-                        </button>
-                        {/* copy bibtex */}
-                        <button onClick={() => copy_to_clipboard(make_bibtex(bibtex.fields, false))}>
-                            {/* <button onClick={() => copy_to_clipboard(bibtex.source)}> */}
-                            <code>bibtex</code>
-                        </button>
-                        {/* md cite */}
-                        <button onClick={() => copy_to_clipboard(`\`{${paper_id}}\``)}>
-                            <code>{'`{}`'}</code>
-                        </button>
-                        <button onClick={() => copy_to_clipboard(`\`[${paper_id}]\``)}>
-                            <code>{'`[]`'}</code>
-                        </button>
-                        {/* latex cite */}
-                        <button onClick={() => copy_to_clipboard(`\\autocite{${paper_id}}`)}>
-                            <code>{'\\autocite{}'}</code>
-                        </button>
-                        <code>{'+'}</code>
-                        {/* linked note */}
-                        {/* <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} /> */}
-                        {/* linked pdf */}
-                        {/* <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} /> */}
-                        {/* linked bibtex source */}
-                        {/* <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app} /> */}
-
-                        <LinkedFileButton label='note' fname={`${paper_id}.md`} folder={plugin.cache.note_folder} app={app} plugin={plugin} />
-                        <LinkedFileButton label='pdf' fname={`${paper_id}.pdf`} folder={plugin.cache.pdf_folder} app={app} plugin={plugin} />
-                        <LinkedFileButton label='source' fname={String(bibtex.source_path)} folder={''} app={app} plugin={plugin} />
-
-
-                        {/* mentions query */}
-                        <button
-                            onClick={async () => {
-                                const query = mentions_search_query(paper_id)
-
-                                // check if a search leaf exists
-                                // if no search leaf exists, create one
-                                let search_leaf = app.workspace.getLeavesOfType('search')[0]
-
-                                if (!search_leaf) {
-                                    const leaf = app.workspace.getLeftLeaf(false)
-                                    if (leaf) {
-                                        leaf.setViewState({ type: 'search', active: true })
-                                        search_leaf = app.workspace.getLeavesOfType('search')[0]
-                                    }
-                                }
-
-                                // set the query in the search panel
-                                if (search_leaf) {
-                                    function is_search_view(view: any): view is { setQuery: (query: string) => void } {
-                                        return typeof view?.setQuery === 'function';
-                                    }
-
-                                    await app.workspace.revealLeaf(search_leaf);
-                                    if (is_search_view(search_leaf.view)) {
-                                        search_leaf.view.setQuery(query)
-                                    }
-                                    app.workspace.setActiveLeaf(search_leaf)
-                                }
-                            }}
-                        >
-                            mentions
-                        </button>
-                        <code>{'+'}</code>
-                        {/* tool */}
-                        <button onClick={() => {
-                            delete plugin.cache.bibtex_dict[paper_id]
-                            plugin.save_cache()
-                            new Notice(`Uncached ${paper_id}`)
-                            if (window.confirm('Are you sure?')) {
-                                plugin.uncache_bibtex_with_id(paper_id)
-                            }
-                        }}>
-                            uncache
-                        </button>
-                    </div>
-                    {Object.entries(bibtex.fields).map(([key, value]) => {
-                        if (key == 'id') {
-                            return
-                        }
-                        if (key.includes('url')) {
-                            value = `[${value}](${value})`
-                        }
-                        return (<div key={key} className='bibtex-markdown-rendered'>
-                            <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{`**\`${key}\`** ${value}`}</Markdown>
-                        </div>)
-                    })}
-                </span>
-            )}
+        <span
+            className={flash ? 'bibtex-field-copy is-flash' : 'bibtex-field-copy'}
+            role="button"
+            tabIndex={0}
+            title={label}
+            aria-label={label}
+            onClick={do_copy}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    do_copy(e)
+                }
+            }}
+        >
+            <CopyIcon />
         </span>
     )
 }
 
+/**
+ * Click-to-copy surface — title and field values share this.
+ * Callers must pass **display Unicode** (via {@link display_bibtex_plain_text}),
+ * never raw BibTeX field encoding — that stays exclusive to the “bibtex” action.
+ * No extra glyph; hover/focus tints text, click flashes green then restores.
+ * Clicks on nested links still navigate (DOI/URL fields).
+ */
+const CopySurface = ({
+    text,
+    label,
+    className,
+    children,
+    stop_header_drag,
+}: {
+    text: string
+    label: string
+    className: string
+    children: ReactNode
+    /** Title lives in the pin-drag header — don't start a drag on pointerdown. */
+    stop_header_drag?: boolean
+}) => {
+    const { flash, trigger_flash } = use_copy_flash()
+    const payload = text.trim()
+    if (!payload) {
+        return <div className={className}>{children}</div>
+    }
+
+    const do_copy = (e: ReactMouseEvent | ReactKeyboardEvent) => {
+        // Let real links (doi/url markdown) work; copy only the rest of the surface.
+        // Trailing FieldCopyIcon also stopPropagates so it handles its own click.
+        if (e.target instanceof Element && e.target.closest('a, .bibtex-field-copy')) {
+            return
+        }
+        e.preventDefault()
+        e.stopPropagation()
+        copy_to_clipboard(payload)
+        trigger_flash()
+    }
+
+    return (
+        <div
+            className={flash ? `${className} is-copy-flash` : className}
+            role="button"
+            tabIndex={0}
+            title={label}
+            aria-label={label}
+            onPointerDown={
+                stop_header_drag
+                    ? (e) => {
+                            e.stopPropagation()
+                        }
+                    : undefined
+            }
+            onClick={do_copy}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    do_copy(e)
+                }
+            }}
+        >
+            {children}
+        </div>
+    )
+}
 
 /**
- * Functions to render a paper element with hover pop up
- * @param el The HTML element to render the pop up in
- * @param bibtex The BibtexElement to render
- * @param plugin The BibtexScholar plugin instance
- * @param app The Obsidian app instance
- * @param expand Whether to expand the hover pop up
+ * One field value rendered through Obsidian's own MarkdownRenderer — reuses the
+ * vault's math/link rendering instead of bundling a second markdown+katex pipeline.
+ * `owner` is unloaded by the caller when the card closes, tearing down anything
+ * MarkdownRenderer registered (internal link handlers, etc).
  */
-export const render_hover = async (el: HTMLElement, bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false) => {
-    createRoot(el).render(
+const MarkdownField = ({
+    app,
+    text,
+    source_path,
+    owner,
+    /** Optional native tooltip applied to every rendered <a> (e.g. “Open DOI”). */
+    link_title,
+}: {
+    app: App
+    text: string
+    source_path: string
+    owner: Component
+    link_title?: string
+}) => {
+    const el_ref = useRef<HTMLDivElement | null>(null)
+
+    useEffect(() => {
+        const el = el_ref.current
+        if (!el) {
+            return
+        }
+        el.replaceChildren()
+        void MarkdownRenderer.render(app, text, el, source_path, owner).then(() => {
+            if (!link_title || !el_ref.current) {
+                return
+            }
+            // Array.from: TS target/lib may lack NodeListOf iterators.
+            const anchors = Array.from(el_ref.current.querySelectorAll('a'))
+            for (const a of anchors) {
+                a.setAttribute('title', link_title)
+                a.setAttribute('aria-label', link_title)
+            }
+        })
+    }, [app, text, source_path, owner, link_title])
+
+    return <div ref={el_ref} />
+}
+
+/**
+ * Body of the citation card.
+ *
+ * Chrome (near cursor / chip): card controls → title once → action strip.
+ * Contents (far edge when flipped): scrollable fields, without repeating title.
+ * Pin drag is owned by the card shell (empty chrome), not the title.
+ */
+const CitationCardBody = ({
+    bibtex,
+    plugin,
+    app,
+    pinned,
+    on_pin_toggle,
+    on_close,
+}: {
+    bibtex: BibtexElement
+    plugin: BibtexScholar
+    app: App
+    pinned: boolean
+    on_pin_toggle: () => void
+    on_close: () => void
+}) => {
+    // Owns the lifecycle of MarkdownRenderer.render() calls for this card instance.
+    const owner_ref = useRef<Component | null>(null)
+    if (owner_ref.current === null) {
+        owner_ref.current = new Component()
+    }
+
+    useEffect(() => {
+        const owner = owner_ref.current!
+        owner.load()
+        return () => owner.unload()
+    }, [])
+    const paper_id = bibtex.fields.id
+    // Display-only: TeX specials → Unicode, <i>/<em> → real italics; raw fields stay for copy/export.
+    const title_segments = display_bibtex_segments(bibtex.fields.title || paper_id)
+    const title_plain = display_bibtex_plain_text(bibtex.fields.title || paper_id)
+    const year = bibtex.fields.year
+
+    const open_mentions = async () => {
+        const query = mentions_search_query(paper_id)
+        let search_leaf = app.workspace.getLeavesOfType('search')[0]
+        if (!search_leaf) {
+            const leaf = app.workspace.getLeftLeaf(false)
+            if (leaf) {
+                leaf.setViewState({ type: 'search', active: true })
+                search_leaf = app.workspace.getLeavesOfType('search')[0]
+            }
+        }
+        if (search_leaf) {
+            function is_search_view(view: any): view is { setQuery: (query: string) => void } {
+                return typeof view?.setQuery === 'function'
+            }
+            await app.workspace.revealLeaf(search_leaf)
+            if (is_search_view(search_leaf.view)) {
+                search_leaf.view.setQuery(query)
+            }
+            app.workspace.setActiveLeaf(search_leaf)
+        }
+    }
+
+    return (
+        <>
+            {/* Near-chip chrome: decide what to do with the card, then act, then read. */}
+            <div className="bibtex-card-chrome">
+                <CardAffordance
+                    pinned={pinned}
+                    on_pin_toggle={on_pin_toggle}
+                    on_close={on_close}
+                />
+
+                <header className="bibtex-card-header">
+                    {/* Citekey is the system focus — year/type are quiet companions. */}
+                    <div className="bibtex-card-keyline">
+                        <code className="bibtex-card-id" title="Citekey">
+                            {paper_id}
+                        </code>
+                        {(year || bibtex.fields.type) ? (
+                            <div className="bibtex-card-meta">
+                                {year ? <span className="bibtex-card-year">{year}</span> : null}
+                                {year && bibtex.fields.type ? (
+                                    <span className="bibtex-card-meta-sep" aria-hidden="true">
+                                        ·
+                                    </span>
+                                ) : null}
+                                {bibtex.fields.type ? (
+                                    <span className="bibtex-card-type">{bibtex.fields.type}</span>
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </div>
+                    {/* Whole title is the copy control (no separate glyph). */}
+                    <div className="bibtex-card-title-row">
+                        <CopySurface
+                            className="bibtex-card-title is-copyable"
+                            text={title_plain}
+                            label="Copy title"
+                            stop_header_drag
+                        >
+                            {title_segments.map((seg, i) => {
+                                if (!seg.text) return null
+                                if (seg.italic && seg.bold) {
+                                    return (
+                                        <strong key={i}>
+                                            <em>{seg.text}</em>
+                                        </strong>
+                                    )
+                                }
+                                if (seg.italic) return <em key={i}>{seg.text}</em>
+                                if (seg.bold) return <strong key={i}>{seg.text}</strong>
+                                return seg.text
+                            })}
+                        </CopySurface>
+                    </div>
+                </header>
+
+                <ActionStrip
+                    paper_id={paper_id}
+                    bibtex={bibtex}
+                    plugin={plugin}
+                    app={app}
+                    on_close={on_close}
+                    open_mentions={open_mentions}
+                />
+            </div>
+
+            <div className="bibtex-card-fields">
+                {ordered_field_entries(bibtex.fields).map(([key, value]) => {
+                    // Friendly face only — never rewrite the cached/export form.
+                    const friendly = display_bibtex_text(value)
+                    const key_low = key.toLowerCase()
+                    const is_link_field = key_low === 'doi' || key_low.includes('url')
+                    let display = friendly
+                    let open_title: string | undefined
+                    if (is_link_field) {
+                        const href = key_low === 'doi' && !value.startsWith('http')
+                            ? `https://doi.org/${value}`
+                            : value
+                        // Link label is human-readable; href keeps the raw field.
+                        display = `[${friendly}](${href})`
+                        open_title = key_low === 'doi' ? 'Open DOI' : 'Open URL'
+                    }
+                    const dense = key_low === 'abstract' ? ' is-abstract' : ''
+                    // Always Unicode display form (TeX specials folded, braces/tags
+                    // stripped) — same pipeline as on-screen text. Raw BibTeX
+                    // encoding is only for the action-strip “bibtex” control.
+                    const copy_text = display_bibtex_plain_text(String(value)).trim()
+                    // Trailing glyph for link-like fields (clear “copy this identifier”).
+                    const show_link_copy_glyph = is_link_field && copy_text.length > 0
+                    const copy_title = key_low === 'doi' ? 'Copy DOI' : key_low.includes('url') ? 'Copy URL' : `Copy ${key}`
+                    return (
+                        <div key={key} className={`bibtex-card-field${dense}`}>
+                            <div className="bibtex-card-field-key">{key}</div>
+                            {/*
+							 * Value cell is full-width (layout only). Copy hits a
+							 * text-hugging surface so empty row space stays free for pin-drag.
+							 * DOI/URL: link = open (own tooltip); glyph = copy (own tooltip).
+							 */}
+                            <div
+                                className={
+                                    show_link_copy_glyph
+                                        ? 'bibtex-card-field-val bibtex-markdown-rendered has-inline-copy'
+                                        : 'bibtex-card-field-val bibtex-markdown-rendered'
+                                }
+                            >
+                                {show_link_copy_glyph ? (
+                                    <>
+                                        <span className="bibtex-card-field-link-wrap">
+                                            <MarkdownField
+                                                app={app}
+                                                text={display}
+                                                source_path={String(bibtex.source_path)}
+                                                owner={owner_ref.current!}
+                                                link_title={open_title}
+                                            />
+                                        </span>
+                                        <FieldCopyIcon text={copy_text} label={copy_title} />
+                                    </>
+                                ) : (
+                                    <CopySurface
+                                        className="bibtex-card-field-copy-surface is-copyable"
+                                        text={copy_text}
+                                        label={copy_title}
+                                    >
+                                        <MarkdownField
+                                            app={app}
+                                            text={display}
+                                            source_path={String(bibtex.source_path)}
+                                            owner={owner_ref.current!}
+                                        />
+                                    </CopySurface>
+                                )}
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
+        </>
+    )
+}
+
+/**
+ * Near-cursor card controls: Pin / Close as text actions, plus a short mode hint.
+ * Replaces the old header × / pin icons and the static Esc-only footer line.
+ */
+const CardAffordance = ({
+    pinned,
+    on_pin_toggle,
+    on_close,
+}: {
+    pinned: boolean
+    on_pin_toggle: () => void
+    on_close: () => void
+}) => {
+    const { hint } = card_affordance_copy(pinned)
+    return (
+        <div
+            className={pinned ? 'bibtex-card-affordance is-pinned' : 'bibtex-card-affordance'}
+            role="toolbar"
+            aria-label="Card controls"
+        >
+            <button
+                type="button"
+                className={
+                    pinned
+                        ? 'bibtex-card-affordance-action bibtex-card-pin is-active'
+                        : 'bibtex-card-affordance-action bibtex-card-pin'
+                }
+                title={pinned ? 'Unpin card' : 'Pin card — stays open, can be dragged'}
+                aria-label={pinned ? 'Unpin citation card' : 'Pin citation card'}
+                aria-pressed={pinned}
+                onClick={on_pin_toggle}
+            >
+                <PinIcon />
+                <span>{pinned ? 'Unpin' : 'Pin'}</span>
+            </button>
+            <span className="bibtex-card-affordance-sep" aria-hidden="true">
+                ·
+            </span>
+            <button
+                type="button"
+                className="bibtex-card-affordance-action bibtex-card-close"
+                title="Dismiss (Esc)"
+                aria-label="Dismiss citation card"
+                onClick={on_close}
+            >
+                Close
+            </button>
+            <span className="bibtex-card-affordance-sep" aria-hidden="true">
+                ·
+            </span>
+            <span className="bibtex-card-affordance-hint">{hint}</span>
+        </div>
+    )
+}
+
+/**
+ * Live chip → data the shared card manager needs for its floating preview.
+ * Chips are plain DOM; only the open card(s) are React (see docs/one-root-per-chip.md).
+ */
+type ChipRecord = {
+    anchor: HTMLElement
+    bibtex: BibtexElement
+    plugin: BibtexScholar
+    app: App
+    /**
+     * Panel discover chips sit in a dense scrolling list. Preview cards there
+     * dismiss on scroll instead of chasing the anchor (inline notes re-tether).
+     */
+    dense: boolean
+}
+
+/** instance_id → chip record. Filled on mount, cleared on unmount. */
+const chip_registry = new Map<string, ChipRecord>()
+
+/** Bumped when an existing chip's bibtex snapshot changes so open cards re-read. */
+const chip_content_listeners = new Set<() => void>()
+
+function notify_chip_content_changed(): void {
+	for (const listener of chip_content_listeners) {
+		listener()
+	}
+}
+
+/** Subscribe to chip bibtex/payload refreshes (CardManager). */
+function subscribe_chip_content(listener: () => void): () => void {
+	chip_content_listeners.add(listener)
+	return () => {
+		chip_content_listeners.delete(listener)
+	}
+}
+
+/**
+ * Place the caret inside a cite span near `pos` so the replace decoration drops
+ * and the user can edit the raw `` `{id}` `` text (Live Preview only).
+ */
+function enter_cite_edit_mode(view: EditorView, near_pos: number): boolean {
+	const doc = view.state.doc
+	const clamped = Math.max(0, Math.min(near_pos, doc.length))
+	const line = doc.lineAt(clamped)
+	const spans = find_cite_spans_in_line(line.text, line.from)
+	const span = spans.find((s) => near_pos >= s.from && near_pos <= s.to)
+		?? spans.find((s) => Math.abs(near_pos - s.from) <= 1 || Math.abs(near_pos - s.to) <= 1)
+	if (!span) {
+		return false
+	}
+	// Inside half-open [from, to) → chip derenders to raw text.
+	const caret = Math.min(span.from + 1, span.to - 1)
+	view.dispatch({ selection: EditorSelection.cursor(Math.max(span.from, caret)) })
+	view.focus()
+	return true
+}
+
+/** Shared dialog chrome: classes + font CSS vars for both preview and pinned cards. */
+function card_surface_props(
+    plugin: BibtexScholar,
+    paper_id: string,
+    opts: { positioned?: boolean, pinned?: boolean, pos?: PinPosition, z?: number },
+): { className: string, style: { [key: string]: string | number }, 'aria-label': string } {
+    const font_px = normalize_card_font_size(plugin.cache.card_font_size)
+    const classes = ['bibtex-hover-card', 'is-floating']
+    if (plugin.cache.card_wide) {
+        classes.push('is-wide')
+    }
+    if (opts.positioned || opts.pinned) {
+        classes.push('is-positioned')
+    }
+    if (opts.pinned) {
+        classes.push('is-pinned')
+    }
+    const style: { [key: string]: string | number } = {
+        // Drives em-based type inside the card (see styles.css).
+        ['--bibtex-card-font-size']: `${font_px}px`,
+        fontSize: `${font_px}px`,
+    }
+    if (opts.pos) {
+        style.top = opts.pos.top
+        style.left = opts.pos.left
+    }
+    if (opts.z != null) {
+        // Base matches styles.css `--layer-popover` fallback (30).
+        // Pin z stacks among pins; preview always receives max_pin_z + 1 so it wins.
+        style.zIndex = 30 + opts.z
+    }
+    return {
+        className: classes.join(' '),
+        style,
+        'aria-label': `Citation ${paper_id}`,
+    }
+}
+
+/**
+ * Transient hover/click card (0-or-1). Anchored to a chip; closes on outside
+ * click, leave-grace, dense-list scroll, or Esc (via citation_popup).
+ */
+const PreviewCard = ({
+    instance_id,
+    record,
+}: {
+    instance_id: string
+    record: ChipRecord
+}) => {
+    const { anchor, bibtex, plugin, app, dense } = record
+    const paper_id = bibtex.fields.id
+    const card_ref = useRef<HTMLDivElement | null>(null)
+
+    // Outside click closes. Bind next tick so the opening click does not close it.
+    useEffect(() => {
+        const on_pointer_down = (e: PointerEvent) => {
+            const t = e.target
+            if (!(t instanceof Node)) {
+                return
+            }
+            if (anchor.contains(t) || card_ref.current?.contains(t)) {
+                return
+            }
+            citation_popup.close_outside()
+        }
+        const bind_timer = window.setTimeout(() => {
+            document.addEventListener('pointerdown', on_pointer_down, true)
+        }, 0)
+        return () => {
+            window.clearTimeout(bind_timer)
+            document.removeEventListener('pointerdown', on_pointer_down, true)
+        }
+    }, [anchor])
+
+    // Tether to chip on resize/scroll. Dense (panel) lists dismiss on scroll instead.
+    useLayoutEffect(() => {
+        const update = () => {
+            const card = card_ref.current
+            if (!card) {
+                return
+            }
+            position_floating_card(anchor, card)
+            card.classList.add('is-positioned')
+        }
+        // Capture-phase `scroll` on window sees every scrollable element in the
+        // document, including the card's own internal scroll regions (long
+        // abstract, scrollable field list). Scrolling those is reading the card,
+        // not scrolling past it — only dismiss when the scroll happened outside it.
+        const on_scroll = dense
+            ? (e: Event) => {
+                const target = e.target
+                if (target instanceof Node && card_ref.current?.contains(target)) {
+                    return
+                }
+                citation_popup.close_outside()
+            }
+            : update
+
+        update()
+        const raf = window.requestAnimationFrame(update)
+        window.addEventListener('resize', update)
+        window.addEventListener('scroll', on_scroll, true)
+        // innerHeight doesn't shrink for the on-screen keyboard — visualViewport
+        // does, and is the only thing that fires a resize when it opens/closes.
+        window.visualViewport?.addEventListener('resize', update)
+
+        const card_el = card_ref.current
+        let ro: ResizeObserver | null = null
+        if (card_el && typeof ResizeObserver !== 'undefined') {
+            ro = new ResizeObserver(() => update())
+            ro.observe(card_el)
+        }
+
+        return () => {
+            window.cancelAnimationFrame(raf)
+            window.removeEventListener('resize', update)
+            window.removeEventListener('scroll', on_scroll, true)
+            window.visualViewport?.removeEventListener('resize', update)
+            ro?.disconnect()
+        }
+    }, [anchor, paper_id, dense])
+
+    const pin_from_preview = () => {
+        // Snapshot on-screen position, pin first, then drop the transient card
+        // so there is no frame where the card is neither pinned nor previewed.
+        const card = card_ref.current
+        if (!card) {
+            return
+        }
+        const rect = card.getBoundingClientRect()
+        pin_registry.pin(paper_id, { bibtex, plugin, app }, { top: rect.top, left: rect.left })
+        citation_popup.close_outside()
+    }
+
+    // Always above pinned cards so a live hover can be inspected over pin clutter.
+    const surface = card_surface_props(plugin, paper_id, { z: pin_registry.max_z() + 1 })
+
+    return (
+        <div
+            ref={card_ref}
+            id={`bibtex-cite-card-${instance_id}`}
+            className={surface.className}
+            role='dialog'
+            aria-label={surface['aria-label']}
+            aria-modal={false}
+            tabIndex={-1}
+            style={surface.style}
+            // Desktop: hover bridge chip↔card. Mobile: click/outside only —
+            // synthetic mouseleave after a tap would schedule a false close.
+            // Review unit: Mobile — see docs/RESEGMENT.md.
+            onMouseEnter={Platform.isMobile ? undefined : () => citation_popup.enter_card(instance_id)}
+            onMouseLeave={Platform.isMobile ? undefined : () => citation_popup.leave_card(instance_id)}
+            onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    citation_popup.dismiss()
+                }
+            }}
+        >
+            <CitationCardBody
+                bibtex={bibtex}
+                plugin={plugin}
+                app={app}
+                pinned={false}
+                on_pin_toggle={pin_from_preview}
+                on_close={() => citation_popup.dismiss()}
+            />
+        </div>
+    )
+}
+
+/**
+ * Interactive targets that own their own pointer gestures — never start a pin
+ * drag from these (buttons, links, click-to-copy fields/title, scroll body).
+ */
+const PIN_DRAG_IGNORE_SELECTOR = [
+	'button',
+	'a',
+	'input',
+	'textarea',
+	'select',
+	'[role="button"]',
+	'.is-copyable',
+	'.bibtex-field-copy',
+	'.bibtex-hover-button-bar',
+].join(', ')
+
+/**
+ * User-pinned card (0-or-N). Owns its position; drag from empty card chrome
+ * (padding, gutters, non-interactive gaps) — not from title/actions/fields.
+ * Closes only via unpin (button or Esc on the front-most pin).
+ */
+const PinnedCard = ({
+    paper_id,
+    payload,
+    pos,
+    z,
+}: {
+    paper_id: string
+    payload: PinPayload
+    pos: PinPosition
+    z: number
+}) => {
+    const { bibtex, plugin, app } = payload
+    const card_ref = useRef<HTMLDivElement | null>(null)
+    // During drag we move the DOM node only; registry commits on pointerup (B3).
+    const drag_pos_ref = useRef(pos)
+
+    useEffect(() => {
+        drag_pos_ref.current = pos
+        const card = card_ref.current
+        if (card && !card.dataset.dragging) {
+            card.style.top = `${pos.top}px`
+            card.style.left = `${pos.left}px`
+        }
+    }, [pos.top, pos.left])
+
+	// Same sub-line field-list absorb as preview cards (pinned never goes through
+	// position_floating_card). Re-clamp if height grows so the pin stays on-screen.
+	useLayoutEffect(() => {
+		const card = card_ref.current
+		if (!card) {
+			return
+		}
+		const run = () => {
+			if (!absorb_fields_scroll_play(card) || card.dataset.dragging) {
+				return
+			}
+			const top = parseFloat(card.style.top)
+			const left = parseFloat(card.style.left)
+			const clamped = clamp_card_position(
+				{
+					top: Number.isFinite(top) ? top : drag_pos_ref.current.top,
+					left: Number.isFinite(left) ? left : drag_pos_ref.current.left,
+				},
+				{ width: card.offsetWidth, height: card.offsetHeight },
+				get_viewport(),
+			)
+			card.style.top = `${clamped.top}px`
+			card.style.left = `${clamped.left}px`
+		}
+		run()
+		const raf = window.requestAnimationFrame(run)
+		let ro: ResizeObserver | null = null
+		if (typeof ResizeObserver !== 'undefined') {
+			ro = new ResizeObserver(() => run())
+			ro.observe(card)
+		}
+		return () => {
+			window.cancelAnimationFrame(raf)
+			ro?.disconnect()
+		}
+	}, [paper_id, bibtex])
+
+    const on_card_pointer_down = (e: ReactPointerEvent<HTMLElement>) => {
+        pin_registry.bring_to_front(paper_id)
+
+        // Only empty chrome / gaps — not title copy, actions, or scroll body.
+        if (e.target instanceof Element && e.target.closest(PIN_DRAG_IGNORE_SELECTOR)) {
+            return
+        }
+        // Primary button only (ignore right-click / pen barrel).
+        if (e.button !== 0) {
+            return
+        }
+
+        const card = card_ref.current
+        if (!card) {
+            return
+        }
+        const pointer_id = e.pointerId
+        card.setPointerCapture(pointer_id)
+        card.dataset.dragging = '1'
+
+        const start_x = e.clientX
+        const start_y = e.clientY
+        const start_pos = { ...drag_pos_ref.current }
+        const size = { width: card.offsetWidth, height: card.offsetHeight }
+        let moved = false
+
+        const on_move = (ev: PointerEvent) => {
+            const dx = ev.clientX - start_x
+            const dy = ev.clientY - start_y
+            // Below threshold: don't move yet — absorbs tap jitter (higher on mobile).
+            // Review unit: Mobile — see docs/RESEGMENT.md.
+            const drag_threshold = Platform.isMobile
+                ? PIN_DRAG_THRESHOLD_MOBILE_PX
+                : PIN_DRAG_THRESHOLD_PX
+            if (!moved && Math.hypot(dx, dy) < drag_threshold) {
+                return
+            }
+            moved = true
+            const viewport = get_viewport()
+            const next = clamp_card_position(
+                {
+                    top: start_pos.top + dy,
+                    left: start_pos.left + dx,
+                },
+                size,
+                viewport,
+            )
+            drag_pos_ref.current = next
+            card.style.top = `${next.top}px`
+            card.style.left = `${next.left}px`
+        }
+        const on_up = () => {
+            card.removeEventListener('pointermove', on_move)
+            card.removeEventListener('pointerup', on_up)
+            delete card.dataset.dragging
+            try {
+                card.releasePointerCapture(pointer_id)
+            } catch {
+                // already released
+            }
+            // Single registry write — avoids re-rendering the card body every move.
+            if (moved) {
+                pin_registry.move(paper_id, drag_pos_ref.current)
+            }
+        }
+        card.addEventListener('pointermove', on_move)
+        card.addEventListener('pointerup', on_up)
+    }
+
+    const surface = card_surface_props(plugin, paper_id, {
+        positioned: true,
+        pinned: true,
+        pos,
+        z,
+    })
+
+    return (
+        <div
+            ref={card_ref}
+            id={`bibtex-cite-card-${paper_id}`}
+            className={surface.className}
+            role='dialog'
+            aria-label={surface['aria-label']}
+            aria-modal={false}
+            tabIndex={-1}
+            style={surface.style}
+            onPointerDown={on_card_pointer_down}
+        >
+            <CitationCardBody
+                bibtex={bibtex}
+                plugin={plugin}
+                app={app}
+                pinned={true}
+                on_pin_toggle={() => pin_registry.unpin(paper_id)}
+                on_close={() => pin_registry.unpin(paper_id)}
+            />
+        </div>
+    )
+}
+
+/**
+ * Single React root: 0–1 {@link PreviewCard} + 0–N {@link PinnedCard}s,
+ * portaled under the workspace container.
+ */
+const CardManager = ({ app }: { app: App }) => {
+    const [active_id, set_active_id] = useState<string | null>(() => citation_popup.get_active_id())
+    const [, force_pins_update] = useState(0)
+    const [, force_chip_content] = useState(0)
+
+    useEffect(() => citation_popup.subscribe_active(set_active_id), [])
+    useEffect(() => pin_registry.subscribe(() => force_pins_update((n) => n + 1)), [])
+    // Re-read chip_registry when an existing host gets new bibtex (A5).
+    useEffect(() => subscribe_chip_content(() => force_chip_content((n) => n + 1)), [])
+
+    // Esc: preview first (citation_popup + stopImmediatePropagation), then front pin only.
+    useEffect(() => {
+        const on_keydown = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape' && e.key !== 'Esc') {
+                return
+            }
+            if (citation_popup.get_active_id() != null) {
+                return
+            }
+            const front = pin_registry.front_id()
+            if (!front) {
+                return
+            }
+            e.preventDefault()
+            e.stopPropagation()
+            e.stopImmediatePropagation()
+            pin_registry.unpin(front)
+        }
+        document.addEventListener('keydown', on_keydown, true)
+        return () => document.removeEventListener('keydown', on_keydown, true)
+    }, [])
+
+    const cards: ReactElement[] = []
+
+    if (active_id) {
+        const record = chip_registry.get(active_id)
+        // Avoid double-rendering a paper that was just pinned from its preview.
+        if (record && !pin_registry.is_pinned(record.bibtex.fields.id)) {
+            cards.push(
+                <PreviewCard key={active_id} instance_id={active_id} record={record} />,
+            )
+        }
+    }
+
+    for (const [paper_id, entry] of pin_registry.entries()) {
+        cards.push(
+            <PinnedCard
+                key={paper_id}
+                paper_id={paper_id}
+                payload={entry.payload}
+                pos={entry.pos}
+                z={entry.z}
+            />,
+        )
+    }
+
+    if (cards.length === 0) {
+        return null
+    }
+
+    return createPortal(<>{cards}</>, citation_portal_root(app))
+}
+
+let manager_root: Root | null = null
+let manager_host: HTMLElement | null = null
+
+/** Lazily create the single shared root that renders {@link CardManager} (idempotent). */
+function ensure_card_manager(app: App): void {
+    if (manager_root) {
+        return
+    }
+    manager_host = document.createElement('div')
+    manager_host.style.display = 'none'
+    citation_portal_root(app).appendChild(manager_host)
+    manager_root = createRoot(manager_host)
+    manager_root.render(
         <StrictMode>
-            <HoverPopup bibtex={bibtex} plugin={plugin} app={app} expand={expand} />
+            <CardManager app={app} />
         </StrictMode>
     )
 }
 
+/** Unmount the single shared card-manager root (plugin unload / test teardown). */
+export function unmount_card_manager(): void {
+    if (manager_root) {
+        const root = manager_root
+        manager_root = null
+        queueMicrotask(() => {
+            try {
+                root.unmount()
+            } catch {
+                // already unmounted
+            }
+        })
+    }
+    manager_host?.remove()
+    manager_host = null
+    // Pins are in-memory-only by design (survive note switches, not plugin
+    // reload/restart) — tearing down the card manager also clears them.
+    pin_registry.unpin_all()
+}
+
+/** Host attribute so callers can find and unmount hover chips before emptying DOM. */
+export const HOVER_HOST_ATTR = 'data-bibtex-hover-host'
+
+type ChipHost = {
+    instance_id: string
+    button: HTMLButtonElement
+    unregister: () => void
+}
+
+/** Host element -> its chip's identity, so re-render on the same element reuses one instance. */
+const chip_hosts = new WeakMap<HTMLElement, ChipHost>()
+
+/** Plain-DOM chip (no React). `contenteditable=false` keeps CM's caret out of the label. */
+function build_chip_dom(paper_id: string): { wrapper: HTMLSpanElement, chip: HTMLSpanElement, button: HTMLButtonElement } {
+    const wrapper = document.createElement('span')
+    wrapper.className = 'bibtex-hover'
+    // Required inside CM Live Preview: without this the browser can park the caret
+    // inside the chip text at an offset that is not a real document position.
+    wrapper.setAttribute('contenteditable', 'false')
+    const chip = document.createElement('span')
+    chip.className = 'bibtex-hover-chip'
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = paper_id
+    button.setAttribute('aria-haspopup', 'dialog')
+    button.setAttribute('aria-expanded', 'false')
+    button.setAttribute('aria-label', `Citation ${paper_id}`)
+    // No native `title` — it duplicated the label and fought the card's own hint.
+    chip.appendChild(button)
+    wrapper.appendChild(chip)
+    return { wrapper, chip, button }
+}
+
+type MountChipOptions = {
+	/** Paper panel dense list — optional 2× open debounce. */
+	dense?: boolean
+	/**
+	 * Live Preview editor: long-press places the caret inside the cite span
+	 * so the chip derenders for editing (B1).
+	 */
+	editor_view?: EditorView
+}
 
 /**
- * HoverWidget class for displaying BibTeX entry hover popups in the editor.
- * Extends the WidgetType from CodeMirror to create a custom widget.
- * 
- * @param bibtex - The BibtexElement object containing the entry's fields and metadata.
- * @param plugin - The BibtexScholar plugin instance, used for accessing cache and plugin methods.
- * @param app - The Obsidian App instance, used for workspace and UI interactions.
- * @param expand - If true, the popup is expanded by default; otherwise, it appears on hover.
+ * Mount (or reuse) a plain-DOM citation chip in `el`.
+ */
+function mount_chip(
+	el: HTMLElement,
+	bibtex: BibtexElement,
+	plugin: BibtexScholar,
+	app: App,
+	expand: boolean,
+	opts: MountChipOptions = {},
+): void {
+	const dense = opts.dense === true
+	const editor_view = opts.editor_view
+	el.setAttribute(HOVER_HOST_ATTR, '')
+	ensure_card_manager(app)
+
+	const existing = chip_hosts.get(el)
+	if (existing) {
+		const prev = chip_registry.get(existing.instance_id)
+		chip_registry.set(existing.instance_id, {
+			anchor: prev?.anchor ?? el,
+			bibtex,
+			plugin,
+			app,
+			dense,
+		})
+		const paper_id = bibtex.fields.id
+		existing.button.textContent = paper_id
+		existing.button.setAttribute('aria-label', `Citation ${paper_id}`)
+		// Keep open preview / pin in sync with new fields (A5).
+		notify_chip_content_changed()
+		if (pin_registry.is_pinned(paper_id)) {
+			pin_registry.update_payload(paper_id, { bibtex, plugin, app })
+		}
+		if (expand) {
+			citation_popup.open_for_expand(existing.instance_id)
+		}
+		return
+	}
+
+	const instance_id = create_citation_popup_id()
+	const card_dom_id = `bibtex-cite-card-${instance_id}`
+	const { wrapper, chip, button } = build_chip_dom(bibtex.fields.id)
+
+	chip_registry.set(instance_id, { anchor: chip, bibtex, plugin, app, dense })
+
+	// Hover-open is desktop-only. On mobile, synthetic mouseenter/leave after a
+	// tap races click-toggle and can close the card after CLOSE_GRACE_MS.
+	// Touch opens via the click handler below (immediate toggle).
+	// Review unit: Mobile — see docs/RESEGMENT.md.
+	if (!Platform.isMobile) {
+		chip.addEventListener('mouseenter', () => {
+			const open_debounce_ms = dense && plugin.cache.panel_double_debounce_enabled
+				? OPEN_DEBOUNCE_MS * 2
+				: OPEN_DEBOUNCE_MS
+			citation_popup.enter_trigger(instance_id, open_debounce_ms)
+		}, true)
+		chip.addEventListener('mouseleave', () => citation_popup.leave_trigger(instance_id), true)
+	}
+
+	// Long-press (Live Preview) → edit raw cite; short click → toggle card.
+	let long_press_timer: number | null = null
+	let long_press_fired = false
+	const clear_long_press = () => {
+		if (long_press_timer != null) {
+			window.clearTimeout(long_press_timer)
+			long_press_timer = null
+		}
+	}
+	button.addEventListener('pointerdown', (e) => {
+		// Keep the CM editor focused: a real <button> steals focus on mousedown otherwise.
+		e.preventDefault()
+		long_press_fired = false
+		if (!editor_view) {
+			return
+		}
+		clear_long_press()
+		long_press_timer = window.setTimeout(() => {
+			long_press_timer = null
+			long_press_fired = true
+			citation_popup.close_outside()
+			try {
+				const near = editor_view.posAtDOM(wrapper)
+				enter_cite_edit_mode(editor_view, near)
+			} catch {
+				// DOM not in view — ignore
+			}
+		}, CHIP_LONG_PRESS_MS)
+	})
+	button.addEventListener('pointerup', () => clear_long_press())
+	button.addEventListener('pointerleave', () => clear_long_press())
+	button.addEventListener('pointercancel', () => clear_long_press())
+	button.addEventListener('click', (e) => {
+		e.preventDefault()
+		e.stopPropagation()
+		if (long_press_fired) {
+			long_press_fired = false
+			return
+		}
+		citation_popup.toggle_trigger(instance_id)
+	})
+
+	const unregister = citation_popup.register(instance_id, (open) => {
+		button.setAttribute('aria-expanded', String(open))
+		if (open) {
+			button.setAttribute('aria-controls', card_dom_id)
+		} else {
+			button.removeAttribute('aria-controls')
+		}
+	})
+	chip_hosts.set(el, { instance_id, button, unregister })
+
+	el.appendChild(wrapper)
+
+	if (expand) {
+		citation_popup.open_for_expand(instance_id)
+	}
+}
+
+/**
+ * Unmount a hover host: unregisters its chip from the popup controller and
+ * chip registry, and removes its DOM. Safe to call if nothing was mounted.
+ */
+export function unmount_hover(el: HTMLElement) {
+    const host = chip_hosts.get(el)
+    if (!host) {
+        return
+    }
+    chip_hosts.delete(el)
+    // Unregister first so close_now can notify while the registry entry still
+    // exists (CardManager's last paint for this id can still resolve the record).
+    host.unregister()
+    chip_registry.delete(host.instance_id)
+    el.removeAttribute(HOVER_HOST_ATTR)
+    el.replaceChildren()
+}
+
+/**
+ * Unmount every hover host under `root` (e.g. before `list_el.empty()`).
+ */
+export function unmount_hover_hosts(root: HTMLElement) {
+    root.querySelectorAll(`[${HOVER_HOST_ATTR}]`).forEach((node) => {
+        unmount_hover(node as HTMLElement)
+    })
+}
+
+/**
+ * Mount a citation chip + floating card into `el`. The chip itself is plain
+ * DOM; the card renders through the single shared card-manager root, not a
+ * root of its own — see docs/one-root-per-chip.md. Reuses the same chip
+ * identity across re-renders of the same host element.
+ * Prefer {@link HoverRenderChild} in markdown post-processors so unload unmounts cleanly.
+ * @param dense - Pass true for dense chip lists (paper panel) to opt into the
+ * "Double hover debounce in paper panel" setting.
+ */
+export function render_hover(
+	el: HTMLElement,
+	bibtex: BibtexElement,
+	plugin: BibtexScholar,
+	app: App,
+	expand: boolean = false,
+	dense: boolean = false,
+) {
+	mount_chip(el, bibtex, plugin, app, expand, { dense })
+}
+
+/**
+ * Markdown section lifecycle wrapper: unmounts the chip when Obsidian discards the section.
+ */
+export class HoverRenderChild extends MarkdownRenderChild {
+    constructor(
+        el: HTMLElement,
+        private readonly bibtex: BibtexElement,
+        private readonly plugin: BibtexScholar,
+        private readonly app: App,
+        private readonly expand: boolean = false,
+        private readonly dense: boolean = false,
+    ) {
+        super(el)
+    }
+
+    onload() {
+        render_hover(this.containerEl, this.bibtex, this.plugin, this.app, this.expand, this.dense)
+    }
+
+    onunload() {
+        unmount_hover(this.containerEl)
+    }
+}
+
+/**
+ * CodeMirror replace widget for one cite chip (card is portaled via CardManager).
+ *
+ * Important: {@link destroy} must use the `dom` argument CM passes in.
+ * After {@link eq} returns true, CM reuses the DOM but installs a *new* widget
+ * instance — instance fields set in {@link toDOM} are not on that new object.
  */
 export class HoverWidget extends WidgetType {
-    bibtex: BibtexElement
-    plugin: BibtexScholar
-    app: App
-    expand: boolean
+	bibtex: BibtexElement
+	plugin: BibtexScholar
+	app: App
+	expand: boolean
 
-    constructor(bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false) {
-        super()
-        this.bibtex = bibtex
-        this.plugin = plugin
-        this.app = app
-        this.expand = expand
-    }
+	constructor(bibtex: BibtexElement, plugin: BibtexScholar, app: App, expand: boolean = false) {
+		super()
+		this.bibtex = bibtex
+		this.plugin = plugin
+		this.app = app
+		this.expand = expand
+	}
 
-    toDOM() {
-        const span = document.createElement("span")
-        createRoot(span).render(
-            <StrictMode>
-                <HoverPopup bibtex={this.bibtex} plugin={this.plugin} app={this.app} expand={this.expand} />
-                {/* <button>test</button> */}
-            </StrictMode>
-        )
-        return span
-    }
+	toDOM(view: EditorView) {
+		const span = document.createElement('span')
+		span.className = 'bibtex-cm-widget'
+		span.setAttribute('contenteditable', 'false')
+		// Long-press uses `view` to place the caret inside the cite span (B1).
+		mount_chip(span, this.bibtex, this.plugin, this.app, this.expand, { editor_view: view })
+		return span
+	}
 
-    eq(other: HoverWidget) {
-        return this.bibtex.fields.id === other.bibtex.fields.id
-    }
+	eq(other: HoverWidget) {
+		return (
+			other instanceof HoverWidget
+			&& this.expand === other.expand
+			&& this.bibtex.source_path === other.bibtex.source_path
+			&& fields_shallow_equal(this.bibtex.fields, other.bibtex.fields)
+		)
+	}
 
-    ignoreEvent() {
-        return true
-    }
+	destroy(dom: HTMLElement) {
+		unmount_hover(dom)
+	}
+
+	/** Let chip listeners handle pointer events; CM should not claim them. */
+	ignoreEvent() {
+		return true
+	}
 }

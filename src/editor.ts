@@ -1,88 +1,144 @@
 import { RangeSetBuilder } from '@codemirror/state'
 import {
-    Decoration,
-    DecorationSet,
-    EditorView,
-    PluginSpec,
-    PluginValue,
-    ViewPlugin,
-    ViewUpdate,
+	Decoration,
+	DecorationSet,
+	EditorView,
+	PluginSpec,
+	PluginValue,
+	ViewPlugin,
+	ViewUpdate,
 } from '@codemirror/view'
-import { App } from 'obsidian'
+import { App, editorLivePreviewField } from 'obsidian'
+import {
+	cite_span_key_at_offset,
+	selection_requires_decoration_rebuild,
+	spans_showing_chips,
+} from 'src/core/cite-span'
+import { resolve_id } from 'src/architecture/citekey-index'
 import { HoverWidget } from 'src/hover'
-import BibtexScholar from 'src/main'
+import type BibtexScholar from 'src/main'
 
 /**
- * Creates an editor plugin for displaying inline BibTeX entry hover popups, under the editing mode (including the live preview mode).
+ * Stable `from:to` key if `pos` sits inside a cite on its line; otherwise null.
+ * Thin wrapper over pure helpers for editor call sites and tests.
+ */
+export function cite_span_key_at(view: EditorView, pos: number): string | null {
+	if (pos < 0 || pos > view.state.doc.length) {
+		return null
+	}
+	const line = view.state.doc.lineAt(pos)
+	return cite_span_key_at_offset(line.text, line.from, pos)
+}
+
+/**
+ * Cite chips belong in Live Preview only (Reading view uses markdown post-processors).
+ * Pure Source mode shows raw `` `{id}` `` / `` `[id]` `` text.
+ */
+export function should_render_cite_widgets(live_preview: boolean): boolean {
+	return live_preview === true
+}
+
+function is_live_preview(view: EditorView): boolean {
+	return should_render_cite_widgets(view.state.field(editorLivePreviewField))
+}
+
+/**
+ * Live Preview editor extension: replace known cites with chip widgets.
  *
- * When the cursor is outside the matched pattern (`{<id>}` or `[<id>]`), the hover widget will be displayed as a decoration; otherwise, the original text remains visible for editing.
+ * Cursor policy:
+ * - Caret **outside** a cite → chip
+ * - Caret **inside** a cite → raw text so the user can edit the key
+ * - Selection-only updates rebuild only when the caret enters/leaves a cite
  *
- * @param plugin - The BibtexScholar plugin instance.
- * @param app - The Obsidian App instance.
- * @returns A CodeMirror ViewPlugin for the hover widget.
+ * We intentionally do **not** use `EditorView.atomicRanges`: edit-a-citation
+ * needs the caret to land inside `[from, to)`. Atomic ranges would skip the
+ * whole span in one arrow step.
  */
 export const createHoverWidgetPlugin = (plugin: BibtexScholar, app: App) => {
-    class HoverWidgetPlugin implements PluginValue {
-        decorations: DecorationSet
+	class HoverWidgetPlugin implements PluginValue {
+		decorations: DecorationSet
 
-        constructor(view: EditorView) {
-            this.decorations = this.buildDecorations(view)
-        }
+		constructor(view: EditorView) {
+			this.decorations = this.buildDecorations(view)
+		}
 
-        update(update: ViewUpdate) {
-            if (update.docChanged || update.viewportChanged || update.selectionSet) {
-                this.decorations = this.buildDecorations(update.view)
-            }
-        }
+		update(update: ViewUpdate) {
+			const was_lp = update.startState.field(editorLivePreviewField)
+			const is_lp = update.state.field(editorLivePreviewField)
 
-        destroy() {}
+			if (was_lp !== is_lp) {
+				this.decorations = this.buildDecorations(update.view)
+				return
+			}
 
-        buildDecorations(view: EditorView): DecorationSet {
-            const builder = new RangeSetBuilder<Decoration>()
-            const cursor_pos = view.state.selection.main.head
+			if (!is_lp) {
+				if (this.decorations.size > 0) {
+					this.decorations = Decoration.none
+				}
+				return
+			}
 
-            for (const {from, to} of view.visibleRanges) {
-                const start_line = view.state.doc.lineAt(from).number
-                const end_line = view.state.doc.lineAt(to).number
+			if (update.docChanged || update.viewportChanged) {
+				this.decorations = this.buildDecorations(update.view)
+				return
+			}
 
-                for (let ln = start_line; ln <= end_line; ln++) {
-                    const line = view.state.doc.line(ln)
-                    const text = line.text
-                    const PATTERN = /\`[\{\[][^\}\]]+[\}\]]\`/g
-                    PATTERN.lastIndex = 0
-                    let m: RegExpExecArray | null
-                    while ((m = PATTERN.exec(text)) !== null) {
-                        // determine if cursor is inside the match
-                        const match_from = line.from + m.index
-                        const match_to = match_from + m[0].length
-                        const cursor_inside = cursor_pos >= match_from && cursor_pos <= match_to
+			if (update.selectionSet) {
+				// Doc is unchanged (docChanged handled above). Resolve old/new
+				// heads against their own states for a correct enter/leave check.
+				const old_head = update.startState.selection.main.head
+				const new_head = update.state.selection.main.head
+				const old_line = update.startState.doc.lineAt(old_head)
+				const new_line = update.state.doc.lineAt(new_head)
+				if (selection_requires_decoration_rebuild(
+					cite_span_key_at_offset(old_line.text, old_line.from, old_head),
+					cite_span_key_at_offset(new_line.text, new_line.from, new_head),
+				)) {
+					this.decorations = this.buildDecorations(update.view)
+				}
+			}
+		}
 
-                        if (!cursor_inside) {
-                            // if cursor is not inside, add decoration
-                            const bibtex_id = m[0].slice(2, -2)
-                            const expand = ((m[0][1] === '['))?(true):(false)
-                            const bibtex = plugin.cache.bibtex_dict[bibtex_id]
-                            
-                            if (bibtex) {
-                                builder.add(
-                                    match_from,
-                                    match_to,
-                                    Decoration.replace({
-                                       widget: new HoverWidget(bibtex, plugin, app, expand),
-                                    })
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            return builder.finish()
-        }
-    }
+		destroy() {}
 
-    const pluginSpec: PluginSpec<HoverWidgetPlugin> = {
-        decorations: (value: HoverWidgetPlugin) => value.decorations,
-    }
+		buildDecorations(view: EditorView): DecorationSet {
+			if (!is_live_preview(view)) {
+				return Decoration.none
+			}
 
-    return ViewPlugin.fromClass(HoverWidgetPlugin, pluginSpec)
+			const builder = new RangeSetBuilder<Decoration>()
+			const cursor_pos = view.state.selection.main.head
+			const dict = plugin.cache.bibtex_dict
+
+			for (const visible of view.visibleRanges) {
+				const start_line = view.state.doc.lineAt(visible.from).number
+				const end_line = view.state.doc.lineAt(visible.to).number
+
+				for (let line_no = start_line; line_no <= end_line; line_no++) {
+					const line = view.state.doc.line(line_no)
+					for (const span of spans_showing_chips(line.text, line.from, cursor_pos)) {
+						const canonical_id = resolve_id(plugin.id_index, span.id)
+						const bibtex = canonical_id !== undefined ? dict[canonical_id] : undefined
+						if (!bibtex) {
+							continue
+						}
+						builder.add(
+							span.from,
+							span.to,
+							Decoration.replace({
+								widget: new HoverWidget(bibtex, plugin, app, span.expand),
+							}),
+						)
+					}
+				}
+			}
+			return builder.finish()
+		}
+	}
+
+	const pluginSpec: PluginSpec<HoverWidgetPlugin> = {
+		decorations: (value: HoverWidgetPlugin) => value.decorations,
+	}
+
+	return ViewPlugin.fromClass(HoverWidgetPlugin, pluginSpec)
 }

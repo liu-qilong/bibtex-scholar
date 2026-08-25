@@ -1,157 +1,166 @@
-import { App, Editor, AbstractInputSuggest, SuggestModal, EditorSuggest, TFile, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo } from 'obsidian'
-import { BibtexElement, match_query, type BibtexDict } from 'src/bibtex'
+import {
+	App,
+	Editor,
+	AbstractInputSuggest,
+	EditorSuggest,
+	TFile,
+	type EditorPosition,
+	type EditorSuggestContext,
+	type EditorSuggestTriggerInfo,
+} from 'obsidian'
+import { type BibtexDict } from 'src/bibtex'
+import { has_any_match, list_ids_for_suggest } from 'src/scale/library-scale'
+import { find_prompt_trigger } from 'src/architecture/prompt-trigger'
+import { render_display_text } from 'src/display/tex-display'
 
 /**
- * An editor prompt to suggest BibTeX entries. Triggered by:
- * * Type ` and { for collapsed paper element
- * * Type ` and [ for expanded paper element
- * P.S. Since Obsidian auto-completes ``, we are actually matching `{<cursor>` or `[<cursor>`
+ * Inline cite autocomplete.
+ *
+ * Triggers while typing `` `{…` `` (compact chip) or `` `[…` `` (expanded card).
+ * Obsidian auto-closes backticks, so the live match is often `{<cursor>` / `[<cursor>`.
+ *
+ * Suggestions use {@link list_ids_for_suggest} → {@link match_query} (same fuzzy /
+ * multi-token rules as the paper panel). The trigger pattern must allow spaces in
+ * the query or multi-word searches never open (see `prompt-trigger.ts`).
  */
+export type SuggestStatsSink = (stats: { returned: number, matched: number }) => void
+
 export class EditorPrompt extends EditorSuggest<string> {
-    bibtex_dict: BibtexDict
-    editor: Editor
-    bracket_start: string
-    bracket_end: string
-    code_end: string
-    trigger_info: EditorSuggestTriggerInfo
+	/** Live getter — never snapshot the dict at construct time (rescan would stale). */
+	private get_dict: () => BibtexDict
+	private on_stats: SuggestStatsSink | undefined
+	editor: Editor
+	bracket_start: string
+	bracket_end: string
+	code_end: string
+	trigger_info: EditorSuggestTriggerInfo
 
-    constructor(app: App, bibtex_dict: BibtexDict) {
-        super(app)
-        this.bibtex_dict = bibtex_dict
-    }
+	constructor(app: App, get_dict: () => BibtexDict, on_stats?: SuggestStatsSink) {
+		super(app)
+		this.get_dict = get_dict
+		this.on_stats = on_stats
+	}
 
-    onTrigger(cursor: EditorPosition, editor: Editor, file: TFile): EditorSuggestTriggerInfo | null {
-        // determine if this EditorSuggest should be triggered
-        this.editor = editor
-        const line = editor.getLine(cursor.line)
-        const regex = /(`)([{\[])([^}\]`\ ]*)([}\]]?)(`?)/g
-        let match
+	private get bibtex_dict(): BibtexDict {
+		return this.get_dict()
+	}
 
-        while ((match = regex.exec(line)) !== null) {
-            // example: match = ('`{test}`', '`', '{', 'test', '}', '`')
-            // console.log(match)
-            const query = match[3]
-            const content_start = match.index + 2 // position after `{` or `[`
-            const content_end = content_start + query.length
-            
-            // if (cursor.ch >= content_start && cursor.ch == content_end) {
-            if (cursor.ch == content_end) {
-                this.bracket_start = match[2]
-                this.bracket_end = match[4]
-                this.code_end = match[5]
+	onTrigger(cursor: EditorPosition, editor: Editor, _file: TFile): EditorSuggestTriggerInfo | null {
+		this.editor = editor
+		const line = editor.getLine(cursor.line)
+		const found = find_prompt_trigger(
+			line,
+			cursor.ch,
+			(query) => has_any_match(this.bibtex_dict, query),
+		)
+		if (!found) {
+			return null
+		}
 
-                if (this.bracket_end && !this.code_end) {
-                    // rule out the case like `{test}, where proper insertion is not achievable
-                    continue
-                }
+		this.bracket_start = found.bracket_start
+		this.bracket_end = found.bracket_end
+		this.code_end = found.code_end
+		this.trigger_info = {
+			start: { line: cursor.line, ch: found.content_start },
+			end: { line: cursor.line, ch: found.content_end },
+			query: found.query,
+		}
+		return this.trigger_info
+	}
 
-                this.trigger_info = {
-                    start: { line: cursor.line, ch: content_start },
-                    end: { line: cursor.line, ch: content_end },
-                    query: query,
-                }
-                return this.trigger_info
-            }
-        }
+	getSuggestions(context: EditorSuggestContext): string[] {
+		// Capped list — never dump the whole library into the suggest UI.
+		const list = list_ids_for_suggest(this.bibtex_dict, context.query)
+		this.on_stats?.({ returned: list.ids.length, matched: list.matched })
+		return list.ids
+	}
 
-        return null
-    }
+	renderSuggestion(id: string, el: HTMLElement): void {
+		const bibtex = this.bibtex_dict[id]
+		el.createEl('code', { text: bibtex.fields.id, cls: 'bibtex-prompt-id' })
+		// Display-only TeX → Unicode (+ <i>/<em> → real italics); insert still uses the raw citekey.
+		render_display_text(el.createEl('div', { cls: 'bibtex-prompt-title' }), bibtex.fields.title ?? '')
+		render_display_text(el.createEl('small', { cls: 'bibtex-prompt-author' }), bibtex.fields.author ?? '')
+	}
 
-    getSuggestions(context: EditorSuggestContext): string[] {
-        // generate suggestion items based on the context
-        const query = context.query
-        return Object.values(this.bibtex_dict)
-            .filter((bibtex) => match_query(bibtex, query))
-            .map((bibtex: BibtexElement) => String(bibtex.fields.id))
-    }
+	selectSuggestion(id: string, _evt: MouseEvent | KeyboardEvent): void {
+		const bibtex = this.bibtex_dict[id]
+		let insert = bibtex.fields.id
+		if (this.bracket_end === '') {
+			insert += this.bracket_start === '{' ? '}' : ']'
+		}
+		if (this.code_end === '') {
+			insert += '`'
+		}
 
-    renderSuggestion(id: string, el: HTMLElement): void {
-        // render each suggestion item
-        const bibtex = this.bibtex_dict[id]
-        el.createEl('code', { text: bibtex.fields.id, cls: 'bibtex-prompt-id' })
-        el.createEl('div', { text: bibtex.fields.title, cls: 'bibtex-prompt-title' })
-        el.createEl('small', { text: bibtex.fields.author, cls: 'bibtex-prompt-author' })
-    }
-
-    selectSuggestion(id: string, evt: MouseEvent | KeyboardEvent): void {
-        // handle the selection of a suggestion
-        const bibtex = this.bibtex_dict[id]
-        let str = bibtex.fields.id
-        if (this.bracket_end === '') {
-            str += (this.bracket_start === '{') ? ('}') : (']')
-        }
-        if (this.code_end === '') {
-            str += '`'
-        }
-
-        this.editor.replaceRange(
-            str,
-            this.trigger_info.start,
-            this.trigger_info.end,
-        )
-        this.editor.setCursor(
-            this.trigger_info.start.line,
-            this.trigger_info.start.ch + bibtex.fields.id.length + 2,
-        )
-    }
+		this.editor.replaceRange(
+			insert,
+			this.trigger_info.start,
+			this.trigger_info.end,
+		)
+		// Caret after the text we inserted (id only, or id + closers).
+		this.editor.setCursor(
+			this.trigger_info.start.line,
+			this.trigger_info.start.ch + insert.length,
+		)
+	}
 }
 
+/** Settings helper: pick a vault folder path. */
 export class FolderSuggest extends AbstractInputSuggest<string> {
-    private folders: string[];
+	private folders: string[]
 
-    constructor(app: App, inputEl: HTMLInputElement) {
-        super(app, inputEl);
-        // Get all folders and include root folder
-        this.folders = ["/"].concat(this.app.vault.getAllFolders().map(folder => folder.path));
-    }
+	constructor(app: App, inputEl: HTMLInputElement) {
+		super(app, inputEl)
+		this.folders = ['/'].concat(this.app.vault.getAllFolders().map((folder) => folder.path))
+	}
 
-    getSuggestions(inputStr: string): string[] {
-        const inputLower = inputStr.toLowerCase();
-        return this.folders.filter(folder =>
-            folder.toLowerCase().includes(inputLower)
-        );
-    }
+	getSuggestions(inputStr: string): string[] {
+		const q = inputStr.toLowerCase()
+		return this.folders.filter((folder) => folder.toLowerCase().includes(q))
+	}
 
-    renderSuggestion(folder: string, el: HTMLElement): void {
-        el.createEl("div", { text: folder });
-    }
+	renderSuggestion(folder: string, el: HTMLElement): void {
+		el.createEl('div', { text: folder })
+	}
 
-    selectSuggestion(folder: string): void {
-        // @ts-ignore
-        this.textInputEl.value = folder;
-        const event = new Event('input');
-        // @ts-ignore
-        this.textInputEl.dispatchEvent(event);
-        this.close();
-    }
+	selectSuggestion(folder: string): void {
+		apply_suggest_value(this, folder)
+	}
 }
 
+/** Settings helper: pick a markdown file path. */
 export class FileSuggest extends AbstractInputSuggest<string> {
-    private files: string[];
+	private files: string[]
 
-    constructor(app: App, inputEl: HTMLInputElement) {
-        super(app, inputEl);
-        // collect all files
-        this.files = this.app.vault.getFiles().filter(f => f.extension === 'md').map(f => f.path);
-    }
+	constructor(app: App, inputEl: HTMLInputElement) {
+		super(app, inputEl)
+		this.files = this.app.vault.getFiles()
+			.filter((f) => f.extension === 'md')
+			.map((f) => f.path)
+	}
 
-    getSuggestions(inputStr: string): string[] {
-        const inputLower = inputStr.toLowerCase();
-        return this.files.filter(file =>
-            file.toLowerCase().includes(inputLower)
-        );
-    }
+	getSuggestions(inputStr: string): string[] {
+		const q = inputStr.toLowerCase()
+		return this.files.filter((file) => file.toLowerCase().includes(q))
+	}
 
-    renderSuggestion(file: string, el: HTMLElement): void {
-        el.createEl("div", { text: file });
-    }
+	renderSuggestion(file: string, el: HTMLElement): void {
+		el.createEl('div', { text: file })
+	}
 
-    selectSuggestion(file: string): void {
-        // @ts-ignore
-        this.textInputEl.value = file;
-        const event = new Event('input');
-        // @ts-ignore
-        this.textInputEl.dispatchEvent(event);
-        this.close();
-    }
+	selectSuggestion(file: string): void {
+		apply_suggest_value(this, file)
+	}
+}
+
+/**
+ * Write the chosen path into the bound input and notify Setting.onChange.
+ * `setValue` alone does not fire `input`, which is what addSearch wires to.
+ */
+function apply_suggest_value(suggest: AbstractInputSuggest<string>, value: string): void {
+	suggest.setValue(value)
+	const input = (suggest as unknown as { textInputEl?: HTMLInputElement | HTMLDivElement }).textInputEl
+	input?.dispatchEvent(new Event('input'))
+	suggest.close()
 }

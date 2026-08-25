@@ -4,6 +4,45 @@
 
 ![img](/gallery/bibtex-scholar.png)
 
+## About this fork
+
+This repository is a maintained fork of [liu-qilong/bibtex-scholar](https://github.com/liu-qilong/bibtex-scholar). The product idea is unchanged: BibTeX lives in Markdown notes, inline cite chips open a citation card, and a paper panel browses the library. We still use a custom field parser (same general approach as upstream), not a full BibTeX/CSL stack.
+
+What we focused on is hardening and UX around that core:
+
+| Area | In this fork |
+|------|----------------|
+| **Architecture** | Logic split into smaller modules (cache, vault scan, scale caps, popup controller, pin registry, TeX display, indexes, …) instead of living mostly in a few large files |
+| **UI** | Floating citation cards (portal + placement), pin and drag, action strip, discover + virtualized list panel modes, scroll and layout polish |
+| **Scale** | Explicit work for larger libraries: mount caps, list virtualization, path fingerprints, chunked rescan, cite reverse index, search debounce / corpus cache (see `SPEED.md`) |
+| **Display** | Dedicated TeX → Unicode path, font markup (`{\itshape …}`, accents, …), search folding |
+| **Trust** | Coalesced saves, soft uncache with undo, idle/unload checks, clash source tags, automated tests (~370) and short design/trust notes under `docs/` |
+| **Mobile** | Installable pass: icon sizing, tap-to-open (no hover-only close races), safe-area corner actions—not a full mobile redesign |
+
+**Intentionally not goals (for now):** CSL / styled citation export, replacing the parser with a standards library, or treating mobile as the primary platform.
+
+In short: a note-native BibTeX Scholar descendant aimed at larger vaults and more stable UI, still the same workflow—not a Zotero reimplementation inside Obsidian. Upstream maintainers: the table above plus `docs/roadmap.md` / `SPEED.md` are the shortest map of what diverged and what is still open. How the tree is laid out on disk is in [`docs/RESEGMENT.md`](docs/RESEGMENT.md).
+
+### Contributing this back upstream
+
+Functional review of this work already happened against a separate, unrelated-history cut of the same changes (unit branches / merge cascade). That process is **done** and is not how this repository is maintained or re-reviewed.
+
+This repo shares git ancestry with [liu-qilong/bibtex-scholar](https://github.com/liu-qilong/bibtex-scholar) again (upstream has already taken some fork commits, e.g. DOI-collision handling). The agreed path to land the rest is a **draft PR of the full delta** after a **rebase onto current upstream `main`** for a clean, linear history—not a stack of unit PRs and not a file-by-file copy from resegment markers.
+
+Typical sequence from this tree:
+
+```bash
+git remote add upstream git@github.com:liu-qilong/bibtex-scholar.git   # once
+git fetch upstream
+git checkout -b upstream-draft main
+git rebase upstream/main          # resolve conflicts; worth it for a clean PR history
+# open a draft PR: this branch → liu-qilong/bibtex-scholar:main
+```
+
+The PR will be large on purpose. Use the area table above (and `docs/roadmap.md` / `SPEED.md`) as the reading guide; `docs/RESEGMENT.md` only documents module folders and historical unit labels, not an alternate merge procedure.
+
+---
+
 ## Why choose BibTeX Scholar? 💡
 
 Traditional reference managers organize papers in flat folders, leading to the lack of context:
@@ -41,9 +80,9 @@ With BibTeX Scholar, you can:
 
 - **Add BibTeX anywhere**: Insert BibTeX code blocks in any note.
 - **Cite anywhere**: Instantly cite papers via smart ``` `{ID}` ``` or ``` `[ID]` ``` inline formats with autocomplete
-- **Rich citation popover**: Hover for title, authors, abstract & quick actions (open associated paper note, attach PDF, search mentions, copy BibTeX/LaTeX keys, etc.)
-- **Global search/filter panel**: Find and filter papers from all your entries
-- **One-click copy**: Export all BibTeX entries for LaTeX manuscripts
+- **Rich citation popover**: Hover for title, authors, abstract & quick actions (open associated paper note, attach PDF, search mentions, copy BibTeX/LaTeX keys, etc.) — pin a card to keep it open across notes and drag it around, e.g. to compare two papers side by side
+- **Global search/filter panel**: Browse your library in a discover (random sample) or list (sortable, virtualized) view, filter/search, and spot citekey/DOI collisions or references missing a PDF
+- **Copy & export**: Copy BibTeX to the clipboard, or export it to a `.bib` file — for the whole library, one note, or a whole folder (everything it sources or cites)
 - **PDF & notes management**: Attach PDFs and link notes to each entry
 
 ## Getting started ⚙️
@@ -118,11 +157,21 @@ _P.S. I personally don't like to add all papers from those conferences, as each 
 ### Inline citation
 
 - Use `` `{ID}` `` for a compact, hoverable reference
-- Use `` `[ID]` `` for always-expanded details
+- Use `` `[ID]` `` to open the details card when the cite is shown
 
 ![img](/gallery/bibtex-hover.png)
 
-As you can see here, following the title are the utility buttons and paper details. There are 3 groups of utilities:
+Citation details open in a **floating card** (not inline in the paragraph), so the note layout does not jump:
+
+- **Hover** a chip for ~250 ms to open (or **click** the chip for immediate open / toggle)
+- Move onto the card to keep it open; leave chip and card to close
+- Press **Esc** to dismiss without losing focus for typing (stays dismissed until you leave the chip)
+- Click **outside** the card to close
+- Click the pin button beside × to **pin** the card: it stays open even if you switch notes, and you can **drag it** by its title bar. A pinned card only closes when you unpin it, click its ×, or press Esc (which closes the front-most pin first if several are open). Pins don't survive restarting Obsidian.
+
+The bottom of the card always shows a short reminder of how to close it, so this isn't something you need to memorize.
+
+The card has 3 groups of utilities:
 
 - Copyable:
   - `id`: Copy paper's ID
@@ -147,18 +196,30 @@ You can also use [Templater](https://github.com/SilentVoid13/Templater) plugin f
 
 Example template: [paper-note-template.md](/gallery/paper-note-template.md)
 
-### Copy all BibTeX
+### Copy & export BibTeX
 
-When writing LaTeX manuscript, it's very convenient to copy all BibTeX entries at once and place it to your `.bib` file. Just click the button ![img](/gallery/scroll-text.jpeg) on the left ribbon.
+When writing a LaTeX manuscript, it's very convenient to copy all BibTeX entries at once. Click the button ![img](/gallery/scroll-text.jpeg) on the left ribbon to copy your whole library to the clipboard, or open **Copy / export** from the paper panel's corner buttons (see [Paper panel](#paper-panel)) for the same clipboard actions plus writing a `.bib` file straight into your vault.
+
+Right-click a note in the file explorer for per-file actions: copy it as standard markdown (cites become links) or with `\autocite{}`, or uncache just that note's entries. Right-click a **folder** to export a `.bib` file for everything sourced from or cited anywhere in that folder — including citations to papers whose BibTeX block actually lives elsewhere in the vault.
+
+### Excluding a note from BibTeX
+
+Add a `bibtex-ignore` property (checked/`true`) to a note's frontmatter to keep the plugin from ever reading it: its ```bibtex blocks are shown as plain text instead of being cached, and the note is skipped by rescans, citekey-rename scans, and folder export. Useful for templates or draft notes with example/dummy BibTeX you don't want polluting your library. If the note was already cached before you added the property, run **Recache from vault** (paper panel's cache-management corner button) once to drop its entries.
 
 ### Paper panel
 
-You can click ![img](/gallery/scan-search.jpeg) on the left ribbon to open the paper panel to the right sidebar. From there, you can search and filter your papers easily:
+You can click ![img](/gallery/paper-panel.jpeg) on the left ribbon to open the paper panel to the right sidebar. If a paper panel is already open, the click focuses that one instead of creating another; **Shift-click** opens an additional panel (you can still drag panels wherever you want). From there, you can search and filter your papers easily:
 
 - You can search with various queries separated with `;`: e.g. `John;2020`
 - You can filter specific fields: e.g. `author:John;year:2020`
 
-You can open multiple paper panels and draw them to the place you want.
+The switch at the top of the panel toggles between **Discover** (a random, re-rollable sample of your library — good for browsing) and **List** (every match, sortable A–Z or by **Most cited**, virtualized so it stays fast at any library size). Either view, hovering a citekey opens the same floating card described above.
+
+The compare-icon button in the panel recaches from the vault and lists citekey/DOI collisions.
+Enabling **Missing PDF panel** in settings adds a second toggle beside it that lists cached
+references with no matching PDF file — an occasional cleanup check, off by default.
+
+Two more icons sit in the bottom-right corner of the panel: one opens **cache management** (recache, hard reset, or explicitly uncache the current file / the whole cache), the other opens **copy / export** (see [Copy & export BibTeX](#copy--export-bibtex) above).
 
 ## Future plan 🤖
 

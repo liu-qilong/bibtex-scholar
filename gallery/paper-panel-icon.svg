@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" fill="none">
+  <!--
+    Paper-panel icon — Obsidian 100×100 addIcon space (not Lucide 24-grid).
+
+    Overlap: no clipPath. Paint order does the work —
+      1) back sheet + peek bars
+      2) front sheet with opaque paper fill (var(--background-primary))
+      3) front text bars
+    The front face covers anything from the back that would show through.
+    Do not insert a hard-coded white “mask” rect (breaks dark theme / easy to mis-transform in Inkscape).
+
+    Filled-shape logo for ribbon/tab size (~18px):
+      • thick paper frames (stroke 7.5)
+      • filled text capsules (h=6.5)
+      • reduced copy: title + 2 full + 2×2-col; back peeks as 3 bars
+
+    Keep this file in sync with addIcon(...) in src/panel.ts.
+  -->
+  <!-- Back paper (lower-left) -->
+  <rect x="6" y="20" width="56" height="73" rx="9"
+        fill="var(--background-primary, #fff)" stroke="currentColor" stroke-width="7.5" stroke-linejoin="round"/>
+  <rect x="13" y="46.75" width="22" height="6.5" rx="3.25" fill="currentColor"/>
+  <rect x="13" y="58.75" width="22" height="6.5" rx="3.25" fill="currentColor"/>
+  <rect x="13" y="70.75" width="22" height="6.5" rx="3.25" fill="currentColor"/>
+
+  <!-- Front paper (upper-right) — drawn last so its fill occludes the back -->
+  <rect x="33" y="6" width="56" height="73" rx="9"
+        fill="var(--background-primary, #fff)" stroke="currentColor" stroke-width="7.5" stroke-linejoin="round"/>
+  <!-- title -->
+  <rect x="47" y="14.75" width="26" height="6.5" rx="3.25" fill="currentColor"/>
+  <!-- full-width lines -->
+  <rect x="40" y="26.75" width="44" height="6.5" rx="3.25" fill="currentColor"/>
+  <rect x="40" y="37.75" width="44" height="6.5" rx="3.25" fill="currentColor"/>
+  <!-- two-column body -->
+  <rect x="40" y="50.75" width="17" height="6.5" rx="3.25" fill="currentColor"/>
+  <rect x="63" y="50.75" width="21" height="6.5" rx="3.25" fill="currentColor"/>
+  <rect x="40" y="62.75" width="17" height="6.5" rx="3.25" fill="currentColor"/>
+  <rect x="63" y="62.75" width="21" height="6.5" rx="3.25" fill="currentColor"/>
+</svg>

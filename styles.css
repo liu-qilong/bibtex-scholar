@@ -7,15 +7,23 @@ If your plugin does not need CSS, delete this file.
 
 */
 
-/* bibtex entry & hover */
+/* ── Cite chip (in text flow) ───────────────────────────────────────── */
+.bibtex-hover-chip {
+    display: inline;
+}
+
 .bibtex-hover button {
     --o-border: 1px solid var(--background-modifier-border);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--font-ui-small);
-    padding: var(--size-4-1) var(--size-4-3);
-    height: var(--input-height);
+    /* --bibtex-panel-chip-font-size is set on .bibtex-panel-list by discover mode
+     * only (see "Paper panel chip text size" setting) — inline in-note chips never
+     * have an ancestor setting it, so they keep the normal UI-small size. */
+    font-size: var(--bibtex-panel-chip-font-size, var(--font-ui-small));
+    padding: 0 var(--size-4-2);
+    min-height: calc(var(--input-height) * 0.85);
+    height: auto;
     font-weight: var(--input-font-weight);
     cursor: var(--cursor);
     font-family: inherit;
@@ -25,26 +33,951 @@ If your plugin does not need CSS, delete this file.
     background-color: var(--background-primary);
     color: var(--color-accent);
     border: var(--o-border);
-    border-radius: var(--ulu-radius) !important;
-    transition: .3s;
+    border-radius: var(--radius-s, 4px);
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
     box-shadow: none;
+    vertical-align: baseline;
+}
+
+.bibtex-hover button:hover,
+.bibtex-hover button:focus-visible {
+    background-color: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
 }
 
 .bibtex-hover-duplicate-id button {
-    background-color: crimson !important;
+    background-color: var(--background-modifier-error, crimson) !important;
+    color: var(--text-on-accent, #fff) !important;
+    border-color: transparent !important;
 }
 
-.bibtex-hover-button-bar button {
-    font-size: small;
-}
-
-.bibtex-markdown-rendered p {
-    font-size: small;
+/*
+ * Live Preview only: keep chips on the text baseline so an end-of-line chip
+ * does not inflate the line box or leave the next soft-wrapped line looking
+ * indented (a common side effect of tall inline-flex + CM widget buffers —
+ * see codemirror/dev#989). Panel chips keep the larger min-height above.
+ */
+.bibtex-cm-widget,
+.bibtex-cm-widget .bibtex-hover,
+.bibtex-cm-widget .bibtex-hover-chip {
+    display: inline;
+    vertical-align: baseline;
+    line-height: inherit;
     margin: 0;
+    padding: 0;
+    border: none;
+    /* Avoid an extra wrap opportunity from nested inline boxes. */
+    white-space: nowrap;
+}
+
+.bibtex-cm-widget .bibtex-hover button {
+    display: inline-block;
+    vertical-align: baseline;
+    /* Match body line metrics — do not use --input-height here. */
+    min-height: 0;
+    height: auto;
+    line-height: 1.2;
+    padding: 0 0.35em;
+    margin: 0;
+    box-sizing: border-box;
+    /* Slightly under body so the chip sits in the line, not on top of it. */
+    font-size: 0.92em;
+}
+
+/* Zero-size buffers next to our chips still participate in wrap decisions
+ * if they keep height: 1em; collapse them so wrap breaks on real text only. */
+.markdown-source-view.mod-cm6 .cm-line:has(.bibtex-cm-widget) > .cm-widgetBuffer {
+    height: 0 !important;
+    width: 0 !important;
+    vertical-align: baseline !important;
+    overflow: hidden;
+}
+
+/* Reading-view inline cite whose key is not in the plugin cache (no toast spam). */
+code.bibtex-cite-unknown {
+    color: var(--text-muted);
+    border-bottom: 1px dashed var(--text-error, crimson);
+    cursor: help;
+}
+
+/* "source" tag in a ```bibtex codeblock — clash label or paint-time "not cached".
+ * Specificity beats theme `code` color rules; data-citekey is set for post-scan patch. */
+code.bibtex-source-tag.is-clashing {
+    color: var(--text-error, crimson);
+    font-weight: var(--font-semibold, 600);
+}
+
+/* Undo link inside a Notice after vault-delete uncache. */
+.bibtex-notice-undo {
+    margin-left: 0.35em;
+    font-weight: var(--font-semibold, 600);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* ── Floating citation card ─────────────────────────────────────────── */
+/* --bibtex-card-font-size is set from plugin settings (default 13px). */
+.bibtex-hover-card.is-floating {
+    --bibtex-card-font-size: 13px;
+    /* Field list / abstract line metrics — keep scroll caps on whole lines. */
+    --bibtex-field-lh: 1.4;
+    --bibtex-abstract-max-lines: 8;
+    --bibtex-abstract-pad-y: 0.4em;
+    /* Sub-pixel / border fudge so “almost 8 lines” does not create scroll play. */
+    --bibtex-scroll-slack: 2px;
+    /*
+     * Content budget + one field-line of slack so dense field lists that
+     * almost fit (long author row + many short fields on a normal-width card)
+     * do not get a useless sub-line scrollbar. JS absorb covers residual cases.
+     */
+    --bibtex-card-max-block: calc(40em + (var(--bibtex-field-lh, 1.4) * 1em));
+    position: fixed;
+    z-index: var(--layer-popover, 30);
+    top: 0;
+    left: 0;
+    visibility: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55em;
+    width: min(32em, calc(100vw - 16px));
+    max-height: min(70vh, var(--bibtex-card-max-block));
+    /* dvh shrinks with the on-screen keyboard (vh does not on iOS/most
+     * Android WebViews); unsupported browsers keep the vh line above. */
+    max-height: min(70dvh, var(--bibtex-card-max-block));
+    /* Tighter top so Pin/Close sit near the card edge; keep side/bottom room. */
+    padding: 0.45em 0.85em 0.85em;
+    font-size: var(--bibtex-card-font-size);
+    line-height: 1.35;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 8px);
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.04),
+        0 8px 28px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+}
+
+.bibtex-hover-card.is-floating.is-positioned {
+    visibility: visible;
+    animation: bibtex-card-in 0.12s ease-out;
+}
+
+/* Pinned: detached from any anchor, draggable, own z-order (set inline via
+ * style.zIndex — see hover.tsx). Transient previews stack above pins so a
+ * live hover can be inspected over pin clutter. A slightly stronger shadow
+ * reads as "floating/detached" rather than "anchored to a chip."
+ * Drag from empty chrome (padding/gaps), not title/actions/fields. */
+.bibtex-hover-card.is-floating.is-pinned {
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.06),
+        0 12px 32px rgba(0, 0, 0, 0.28);
+    cursor: grab;
+    /* Own the gesture on empty chrome; interactive children override below. */
+    touch-action: none;
+}
+
+.bibtex-hover-card.is-floating.is-pinned[data-dragging='1'] {
+    cursor: grabbing;
+}
+
+/* Interactive surfaces keep their own cursors / touch behavior. */
+.bibtex-hover-card.is-floating.is-pinned button,
+.bibtex-hover-card.is-floating.is-pinned a,
+.bibtex-hover-card.is-floating.is-pinned .is-copyable,
+.bibtex-hover-card.is-floating.is-pinned .bibtex-field-copy,
+.bibtex-hover-card.is-floating.is-pinned .bibtex-hover-button-bar {
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+/* Field list: pan-y for abstract scroll; empty row space inherits grab for drag. */
+.bibtex-hover-card.is-floating.is-pinned .bibtex-card-fields {
+    touch-action: pan-y;
+}
+
+.bibtex-hover-card.is-floating.is-pinned .bibtex-card-field-key {
+    cursor: grab;
+}
+
+/* Settings: “Wider citation cards” — more horizontal room; abstract still 8 lines. */
+.bibtex-hover-card.is-floating.is-wide {
+    --bibtex-card-max-block: calc(44em + (var(--bibtex-field-lh, 1.4) * 1em));
+    width: min(44em, calc(100vw - 16px));
+    max-height: min(75vh, var(--bibtex-card-max-block));
+    max-height: min(75dvh, var(--bibtex-card-max-block));
+}
+
+/*
+ * When the card opens above the chip, only the scrollable field list moves to
+ * the far edge. Chrome (controls → title → actions) stays on the near-cursor
+ * edge. Within chrome when flipped, the affordance reorders last so Pin/Close
+ * sit on the outermost near-chip edge.
+ */
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-fields {
+    order: -1;
+}
+
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-affordance {
+    order: 1;
+}
+
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-chrome {
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 0.55em;
+}
+
+.bibtex-hover-card.is-floating.is-flipped .bibtex-card-affordance {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+    border-top: 1px solid var(--background-modifier-border);
+    margin-top: 0.15em;
+    padding-top: 0.28em;
+    align-self: stretch;
+}
+
+.bibtex-hover-card.is-floating:not(.is-flipped) .bibtex-card-chrome .bibtex-hover-button-bar {
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 0.45em;
+    margin-top: 0;
+}
+
+@keyframes bibtex-card-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Near-chip chrome: thin controls → key → title → action strip. */
+.bibtex-card-chrome {
+    --bibtex-chrome-gap: 0.4em;
+    --bibtex-action-label: 4em;
+    --bibtex-action-label-gutter: 0.85em;
+    --bibtex-action-tile-inset: calc(
+        var(--bibtex-action-label) + var(--bibtex-action-label-gutter)
+    );
+    /*
+     * Title measure (typesetting): ~45–75 characters per line (Bringhurst /
+     * Baymard / USWDS); headings favor the shorter end. Applied in `ch` on the
+     * title itself so measure tracks title size, not the card base.
+     */
+    --bibtex-title-measure: 42ch;
+    --bibtex-title-inline-pad: 0.65em;
+    display: flex;
+    flex-direction: column;
+    gap: var(--bibtex-chrome-gap);
+    flex: 0 0 auto;
+    min-width: 0;
+    align-items: stretch;
+}
+
+/* Header — centered key, then undisputed title band. */
+.bibtex-card-header {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5em;
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+/* Citekey: centered theme chip — quiet companions (year · type) beside it. */
+.bibtex-card-keyline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35em 0.55em;
+    min-width: 0;
+    padding: 0;
+}
+
+.bibtex-card-id {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 0.1em 0.4em;
+    font-size: 0.92em;
+    font-weight: var(--font-semibold, 600);
+    line-height: 1.3;
+    color: var(--text-accent);
+    background: var(--background-secondary);
+    border-radius: var(--radius-s, 3px);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.bibtex-card-meta {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3em 0.4em;
+    font-size: 0.78em;
+    font-weight: 400;
+    color: var(--text-faint);
+    line-height: 1.25;
+}
+
+.bibtex-card-meta-sep {
+    opacity: 0.7;
+    user-select: none;
+}
+
+.bibtex-card-year,
+.bibtex-card-type {
+    opacity: 1;
+}
+
+.bibtex-card-type {
+    text-transform: lowercase;
+    font-variant: small-caps;
+    letter-spacing: 0.04em;
+}
+
+/*
+ * Title — plain block (never h1–h6). Whole surface is the copy control
+ * (DOI flash language on click). Bounds via measure + side padding.
+ */
+.bibtex-card-title-row {
+    display: flex;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 0.1em var(--bibtex-title-inline-pad) 0.15em;
+}
+
+.bibtex-card-title {
+    box-sizing: border-box;
+    width: fit-content;
+    max-width: min(100%, var(--bibtex-title-measure));
+    min-width: 0;
+    margin: 0;
+    padding: 0.05em 0.1em;
+    border: none;
+    border-radius: var(--radius-s, 4px);
+    background: none;
+    font-size: 1.12em;
+    font-weight: var(--font-bold, 700);
+    font-family: inherit;
+    line-height: 1.38;
+    color: var(--text-normal);
+    text-align: left;
+    overflow-wrap: break-word;
+    word-break: normal;
+    hyphens: manual;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+    overflow: visible;
+    transition: color 0.14s ease, opacity 0.14s ease;
+}
+
+/* Hover/focus: text only — no background slab (shared with field .is-copyable). */
+.bibtex-card-title.is-copyable:hover,
+.bibtex-card-title.is-copyable:focus-visible {
+    color: var(--text-accent);
+    opacity: 1;
+    outline: none;
+}
+
+.bibtex-card-title.is-copy-flash {
+    color: var(--color-green, #3cb371);
+    transition: color 0.08s ease;
+}
+
+/* Pin glyph inside the affordance text control — sized to the compact strip. */
+.bibtex-card-pin-icon {
+    width: 10px;
+    height: 10px;
+    flex: 0 0 auto;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+}
+
+.bibtex-card-affordance-action.is-active .bibtex-card-pin-head {
+    fill: currentColor;
+}
+
+/*
+ * Panel setIcon glyphs — Obsidian removed setIcon(…, size); size is CSS via
+ * --icon-size (--icon-xs|s|m|l). Growing only the button on mobile left icons
+ * tiny; keep glyph scale tied to the control on every platform.
+ */
+.bibtex-panel-corner-btn,
+.bibtex-panel-clash-btn,
+.bibtex-panel-missing-pdf-btn,
+.bibtex-panel-view-toggle-knob {
+    --icon-size: var(--icon-s, 16px);
+}
+
+.bibtex-panel-corner-btn svg,
+.bibtex-panel-clash-btn svg,
+.bibtex-panel-missing-pdf-btn svg,
+.bibtex-panel-view-toggle-knob svg {
+    width: var(--icon-size);
+    height: var(--icon-size);
+    flex-shrink: 0;
+}
+
+.is-mobile .bibtex-panel-corner-btn {
+    width: 2.75em;
+    height: 2.75em;
+    --icon-size: var(--icon-l, 22px);
+}
+
+/* Touch floor for toolbar icon buttons (clash / missing-PDF). */
+.is-mobile .bibtex-panel-clash-btn,
+.is-mobile .bibtex-panel-missing-pdf-btn {
+    flex-basis: max(var(--input-height), 2.5em);
+    width: max(var(--input-height), 2.5em);
+    height: max(var(--input-height), 2.5em);
+    --icon-size: var(--icon-m, 18px);
+}
+
+.is-mobile .bibtex-panel-view-toggle {
+    width: calc(max(var(--input-height), 2.5em) * 1.9);
+    height: max(var(--input-height), 2.5em);
+}
+
+.is-mobile .bibtex-panel-view-toggle-knob {
+    width: calc(max(var(--input-height), 2.5em) - 4px);
+    height: calc(max(var(--input-height), 2.5em) - 4px);
+    --icon-size: var(--icon-s, 16px);
+}
+
+/* Corner buttons grew above (1.9em -> 2.75em); the gutter that keeps footer
+ * text and scroll content clear of them has to grow with it. */
+.is-mobile .bibtex-panel-root {
+    --bibtex-corner-actions-reserve: 6em;
+}
+
+/* Card action toolbar (id/bibtex/{ }/[ ]/cite/etc.) — height only, not width:
+ * text-label block buttons; height bumps toward the touch-target floor. */
+.is-mobile .bibtex-hover-card .bibtex-card-btn,
+.is-mobile .bibtex-hover-card a.bibtex-card-file-link,
+.is-mobile .bibtex-hover-card a.bibtex-card-file-link button {
+    min-height: max(var(--input-height, 2rem), 2.75em);
+}
+
+/* Discover chips: larger tap targets on phone (in-note CM chips stay compact). */
+.is-mobile .bibtex-panel-discover-chip .bibtex-hover button {
+    min-height: max(var(--input-height, 2rem), 2.5em);
+    padding: 0.35em 0.65em;
+}
+
+/* ── Action strip (command center) ────────────────────────────────────
+ * Block-button command rows (default) or legacy grouped toolbar.
+ * Rows: each band is caption + equal-flex tiles filling the same left/right
+ * bounds — not a global N-column matrix. Change row keeps key/uncache
+ * unbalanced for priority. See docs/action-strip-prototypes.md.
+ */
+
+.bibtex-hover-button-bar {
+    /* Caption/gutter tokens live on .bibtex-card-chrome; keep gap/min local. */
+    --bibtex-action-gap: 0.35em;
+    --bibtex-action-tile-min: 3.4em;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35em 0.4em;
+    align-items: center;
+    flex: 0 0 auto;
+    /* Border handled by chrome / flip state so it doesn't double with fields. */
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.bibtex-card-btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bibtex-action-gap);
+    align-items: center;
+    min-width: 0;
+}
+
+.bibtex-card-btn-group-cells {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bibtex-action-gap);
+    align-items: stretch;
+    min-width: 0;
+    flex: 0 1 auto;
+}
+
+/* Row captions — quieter than the block tiles they label. */
+.bibtex-card-btn-group-label {
+    display: none;
+    flex: 0 0 auto;
+    align-self: center;
+    box-sizing: border-box;
+    width: var(--bibtex-action-label);
+    min-width: var(--bibtex-action-label);
+    /* Gutter lives on the caption so tile bands still share a clean left edge. */
+    margin-right: var(--bibtex-action-label-gutter);
+    padding-right: 0.15em;
+    font-size: 0.58em;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    opacity: 0.85;
+    line-height: 1.2;
+    text-align: right;
+    user-select: none;
+    pointer-events: none;
+}
+
+/* LinkedFileButton: anchor is the tile shell; inner button fills it. */
+.bibtex-hover-card a.bibtex-card-file-link {
+    display: inline-flex;
+    box-sizing: border-box;
+    min-width: var(--bibtex-action-tile-min);
+    flex: 1 1 var(--bibtex-action-tile-min);
+    text-decoration: none;
+    color: inherit;
+}
+
+.bibtex-hover-card a.bibtex-card-file-link button {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+}
+
+/* Block buttons — solid tiles; rows layout sizes them via flex on the row */
+.bibtex-hover-card .bibtex-card-btn,
+.bibtex-hover-card a.bibtex-card-file-link button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: var(--bibtex-action-tile-min);
+    min-height: max(var(--input-height, 2rem), 2.1em);
+    height: auto;
+    padding: 0.35em 0.55em;
+    font-size: 0.88em;
+    font-weight: var(--input-font-weight, 500);
+    font-family: inherit;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: var(--cursor);
+    user-select: none;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 5px);
+    background-color: var(--background-primary);
+    color: var(--color-accent, var(--text-accent));
+    box-shadow: none;
+    transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+
+.bibtex-hover-card .bibtex-card-btn:hover,
+.bibtex-hover-card .bibtex-card-btn:focus-visible,
+.bibtex-hover-card a.bibtex-card-file-link button:hover,
+.bibtex-hover-card a.bibtex-card-file-link button:focus-visible {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+    outline: none;
+}
+
+.bibtex-hover-card .bibtex-card-btn:active,
+.bibtex-hover-card a.bibtex-card-file-link button:active {
+    background-color: var(--background-modifier-active-hover, var(--background-modifier-hover));
+}
+
+.bibtex-hover-card .bibtex-card-btn.is-danger {
+    color: var(--text-error, #e04646);
+    background-color: var(--background-primary);
+}
+
+.bibtex-hover-card .bibtex-card-btn.is-danger:hover,
+.bibtex-hover-card .bibtex-card-btn.is-danger:focus-visible {
+    background-color: var(--background-modifier-error, var(--text-error, #e04646));
+    border-color: var(--background-modifier-error, var(--text-error, #e04646));
+    color: var(--text-on-accent, #fff);
 }
 
 .bibtex-file-not-exist button {
-    color: gray !important;
+    color: var(--text-faint) !important;
+    border-style: dashed !important;
+    box-shadow: none !important;
+}
+
+/* --- layout: grouped (legacy toolbar) --- */
+.bibtex-hover-button-bar.is-layout-grouped {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.bibtex-hover-button-bar.is-layout-grouped .bibtex-card-btn-group + .bibtex-card-btn-group {
+    padding-left: 0.5em;
+    margin-left: 0.1em;
+    border-left: 1px solid var(--background-modifier-border);
+}
+
+/* --- layout: rows (blocky command bands) ---
+ * First-iteration balance: every row shares the same outer left/right edge
+ * (caption + cells band). Inside a multi-button row, tiles share width equally
+ * (auto-fit 1fr) — not a global N-column matrix. Change row is deliberately
+ * unbalanced: compact key, wider uncache.
+ */
+.bibtex-hover-button-bar.is-layout-rows {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.35em;
+    align-items: stretch;
+    width: 100%;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .bibtex-card-btn-group {
+    display: flex;
+    flex-wrap: nowrap;
+    flex-direction: row;
+    align-items: stretch;
+    /* Gap only between tiles lives on .cells; caption→tiles uses label gutter. */
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .bibtex-card-btn-group-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .bibtex-card-btn-group-cells {
+    display: grid;
+    /* Equal blocks within the row; min keeps tiles readable on narrow cards. */
+    grid-template-columns: repeat(auto-fit, minmax(var(--bibtex-action-tile-min), 1fr));
+    gap: var(--bibtex-action-gap);
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    align-items: stretch;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .bibtex-card-btn,
+.bibtex-hover-button-bar.is-layout-rows a.bibtex-card-file-link {
+    width: 100%;
+    min-width: 0;
+    flex: unset;
+    max-width: none;
+}
+
+.bibtex-hover-button-bar.is-layout-rows a.bibtex-card-file-link button {
+    width: 100%;
+}
+
+/* Change row: key stays compact; uncache takes the rest (priority by width). */
+.bibtex-hover-button-bar.is-layout-rows .is-change .bibtex-card-btn-group-cells {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--bibtex-action-gap);
+}
+
+.bibtex-hover-button-bar.is-layout-rows .is-change .bibtex-card-btn.is-priority-secondary {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: var(--bibtex-action-tile-min);
+    max-width: 6em;
+    padding-left: 0.7em;
+    padding-right: 0.7em;
+}
+
+.bibtex-hover-button-bar.is-layout-rows .is-change .bibtex-card-btn.is-priority-primary {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: var(--bibtex-action-tile-min);
+}
+
+/* Fields — grow with content; scroll only when the card hits its viewport max. */
+.bibtex-card-fields {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45em;
+    margin: 0 -0.15em;
+    padding: 0.1em 0.15em;
+    overscroll-behavior: contain;
+    /* Avoid reserving gutter when content fits (reduces “empty scroll” feel). */
+    scrollbar-gutter: auto;
+}
+
+.bibtex-card-field {
+    display: grid;
+    grid-template-columns: 5.5em minmax(0, 1fr);
+    gap: 0.35em 0.65em;
+    align-items: start;
+    font-size: 0.92em;
+    line-height: var(--bibtex-field-lh, 1.4);
+}
+
+.bibtex-card-field.is-abstract {
+    grid-template-columns: 1fr;
+}
+
+.bibtex-card-field-key {
+    color: var(--text-faint);
+    font-size: 0.78em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding-top: 0.15em;
+    word-break: break-all;
+}
+
+/* Layout cell only — full grid track; empty remainder is free for pin-drag. */
+.bibtex-card-field-val {
+    min-width: 0;
+    color: var(--text-normal);
+}
+
+/*
+ * Non-link values: block formatting context so the text-hugging copy surface
+ * does not leave an inline-block baseline strut (a few px of phantom height per
+ * row that adds up to sub-line field-list scroll on dense cards).
+ */
+.bibtex-card-field-val:not(.has-inline-copy) {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+/*
+ * Abstract: grow-to-fit, clamp at 8 full lines (plus padding). Scroll only when
+ * content exceeds that — not on fractional “almost fits” (line-based max-height
+ * + 2px slack). Short abstracts never get a nested scrollbar.
+ */
+.bibtex-card-field.is-abstract .bibtex-card-field-val {
+    box-sizing: border-box;
+    padding: var(--bibtex-abstract-pad-y, 0.4em) 0.5em;
+    background: var(--background-secondary);
+    border-radius: var(--radius-s, 4px);
+    /* 8 × line-box + vertical padding + sub-pixel slack */
+    max-height: calc(
+        (var(--bibtex-abstract-max-lines, 8) * 1em * var(--bibtex-field-lh, 1.4))
+        + (2 * var(--bibtex-abstract-pad-y, 0.4em))
+        + var(--bibtex-scroll-slack, 2px)
+    );
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: auto;
+}
+
+/* Markdown blocks inside abstract: no extra margins (they invent scroll play). */
+.bibtex-card-field.is-abstract .bibtex-card-field-val p {
+    margin: 0;
+}
+
+.bibtex-card-field.is-abstract .bibtex-card-field-val p + p {
+    margin-top: 0.35em;
+}
+
+/*
+ * Text-hugging copy hit target (not the whole value cell). Short author/year
+ * lines leave empty track space for drag; long abstract still max-width 100%.
+ */
+.bibtex-card-field-copy-surface.is-copyable {
+    /* block + fit-content: hug text for pin-drag gutters without baseline strut */
+    display: block;
+    box-sizing: border-box;
+    width: fit-content;
+    max-width: 100%;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    border-radius: var(--radius-s, 3px);
+    color: inherit;
+    transition: color 0.14s ease;
+}
+
+.bibtex-card-field-copy-surface.is-copyable:hover,
+.bibtex-card-field-copy-surface.is-copyable:focus-visible {
+    color: var(--text-accent);
+    outline: none;
+}
+
+.bibtex-card-field-copy-surface.is-copyable.is-copy-flash {
+    color: var(--color-green, #3cb371);
+    transition: color 0.08s ease;
+}
+
+.bibtex-card-field-copy-surface.is-copyable:hover a,
+.bibtex-card-field-copy-surface.is-copyable:focus-visible a {
+    color: var(--link-color, var(--text-accent));
+}
+
+.bibtex-card-field-copy-surface.is-copyable.is-copy-flash a {
+    color: var(--color-green, #3cb371);
+}
+
+/*
+ * DOI/URL: link + trailing copy glyph. Separate hit targets so tooltips stay
+ * distinct (“Open DOI” on the link vs “Copy DOI” on the glyph).
+ */
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-link-wrap {
+    display: inline;
+    max-width: calc(100% - 1.5em);
+}
+
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-link-wrap > div {
+    display: inline;
+}
+
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-link-wrap p,
+.bibtex-card-field-val.has-inline-copy .bibtex-card-field-link-wrap > div p {
+    display: inline;
+    margin: 0;
+}
+
+.bibtex-field-copy {
+    display: inline;
+    margin: 0 0 0 0.65em;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-faint);
+    opacity: 0.35;
+    cursor: pointer;
+    vertical-align: -0.05em;
+    line-height: 1;
+    font-size: 1em;
+    transition: opacity 0.15s ease, color 0.15s ease;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.bibtex-field-copy:hover,
+.bibtex-field-copy:focus-visible {
+    opacity: 0.95;
+    color: var(--text-muted);
+    outline: none;
+}
+
+.bibtex-field-copy.is-flash {
+    opacity: 1;
+    color: var(--color-green, #3cb371);
+    transition: opacity 0.08s ease, color 0.08s ease;
+}
+
+.bibtex-field-copy-icon {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.12em;
+}
+
+.bibtex-markdown-rendered p {
+    font-size: inherit;
+    margin: 0;
+    line-height: inherit;
+}
+
+.bibtex-markdown-rendered a {
+    color: var(--link-color, var(--text-accent));
+}
+
+/*
+ * Near-cursor card controls — controls stay content-width (centered); the
+ * separator rule spans the content area so it reads as a clear band without
+ * the Pin/Close cluster itself stretching edge-to-edge.
+ */
+.bibtex-card-affordance {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.05em 0.22em;
+    flex: 0 0 auto;
+    align-self: stretch;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: 0 0 0.28em;
+    border: none;
+    border-bottom: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 0.68em;
+    line-height: 1.05;
+    user-select: none;
+    box-sizing: border-box;
+}
+
+.bibtex-card-affordance-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.18em;
+    margin: 0;
+    padding: 0.02em 0.28em;
+    border: none !important;
+    border-radius: var(--radius-s, 4px) !important;
+    background: transparent !important;
+    color: var(--text-muted) !important;
+    font: inherit;
+    font-weight: 500;
+    line-height: 1.05;
+    cursor: var(--cursor);
+    box-shadow: none !important;
+}
+
+.bibtex-card-affordance-action:hover,
+.bibtex-card-affordance-action:focus-visible {
+    background: var(--background-modifier-hover) !important;
+    color: var(--text-normal) !important;
+    outline: none;
+}
+
+.bibtex-card-affordance-action.is-active {
+    color: var(--text-accent) !important;
+    background: var(--background-modifier-hover) !important;
+}
+
+.bibtex-card-affordance-sep {
+    color: var(--text-faint);
+    opacity: 0.85;
+    user-select: none;
+    pointer-events: none;
+}
+
+.bibtex-card-affordance-hint {
+    color: var(--text-faint);
+    font-weight: 400;
+    cursor: help;
+}
+
+.is-mobile .bibtex-card-affordance-action {
+    /* Keep a usable tap target without fattening the desktop strip. */
+    min-height: max(var(--input-height, 2rem), 2.25em);
+    padding: 0.25em 0.55em;
+}
+
+/* Settings diagnostics (local only — no network). */
+.bibtex-diagnostics-report {
+    margin: 0.5em 0 1em;
+    padding: 0.75em 1em;
+    max-height: 16em;
+    overflow: auto;
+    font-size: var(--font-ui-smaller);
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
 }
 
 /* bibtex prompt */
@@ -59,1124 +992,511 @@ If your plugin does not need CSS, delete this file.
 
 /* bibtex paper panel */
 
-.bibtex-panel-query .setting-item-control, 
-.bibtex-panel-query .search-input-container {
-    width: 100% !important;
-}
-
-.bibtex-panel-query .setting-item {
-    display: block;
-}
-
-.bibtex-panel-query .search-input-container input {
-    border-bottom: 1px solid var(--background-modifier-border-focus);
-}
-
-/* katex */
-
-/* stylelint-disable font-family-no-missing-generic-family-keyword */
-  .katex {
-    font: normal 1.21em KaTeX_Main, Times New Roman, serif;
-    line-height: 1.2;
-    text-indent: 0;
-    text-rendering: auto;
-  }
-  .katex * {
-    -ms-high-contrast-adjust: none !important;
-  }
-  .katex * {
-    border-color: currentColor;
-  }
-  .katex .katex-version::after {
-    content: "0.16.11";
-  }
-  .katex .katex-mathml {
-    /* Accessibility hack to only show to screen readers
-     Found at: http://a11yproject.com/posts/how-to-hide-content/ */
-    position: absolute;
-    clip: rect(1px, 1px, 1px, 1px);
-    padding: 0;
-    border: 0;
-    height: 1px;
-    width: 1px;
-    overflow: hidden;
-  }
-  .katex .katex-html {
-    /* \newline is an empty block at top level, between .base elements */
-  }
-  .katex .katex-html > .newline {
-    display: block;
-  }
-  .katex .base {
+/* Panel fills its leaf; only the list scrolls, so the search/toggle row stays put
+ * and virtualized lists (list / missing-pdf mode) size to however tall the panel
+ * actually is, instead of an arbitrary max-height. */
+.bibtex-panel-root {
+    /* Single source of truth for how much right-side gutter footer/scroll
+     * regions must reserve to clear the floating corner actions — keeps
+     * that reservation in sync with .bibtex-panel-corner-btn's actual size
+     * (desktop vs. .is-mobile override below) instead of guessing per rule. */
+    --bibtex-corner-actions-reserve: 4.5em;
     position: relative;
-    display: inline-block;
-    white-space: nowrap;
-    width: -webkit-min-content;
-    width: -moz-min-content;
-    width: min-content;
-  }
-  .katex .strut {
-    display: inline-block;
-  }
-  .katex .textbf {
-    font-weight: bold;
-  }
-  .katex .textit {
-    font-style: italic;
-  }
-  .katex .textrm {
-    font-family: KaTeX_Main;
-  }
-  .katex .textsf {
-    font-family: KaTeX_SansSerif;
-  }
-  .katex .texttt {
-    font-family: KaTeX_Typewriter;
-  }
-  .katex .mathnormal {
-    font-family: KaTeX_Math;
-    font-style: italic;
-  }
-  .katex .mathit {
-    font-family: KaTeX_Main;
-    font-style: italic;
-  }
-  .katex .mathrm {
-    font-style: normal;
-  }
-  .katex .mathbf {
-    font-family: KaTeX_Main;
-    font-weight: bold;
-  }
-  .katex .boldsymbol {
-    font-family: KaTeX_Math;
-    font-weight: bold;
-    font-style: italic;
-  }
-  .katex .amsrm {
-    font-family: KaTeX_AMS;
-  }
-  .katex .mathbb,
-  .katex .textbb {
-    font-family: KaTeX_AMS;
-  }
-  .katex .mathcal {
-    font-family: KaTeX_Caligraphic;
-  }
-  .katex .mathfrak,
-  .katex .textfrak {
-    font-family: KaTeX_Fraktur;
-  }
-  .katex .mathboldfrak,
-  .katex .textboldfrak {
-    font-family: KaTeX_Fraktur;
-    font-weight: bold;
-  }
-  .katex .mathtt {
-    font-family: KaTeX_Typewriter;
-  }
-  .katex .mathscr,
-  .katex .textscr {
-    font-family: KaTeX_Script;
-  }
-  .katex .mathsf,
-  .katex .textsf {
-    font-family: KaTeX_SansSerif;
-  }
-  .katex .mathboldsf,
-  .katex .textboldsf {
-    font-family: KaTeX_SansSerif;
-    font-weight: bold;
-  }
-  .katex .mathitsf,
-  .katex .textitsf {
-    font-family: KaTeX_SansSerif;
-    font-style: italic;
-  }
-  .katex .mainrm {
-    font-family: KaTeX_Main;
-    font-style: normal;
-  }
-  .katex .vlist-t {
-    display: inline-table;
-    table-layout: fixed;
-    border-collapse: collapse;
-  }
-  .katex .vlist-r {
-    display: table-row;
-  }
-  .katex .vlist {
-    display: table-cell;
-    vertical-align: bottom;
-    position: relative;
-  }
-  .katex .vlist > span {
-    display: block;
-    height: 0;
-    position: relative;
-  }
-  .katex .vlist > span > span {
-    display: inline-block;
-  }
-  .katex .vlist > span > .pstrut {
-    overflow: hidden;
-    width: 0;
-  }
-  .katex .vlist-t2 {
-    margin-right: -2px;
-  }
-  .katex .vlist-s {
-    display: table-cell;
-    vertical-align: bottom;
-    font-size: 1px;
-    width: 2px;
-    min-width: 2px;
-  }
-  .katex .vbox {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
-    align-items: baseline;
-  }
-  .katex .hbox {
-    display: inline-flex;
-    flex-direction: row;
-    width: 100%;
-  }
-  .katex .thinbox {
-    display: inline-flex;
-    flex-direction: row;
-    width: 0;
-    max-width: 0;
-  }
-  .katex .msupsub {
-    text-align: left;
-  }
-  .katex .mfrac > span > span {
-    text-align: center;
-  }
-  .katex .mfrac .frac-line {
-    display: inline-block;
-    width: 100%;
-    border-bottom-style: solid;
-  }
-  .katex .mfrac .frac-line,
-  .katex .overline .overline-line,
-  .katex .underline .underline-line,
-  .katex .hline,
-  .katex .hdashline,
-  .katex .rule {
-    min-height: 1px;
-  }
-  .katex .mspace {
-    display: inline-block;
-  }
-  .katex .llap,
-  .katex .rlap,
-  .katex .clap {
-    width: 0;
-    position: relative;
-  }
-  .katex .llap > .inner,
-  .katex .rlap > .inner,
-  .katex .clap > .inner {
-    position: absolute;
-  }
-  .katex .llap > .fix,
-  .katex .rlap > .fix,
-  .katex .clap > .fix {
-    display: inline-block;
-  }
-  .katex .llap > .inner {
-    right: 0;
-  }
-  .katex .rlap > .inner,
-  .katex .clap > .inner {
-    left: 0;
-  }
-  .katex .clap > .inner > span {
-    margin-left: -50%;
-    margin-right: 50%;
-  }
-  .katex .rule {
-    display: inline-block;
-    border: solid 0;
-    position: relative;
-  }
-  .katex .overline .overline-line,
-  .katex .underline .underline-line,
-  .katex .hline {
-    display: inline-block;
-    width: 100%;
-    border-bottom-style: solid;
-  }
-  .katex .hdashline {
-    display: inline-block;
-    width: 100%;
-    border-bottom-style: dashed;
-  }
-  .katex .sqrt > .root {
-    /* These values are taken from the definition of `\r@@t`,
-     `\mkern 5mu` and `\mkern -10mu`. */
-    margin-left: 0.2777777778em;
-    margin-right: -0.5555555556em;
-  }
-  .katex .sizing.reset-size1.size1,
-  .katex .fontsize-ensurer.reset-size1.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size1.size2,
-  .katex .fontsize-ensurer.reset-size1.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 1.2em;
-  }
-  .katex .sizing.reset-size1.size3,
-  .katex .fontsize-ensurer.reset-size1.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 1.4em;
-  }
-  .katex .sizing.reset-size1.size4,
-  .katex .fontsize-ensurer.reset-size1.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 1.6em;
-  }
-  .katex .sizing.reset-size1.size5,
-  .katex .fontsize-ensurer.reset-size1.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 1.8em;
-  }
-  .katex .sizing.reset-size1.size6,
-  .katex .fontsize-ensurer.reset-size1.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 2em;
-  }
-  .katex .sizing.reset-size1.size7,
-  .katex .fontsize-ensurer.reset-size1.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 2.4em;
-  }
-  .katex .sizing.reset-size1.size8,
-  .katex .fontsize-ensurer.reset-size1.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 2.88em;
-  }
-  .katex .sizing.reset-size1.size9,
-  .katex .fontsize-ensurer.reset-size1.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 3.456em;
-  }
-  .katex .sizing.reset-size1.size10,
-  .katex .fontsize-ensurer.reset-size1.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 4.148em;
-  }
-  .katex .sizing.reset-size1.size11,
-  .katex .fontsize-ensurer.reset-size1.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 4.976em;
-  }
-  .katex .sizing.reset-size2.size1,
-  .katex .fontsize-ensurer.reset-size2.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.8333333333em;
-  }
-  .katex .sizing.reset-size2.size2,
-  .katex .fontsize-ensurer.reset-size2.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size2.size3,
-  .katex .fontsize-ensurer.reset-size2.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 1.1666666667em;
-  }
-  .katex .sizing.reset-size2.size4,
-  .katex .fontsize-ensurer.reset-size2.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 1.3333333333em;
-  }
-  .katex .sizing.reset-size2.size5,
-  .katex .fontsize-ensurer.reset-size2.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 1.5em;
-  }
-  .katex .sizing.reset-size2.size6,
-  .katex .fontsize-ensurer.reset-size2.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 1.6666666667em;
-  }
-  .katex .sizing.reset-size2.size7,
-  .katex .fontsize-ensurer.reset-size2.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 2em;
-  }
-  .katex .sizing.reset-size2.size8,
-  .katex .fontsize-ensurer.reset-size2.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 2.4em;
-  }
-  .katex .sizing.reset-size2.size9,
-  .katex .fontsize-ensurer.reset-size2.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 2.88em;
-  }
-  .katex .sizing.reset-size2.size10,
-  .katex .fontsize-ensurer.reset-size2.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 3.4566666667em;
-  }
-  .katex .sizing.reset-size2.size11,
-  .katex .fontsize-ensurer.reset-size2.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 4.1466666667em;
-  }
-  .katex .sizing.reset-size3.size1,
-  .katex .fontsize-ensurer.reset-size3.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.7142857143em;
-  }
-  .katex .sizing.reset-size3.size2,
-  .katex .fontsize-ensurer.reset-size3.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 0.8571428571em;
-  }
-  .katex .sizing.reset-size3.size3,
-  .katex .fontsize-ensurer.reset-size3.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size3.size4,
-  .katex .fontsize-ensurer.reset-size3.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 1.1428571429em;
-  }
-  .katex .sizing.reset-size3.size5,
-  .katex .fontsize-ensurer.reset-size3.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 1.2857142857em;
-  }
-  .katex .sizing.reset-size3.size6,
-  .katex .fontsize-ensurer.reset-size3.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 1.4285714286em;
-  }
-  .katex .sizing.reset-size3.size7,
-  .katex .fontsize-ensurer.reset-size3.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 1.7142857143em;
-  }
-  .katex .sizing.reset-size3.size8,
-  .katex .fontsize-ensurer.reset-size3.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 2.0571428571em;
-  }
-  .katex .sizing.reset-size3.size9,
-  .katex .fontsize-ensurer.reset-size3.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 2.4685714286em;
-  }
-  .katex .sizing.reset-size3.size10,
-  .katex .fontsize-ensurer.reset-size3.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 2.9628571429em;
-  }
-  .katex .sizing.reset-size3.size11,
-  .katex .fontsize-ensurer.reset-size3.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 3.5542857143em;
-  }
-  .katex .sizing.reset-size4.size1,
-  .katex .fontsize-ensurer.reset-size4.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.625em;
-  }
-  .katex .sizing.reset-size4.size2,
-  .katex .fontsize-ensurer.reset-size4.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 0.75em;
-  }
-  .katex .sizing.reset-size4.size3,
-  .katex .fontsize-ensurer.reset-size4.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 0.875em;
-  }
-  .katex .sizing.reset-size4.size4,
-  .katex .fontsize-ensurer.reset-size4.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size4.size5,
-  .katex .fontsize-ensurer.reset-size4.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 1.125em;
-  }
-  .katex .sizing.reset-size4.size6,
-  .katex .fontsize-ensurer.reset-size4.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 1.25em;
-  }
-  .katex .sizing.reset-size4.size7,
-  .katex .fontsize-ensurer.reset-size4.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 1.5em;
-  }
-  .katex .sizing.reset-size4.size8,
-  .katex .fontsize-ensurer.reset-size4.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 1.8em;
-  }
-  .katex .sizing.reset-size4.size9,
-  .katex .fontsize-ensurer.reset-size4.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 2.16em;
-  }
-  .katex .sizing.reset-size4.size10,
-  .katex .fontsize-ensurer.reset-size4.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 2.5925em;
-  }
-  .katex .sizing.reset-size4.size11,
-  .katex .fontsize-ensurer.reset-size4.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 3.11em;
-  }
-  .katex .sizing.reset-size5.size1,
-  .katex .fontsize-ensurer.reset-size5.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.5555555556em;
-  }
-  .katex .sizing.reset-size5.size2,
-  .katex .fontsize-ensurer.reset-size5.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 0.6666666667em;
-  }
-  .katex .sizing.reset-size5.size3,
-  .katex .fontsize-ensurer.reset-size5.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 0.7777777778em;
-  }
-  .katex .sizing.reset-size5.size4,
-  .katex .fontsize-ensurer.reset-size5.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 0.8888888889em;
-  }
-  .katex .sizing.reset-size5.size5,
-  .katex .fontsize-ensurer.reset-size5.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size5.size6,
-  .katex .fontsize-ensurer.reset-size5.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 1.1111111111em;
-  }
-  .katex .sizing.reset-size5.size7,
-  .katex .fontsize-ensurer.reset-size5.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 1.3333333333em;
-  }
-  .katex .sizing.reset-size5.size8,
-  .katex .fontsize-ensurer.reset-size5.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 1.6em;
-  }
-  .katex .sizing.reset-size5.size9,
-  .katex .fontsize-ensurer.reset-size5.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 1.92em;
-  }
-  .katex .sizing.reset-size5.size10,
-  .katex .fontsize-ensurer.reset-size5.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 2.3044444444em;
-  }
-  .katex .sizing.reset-size5.size11,
-  .katex .fontsize-ensurer.reset-size5.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 2.7644444444em;
-  }
-  .katex .sizing.reset-size6.size1,
-  .katex .fontsize-ensurer.reset-size6.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.5em;
-  }
-  .katex .sizing.reset-size6.size2,
-  .katex .fontsize-ensurer.reset-size6.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 0.6em;
-  }
-  .katex .sizing.reset-size6.size3,
-  .katex .fontsize-ensurer.reset-size6.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 0.7em;
-  }
-  .katex .sizing.reset-size6.size4,
-  .katex .fontsize-ensurer.reset-size6.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 0.8em;
-  }
-  .katex .sizing.reset-size6.size5,
-  .katex .fontsize-ensurer.reset-size6.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 0.9em;
-  }
-  .katex .sizing.reset-size6.size6,
-  .katex .fontsize-ensurer.reset-size6.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size6.size7,
-  .katex .fontsize-ensurer.reset-size6.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 1.2em;
-  }
-  .katex .sizing.reset-size6.size8,
-  .katex .fontsize-ensurer.reset-size6.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 1.44em;
-  }
-  .katex .sizing.reset-size6.size9,
-  .katex .fontsize-ensurer.reset-size6.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 1.728em;
-  }
-  .katex .sizing.reset-size6.size10,
-  .katex .fontsize-ensurer.reset-size6.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 2.074em;
-  }
-  .katex .sizing.reset-size6.size11,
-  .katex .fontsize-ensurer.reset-size6.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 2.488em;
-  }
-  .katex .sizing.reset-size7.size1,
-  .katex .fontsize-ensurer.reset-size7.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.4166666667em;
-  }
-  .katex .sizing.reset-size7.size2,
-  .katex .fontsize-ensurer.reset-size7.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 0.5em;
-  }
-  .katex .sizing.reset-size7.size3,
-  .katex .fontsize-ensurer.reset-size7.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 0.5833333333em;
-  }
-  .katex .sizing.reset-size7.size4,
-  .katex .fontsize-ensurer.reset-size7.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 0.6666666667em;
-  }
-  .katex .sizing.reset-size7.size5,
-  .katex .fontsize-ensurer.reset-size7.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 0.75em;
-  }
-  .katex .sizing.reset-size7.size6,
-  .katex .fontsize-ensurer.reset-size7.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 0.8333333333em;
-  }
-  .katex .sizing.reset-size7.size7,
-  .katex .fontsize-ensurer.reset-size7.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size7.size8,
-  .katex .fontsize-ensurer.reset-size7.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 1.2em;
-  }
-  .katex .sizing.reset-size7.size9,
-  .katex .fontsize-ensurer.reset-size7.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 1.44em;
-  }
-  .katex .sizing.reset-size7.size10,
-  .katex .fontsize-ensurer.reset-size7.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 1.7283333333em;
-  }
-  .katex .sizing.reset-size7.size11,
-  .katex .fontsize-ensurer.reset-size7.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 2.0733333333em;
-  }
-  .katex .sizing.reset-size8.size1,
-  .katex .fontsize-ensurer.reset-size8.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.3472222222em;
-  }
-  .katex .sizing.reset-size8.size2,
-  .katex .fontsize-ensurer.reset-size8.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 0.4166666667em;
-  }
-  .katex .sizing.reset-size8.size3,
-  .katex .fontsize-ensurer.reset-size8.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 0.4861111111em;
-  }
-  .katex .sizing.reset-size8.size4,
-  .katex .fontsize-ensurer.reset-size8.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 0.5555555556em;
-  }
-  .katex .sizing.reset-size8.size5,
-  .katex .fontsize-ensurer.reset-size8.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 0.625em;
-  }
-  .katex .sizing.reset-size8.size6,
-  .katex .fontsize-ensurer.reset-size8.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 0.6944444444em;
-  }
-  .katex .sizing.reset-size8.size7,
-  .katex .fontsize-ensurer.reset-size8.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 0.8333333333em;
-  }
-  .katex .sizing.reset-size8.size8,
-  .katex .fontsize-ensurer.reset-size8.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size8.size9,
-  .katex .fontsize-ensurer.reset-size8.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 1.2em;
-  }
-  .katex .sizing.reset-size8.size10,
-  .katex .fontsize-ensurer.reset-size8.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 1.4402777778em;
-  }
-  .katex .sizing.reset-size8.size11,
-  .katex .fontsize-ensurer.reset-size8.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 1.7277777778em;
-  }
-  .katex .sizing.reset-size9.size1,
-  .katex .fontsize-ensurer.reset-size9.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.2893518519em;
-  }
-  .katex .sizing.reset-size9.size2,
-  .katex .fontsize-ensurer.reset-size9.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 0.3472222222em;
-  }
-  .katex .sizing.reset-size9.size3,
-  .katex .fontsize-ensurer.reset-size9.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 0.4050925926em;
-  }
-  .katex .sizing.reset-size9.size4,
-  .katex .fontsize-ensurer.reset-size9.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 0.462962963em;
-  }
-  .katex .sizing.reset-size9.size5,
-  .katex .fontsize-ensurer.reset-size9.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 0.5208333333em;
-  }
-  .katex .sizing.reset-size9.size6,
-  .katex .fontsize-ensurer.reset-size9.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 0.5787037037em;
-  }
-  .katex .sizing.reset-size9.size7,
-  .katex .fontsize-ensurer.reset-size9.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 0.6944444444em;
-  }
-  .katex .sizing.reset-size9.size8,
-  .katex .fontsize-ensurer.reset-size9.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 0.8333333333em;
-  }
-  .katex .sizing.reset-size9.size9,
-  .katex .fontsize-ensurer.reset-size9.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size9.size10,
-  .katex .fontsize-ensurer.reset-size9.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 1.2002314815em;
-  }
-  .katex .sizing.reset-size9.size11,
-  .katex .fontsize-ensurer.reset-size9.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 1.4398148148em;
-  }
-  .katex .sizing.reset-size10.size1,
-  .katex .fontsize-ensurer.reset-size10.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.2410800386em;
-  }
-  .katex .sizing.reset-size10.size2,
-  .katex .fontsize-ensurer.reset-size10.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 0.2892960463em;
-  }
-  .katex .sizing.reset-size10.size3,
-  .katex .fontsize-ensurer.reset-size10.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 0.337512054em;
-  }
-  .katex .sizing.reset-size10.size4,
-  .katex .fontsize-ensurer.reset-size10.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 0.3857280617em;
-  }
-  .katex .sizing.reset-size10.size5,
-  .katex .fontsize-ensurer.reset-size10.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 0.4339440694em;
-  }
-  .katex .sizing.reset-size10.size6,
-  .katex .fontsize-ensurer.reset-size10.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 0.4821600771em;
-  }
-  .katex .sizing.reset-size10.size7,
-  .katex .fontsize-ensurer.reset-size10.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 0.5785920926em;
-  }
-  .katex .sizing.reset-size10.size8,
-  .katex .fontsize-ensurer.reset-size10.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 0.6943105111em;
-  }
-  .katex .sizing.reset-size10.size9,
-  .katex .fontsize-ensurer.reset-size10.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 0.8331726133em;
-  }
-  .katex .sizing.reset-size10.size10,
-  .katex .fontsize-ensurer.reset-size10.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .sizing.reset-size10.size11,
-  .katex .fontsize-ensurer.reset-size10.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 1.1996142719em;
-  }
-  .katex .sizing.reset-size11.size1,
-  .katex .fontsize-ensurer.reset-size11.size1 {
-    /* stylelint-disable-next-line */
-    font-size: 0.2009646302em;
-  }
-  .katex .sizing.reset-size11.size2,
-  .katex .fontsize-ensurer.reset-size11.size2 {
-    /* stylelint-disable-next-line */
-    font-size: 0.2411575563em;
-  }
-  .katex .sizing.reset-size11.size3,
-  .katex .fontsize-ensurer.reset-size11.size3 {
-    /* stylelint-disable-next-line */
-    font-size: 0.2813504823em;
-  }
-  .katex .sizing.reset-size11.size4,
-  .katex .fontsize-ensurer.reset-size11.size4 {
-    /* stylelint-disable-next-line */
-    font-size: 0.3215434084em;
-  }
-  .katex .sizing.reset-size11.size5,
-  .katex .fontsize-ensurer.reset-size11.size5 {
-    /* stylelint-disable-next-line */
-    font-size: 0.3617363344em;
-  }
-  .katex .sizing.reset-size11.size6,
-  .katex .fontsize-ensurer.reset-size11.size6 {
-    /* stylelint-disable-next-line */
-    font-size: 0.4019292605em;
-  }
-  .katex .sizing.reset-size11.size7,
-  .katex .fontsize-ensurer.reset-size11.size7 {
-    /* stylelint-disable-next-line */
-    font-size: 0.4823151125em;
-  }
-  .katex .sizing.reset-size11.size8,
-  .katex .fontsize-ensurer.reset-size11.size8 {
-    /* stylelint-disable-next-line */
-    font-size: 0.578778135em;
-  }
-  .katex .sizing.reset-size11.size9,
-  .katex .fontsize-ensurer.reset-size11.size9 {
-    /* stylelint-disable-next-line */
-    font-size: 0.6945337621em;
-  }
-  .katex .sizing.reset-size11.size10,
-  .katex .fontsize-ensurer.reset-size11.size10 {
-    /* stylelint-disable-next-line */
-    font-size: 0.8336012862em;
-  }
-  .katex .sizing.reset-size11.size11,
-  .katex .fontsize-ensurer.reset-size11.size11 {
-    /* stylelint-disable-next-line */
-    font-size: 1em;
-  }
-  .katex .delimsizing.size1 {
-    font-family: KaTeX_Size1;
-  }
-  .katex .delimsizing.size2 {
-    font-family: KaTeX_Size2;
-  }
-  .katex .delimsizing.size3 {
-    font-family: KaTeX_Size3;
-  }
-  .katex .delimsizing.size4 {
-    font-family: KaTeX_Size4;
-  }
-  .katex .delimsizing.mult .delim-size1 > span {
-    font-family: KaTeX_Size1;
-  }
-  .katex .delimsizing.mult .delim-size4 > span {
-    font-family: KaTeX_Size4;
-  }
-  .katex .nulldelimiter {
-    display: inline-block;
-    width: 0.12em;
-  }
-  .katex .delimcenter {
-    position: relative;
-  }
-  .katex .op-symbol {
-    position: relative;
-  }
-  .katex .op-symbol.small-op {
-    font-family: KaTeX_Size1;
-  }
-  .katex .op-symbol.large-op {
-    font-family: KaTeX_Size2;
-  }
-  .katex .op-limits > .vlist-t {
-    text-align: center;
-  }
-  .katex .accent > .vlist-t {
-    text-align: center;
-  }
-  .katex .accent .accent-body {
-    position: relative;
-  }
-  .katex .accent .accent-body:not(.accent-full) {
-    width: 0;
-  }
-  .katex .overlay {
-    display: block;
-  }
-  .katex .mtable .vertical-separator {
-    display: inline-block;
-    min-width: 1px;
-  }
-  .katex .mtable .arraycolsep {
-    display: inline-block;
-  }
-  .katex .mtable .col-align-c > .vlist-t {
-    text-align: center;
-  }
-  .katex .mtable .col-align-l > .vlist-t {
-    text-align: left;
-  }
-  .katex .mtable .col-align-r > .vlist-t {
-    text-align: right;
-  }
-  .katex .svg-align {
-    text-align: left;
-  }
-  .katex svg {
-    display: block;
-    position: absolute;
-    width: 100%;
-    height: inherit;
-    fill: currentColor;
-    stroke: currentColor;
-    fill-rule: nonzero;
-    fill-opacity: 1;
-    stroke-width: 1;
-    stroke-linecap: butt;
-    stroke-linejoin: miter;
-    stroke-miterlimit: 4;
-    stroke-dasharray: none;
-    stroke-dashoffset: 0;
-    stroke-opacity: 1;
-  }
-  .katex svg path {
-    stroke: none;
-  }
-  .katex img {
-    border-style: none;
-    min-width: 0;
+    height: 100%;
+    flex: 1 1 auto;
     min-height: 0;
-    max-width: none;
-    max-height: none;
-  }
-  .katex .stretchy {
+    overflow: hidden;
+}
+
+/* Cache-management / copy-export corner actions — minimal chrome by design:
+ * transparent until hovered, same restrained treatment as the citation
+ * card's pin/close buttons (no colored block, just an icon). Floats over the
+ * list in the bottom-right so it's reachable regardless of view mode. */
+.bibtex-panel-corner-actions {
+    position: absolute;
+    /* Safe-area so home-indicator / notched devices do not clip floating actions. */
+    right: max(var(--size-4-2), env(safe-area-inset-right, 0px));
+    bottom: max(var(--size-4-2), env(safe-area-inset-bottom, 0px));
+    display: flex;
+    gap: var(--size-4-1);
+    z-index: 5;
+}
+
+.bibtex-panel-corner-btn {
+    flex: 0 0 auto;
+    width: 1.9em;
+    height: 1.9em;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-s);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: var(--cursor);
+    /* setIcon size — see panel icon block under .is-mobile above */
+    --icon-size: var(--icon-s, 16px);
+}
+
+.bibtex-panel-corner-btn:hover,
+.bibtex-panel-corner-btn:focus-visible {
+    color: var(--text-normal);
+    background: var(--background-modifier-hover);
+}
+
+.bibtex-panel-query {
+    flex: 0 0 auto;
+    margin-bottom: var(--size-4-2);
+}
+
+.bibtex-panel-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto; /* discover/clash: plain block content scrolls here directly */
+}
+
+/* list / missing-pdf / discover mode: list_el becomes a flex pass-through so an
+ * inner scroll div (not list_el itself) fills the remaining height and scrolls,
+ * while status/footer chrome outside that inner div stays pinned in place. */
+.bibtex-panel-list.is-virtual {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Discover mode's scrolling content region (status + chips). The "randomize
+ * again" footer is a sibling of this, not a child, so it stays pinned below. */
+.bibtex-panel-discover-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.bibtex-panel-query-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+}
+
+.bibtex-panel-search {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Phone-width panel: the toggle + clash + missing-pdf buttons are fixed-width
+ * and fit on one line; search is the flexible element, so it's the one that
+ * drops to its own full-width line instead of getting crushed to a sliver. */
+.is-mobile .bibtex-panel-query-row {
+    flex-wrap: wrap;
+    row-gap: var(--size-4-2);
+}
+
+.is-mobile .bibtex-panel-search {
+    flex-basis: 100%;
+    order: 1;
+}
+
+/* Discover ↔ list view toggle — a real sliding switch: an inset skeuomorphic
+ * groove with a raised knob that slides from one side to the other. The knob
+ * carries the current-mode icon; no accent-color flash on hover/focus — unlike
+ * clash/missing-PDF this isn't an alert/audit state, just two equally-valid
+ * ways to browse the same papers, so the highlight stays subtle. */
+.bibtex-panel-view-toggle {
+    position: relative;
+    flex: 0 0 auto;
+    width: calc(var(--input-height) * 1.9);
+    height: var(--input-height);
+    padding: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background-color: var(--background-secondary);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18);
+    cursor: var(--cursor);
+}
+
+.bibtex-panel-view-toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(var(--input-height) - 4px);
+    height: calc(var(--input-height) - 4px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background-color: var(--background-primary);
+    color: var(--text-muted);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: left 0.15s ease, color 0.15s ease;
+}
+
+.bibtex-panel-view-toggle[aria-checked="true"] .bibtex-panel-view-toggle-knob {
+    left: calc(100% - (var(--input-height) - 4px) - 2px);
+}
+
+.bibtex-panel-view-toggle:hover .bibtex-panel-view-toggle-knob {
+    color: var(--text-normal);
+}
+
+/* Slight highlight, not a large flashing color change: a thin neutral ring, no border/background swap. */
+.bibtex-panel-view-toggle:focus-visible {
+    outline: none;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18), 0 0 0 2px var(--background-modifier-border-hover);
+}
+
+/* Discover-mode chip wrapper — inline-block so vertical margin actually creates
+ * breathing room between wrapped lines, not just horizontally between chips. */
+.bibtex-panel-discover-chip {
+    display: inline-block;
+    margin: 0 var(--size-4-1) var(--size-4-1) 0;
+}
+
+.bibtex-panel-discover-chip .bibtex-hover button {
+    padding: var(--size-4-1) var(--size-4-3);
+}
+
+/* Discover-mode chip flags — small corner dots, same crimson/ochre language as the clash/missing-PDF buttons. */
+.is-clashing-chip,
+.is-missing-pdf-chip {
+    position: relative;
+}
+
+.is-clashing-chip::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: crimson;
+    box-shadow: 0 0 0 1px var(--background-primary);
+    pointer-events: none;
+}
+
+.is-missing-pdf-chip::before {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d4a017;
+    box-shadow: 0 0 0 1px var(--background-primary);
+    pointer-events: none;
+}
+
+/* Discover-mode empty-query footer ("type to search, or randomize again").
+ * Right padding keeps the text/link clear of the corner actions floating in
+ * the same bottom-right area (see .bibtex-panel-corner-actions). */
+.bibtex-panel-discover-footer {
+    color: var(--text-muted);
+    padding: 0.5em var(--bibtex-corner-actions-reserve) 0.5em 0.25em;
+    font-size: var(--font-ui-smaller, var(--font-ui-small));
+    flex: 0 0 auto;
+}
+
+.bibtex-panel-clash-btn {
+    flex: 0 0 var(--input-height);
+    width: var(--input-height);
+    height: var(--input-height);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: var(--cursor);
+    background-color: crimson;
+    color: var(--text-on-accent, #fff);
+    border: 1px solid crimson;
+    border-radius: var(--radius-s);
+}
+
+.bibtex-panel-clash-btn.is-active {
+    outline: 2px solid var(--text-on-accent, #fff);
+    outline-offset: 1px;
+}
+
+.bibtex-panel-clash-btn[disabled] {
+    opacity: 0.6;
+}
+
+/* Missing-PDF toggle — same chrome as the clash button, ochre instead of crimson */
+.bibtex-panel-missing-pdf-btn {
+    flex: 0 0 var(--input-height);
+    width: var(--input-height);
+    height: var(--input-height);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: var(--cursor);
+    background-color: #d4a017;
+    color: var(--text-on-accent, #fff);
+    border: 1px solid #d4a017;
+    border-radius: var(--radius-s);
+}
+
+.bibtex-panel-missing-pdf-btn.is-active {
+    outline: 2px solid var(--text-on-accent, #fff);
+    outline-offset: 1px;
+}
+
+/* id link stays ochre; the more-specific .is-path rule below keeps the title/path link muted */
+.bibtex-panel-missing-pdf-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+    flex: 0 0 auto;
+}
+
+.bibtex-panel-missing-pdf-recheck {
+    font-size: var(--font-ui-smaller);
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+/* Fills whatever height .bibtex-panel-list.is-virtual has left below the toolbar
+ * (see .bibtex-panel-root) — a bigger panel renders a taller virtualized window. */
+.bibtex-panel-missing-pdf-scroll {
+    position: relative;
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    /* Clears the floating corner actions (bottom-right) so the last visible
+     * row(s) don't render underneath them. */
+    padding-right: var(--bibtex-corner-actions-reserve);
+}
+
+.bibtex-panel-missing-pdf-spacer {
     width: 100%;
-    display: block;
-    position: relative;
-    overflow: hidden;
-  }
-  .katex .stretchy::before, .katex .stretchy::after {
-    content: "";
-  }
-  .katex .hide-tail {
-    width: 100%;
-    position: relative;
-    overflow: hidden;
-  }
-  .katex .halfarrow-left {
+    pointer-events: none;
+}
+
+.bibtex-panel-missing-pdf-rows {
     position: absolute;
+    top: 0;
     left: 0;
-    width: 50.2%;
-    overflow: hidden;
-  }
-  .katex .halfarrow-right {
-    position: absolute;
     right: 0;
-    width: 50.2%;
+}
+
+.bibtex-panel-missing-pdf-row {
+    display: flex;
+    align-items: center;
     overflow: hidden;
-  }
-  .katex .brace-left {
-    position: absolute;
-    left: 0;
-    width: 25.1%;
-    overflow: hidden;
-  }
-  .katex .brace-center {
-    position: absolute;
-    left: 25%;
-    width: 50%;
-    overflow: hidden;
-  }
-  .katex .brace-right {
-    position: absolute;
-    right: 0;
-    width: 25.1%;
-    overflow: hidden;
-  }
-  .katex .x-arrow-pad {
-    padding: 0 0.5em;
-  }
-  .katex .cd-arrow-pad {
-    padding: 0 0.55556em 0 0.27778em;
-  }
-  .katex .x-arrow,
-  .katex .mover,
-  .katex .munder {
-    text-align: center;
-  }
-  .katex .boxpad {
-    padding: 0 0.3em;
-  }
-  .katex .fbox,
-  .katex .fcolorbox {
-    box-sizing: border-box;
-    border: 0.04em solid;
-  }
-  .katex .cancel-pad {
-    padding: 0 0.2em;
-  }
-  .katex .cancel-lap {
-    margin-left: -0.2em;
-    margin-right: -0.2em;
-  }
-  .katex .sout {
-    border-bottom-style: solid;
-    border-bottom-width: 0.08em;
-  }
-  .katex .angl {
-    box-sizing: border-box;
-    border-top: 0.049em solid;
-    border-right: 0.049em solid;
-    margin-right: 0.03889em;
-  }
-  .katex .anglpad {
-    padding: 0 0.03889em;
-  }
-  .katex .eqn-num::before {
-    counter-increment: katexEqnNo;
-    content: "(" counter(katexEqnNo) ")";
-  }
-  .katex .mml-eqn-num::before {
-    counter-increment: mmlEqnNo;
-    content: "(" counter(mmlEqnNo) ")";
-  }
-  .katex .mtr-glue {
-    width: 50%;
-  }
-  .katex .cd-vert-arrow {
-    display: inline-block;
-    position: relative;
-  }
-  .katex .cd-label-left {
-    display: inline-block;
-    position: absolute;
-    right: calc(50% + 0.3em);
-    text-align: left;
-  }
-  .katex .cd-label-right {
-    display: inline-block;
-    position: absolute;
-    left: calc(50% + 0.3em);
-    text-align: right;
-  }
-  
-  .katex-display {
-    display: block;
-    margin: 1em 0;
-    text-align: center;
-  }
-  .katex-display > .katex {
-    display: block;
-    text-align: center;
     white-space: nowrap;
-  }
-  .katex-display > .katex > .katex-html {
-    display: block;
-    position: relative;
-  }
-  .katex-display > .katex > .katex-html > .tag {
-    position: absolute;
-    right: 0;
-  }
-  
-  .katex-display.leqno > .katex > .katex-html > .tag {
-    left: 0;
-    right: auto;
-  }
-  
-  .katex-display.fleqn > .katex {
-    text-align: left;
-    padding-left: 2em;
-  }
-  
-  /* customized */
-  .react-flow__node-note {
-    position: absolute;
-    -webkit-user-select: none;
-       -moz-user-select: none;
-            user-select: none;
-    pointer-events: all;
-    transform-origin: 0 0;
     box-sizing: border-box;
-    cursor: default;
-    background: white;
-    border: 1px solid #eee;
-    border-radius: 5px;
-    padding: 2vw;
-    max-width: 20vw;
-    /* max-width: 10vw; */
-    max-height: 50vh;
-    /* max-height: 20vh; */
-    overflow: scroll;
-  }
+}
+
+.bibtex-panel-missing-pdf-scroll .bibtex-panel-clash-link,
+.bibtex-panel-missing-pdf-scroll .bibtex-panel-clash-num,
+.bibtex-panel-missing-pdf-list .bibtex-panel-clash-link,
+.bibtex-panel-missing-pdf-list .bibtex-panel-clash-num {
+    color: #d4a017;
+}
+
+.bibtex-panel-clash-empty {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    padding: var(--size-4-2);
+    flex: 0 0 auto;
+}
+
+/* List-mode sort control — bottom chrome; right padding clears corner action icons. */
+.bibtex-panel-list-sort-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller, var(--font-ui-small));
+    line-height: 1.3;
+    padding: 0.5em var(--bibtex-corner-actions-reserve) 0.5em 0.75em;
+    border-top: 1px solid var(--background-modifier-border);
+    flex: 0 0 auto;
+}
+
+.bibtex-panel-list-sort-footer select {
+    font-size: inherit;
+    padding: 0.15em 0.4em;
+    max-width: 100%;
+}
+
+/* Virtualized list viewport — fills remaining panel height under status / above footer. */
+.bibtex-panel-list-scroll {
+    position: relative;
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    /* Clears the floating corner actions (bottom-right) so the last visible
+     * row(s) don't render underneath them. */
+    padding-right: var(--bibtex-corner-actions-reserve);
+}
+
+.bibtex-panel-list-spacer {
+    width: 100%;
+    pointer-events: none;
+}
+
+.bibtex-panel-list-rows {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+}
+
+/*
+ * List-mode row (title + compact meta). Height is set in JS via list_row_height_px()
+ * (~4.6em at the list font size) so title descenders (g/y/p) stay inside the box
+ * even when card_font_size is large and overflow:hidden is needed for virtualization.
+ */
+.bibtex-panel-list-row {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.35em;
+    padding: 0.5em 0.75em;
+    box-sizing: border-box;
+    cursor: var(--cursor);
+    border-bottom: 1px solid var(--background-modifier-border);
+    overflow: hidden;
+}
+
+.bibtex-panel-list-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.bibtex-panel-list-row:last-child {
+    border-bottom-color: transparent;
+}
+
+.bibtex-panel-list-title {
+    flex: 0 0 auto;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-normal);
+    /* 1.4 gives room for descenders; tighter values clipped g/y/p under overflow. */
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* Prevent flex min-size collapse from shaving the line box. */
+    min-height: 1.4em;
+}
+
+.bibtex-panel-list-meta {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.45em;
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    line-height: 1.3;
+    overflow: hidden;
+}
+
+/* Compact citekey chip — full chip chrome is too tall for a 2-line list row. */
+.bibtex-panel-list-chip {
+    flex: 0 0 auto;
+    max-width: 45%;
+}
+
+.bibtex-panel-list-chip .bibtex-hover {
+    display: inline;
+}
+
+.bibtex-panel-list-chip .bibtex-hover button {
+    min-height: 0;
+    height: auto;
+    padding: 0.05em 0.4em;
+    font-size: 0.92em;
+    font-family: var(--font-monospace);
+    font-weight: var(--font-normal, 400);
+    line-height: 1.25;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+.bibtex-panel-list-meta-rest {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-faint);
+    font-family: var(--font-interface, var(--font-text));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Status above the virtualized list — align with row horizontal padding. */
+.bibtex-panel-list-status {
+    color: var(--text-muted);
+    padding: 0.5em 0.75em 0.4em;
+    font-size: var(--font-ui-smaller, var(--font-ui-small));
+    line-height: 1.35;
+    flex: 0 0 auto;
+}
+
+/* List mode: status is chrome above the scroller, not inside it. */
+.bibtex-panel-list.is-virtual > .bibtex-panel-list-status {
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 0.45em;
+    margin-bottom: 0;
+}
+
+.bibtex-panel-clash-card {
+    padding: var(--size-4-2) 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: var(--font-ui-small);
+}
+
+.bibtex-panel-clash-reason {
+    color: crimson;
+    font-weight: var(--font-semibold, 600);
+    margin-bottom: var(--size-2-1);
+}
+
+.bibtex-panel-clash-member {
+    line-height: 1.5;
+    padding-left: var(--size-4-2);
+}
+
+.bibtex-panel-clash-num {
+    color: var(--text-faint);
+}
+
+.bibtex-panel-clash-link {
+    cursor: var(--cursor);
+    color: var(--text-accent);
+    font-family: var(--font-monospace);
+}
+
+.bibtex-panel-clash-link.is-path {
+    color: var(--text-muted);
+}
+
+.bibtex-panel-clash-link:hover {
+    text-decoration: underline;
+}
+
+/* Bare SearchComponent (no Setting wrapper — that added padding/border the
+ * toggle/clash/missing-PDF buttons beside it don't have, the "optical
+ * misalignment"). Match height/rounding to the rest of the query row exactly. */
+.bibtex-panel-search .search-input-container {
+    width: 100%;
+    height: var(--input-height);
+    box-sizing: border-box;
+}
+
+.bibtex-panel-search .search-input-container input {
+    height: 100%;
+    box-sizing: border-box;
+    border-radius: var(--radius-s);
+}
+
